@@ -13,10 +13,11 @@ import csv
 
 def get_attractorlb_lengthub_formula(G, P, T):
     # transform input nodes to stable nodes
-    for v in G.vertices:
-        if len(v.predecessors()) == 0:
-            G.edges.append((v, v))
-            v.function = lambda *args: args[0] # functions need to accept a tuple of arguments
+    # Cancelled since it can interfere with boolean model search.
+    # for v in G.vertices:
+    #     if len(v.predecessors()) == 0:  # stability - input vertices don't change value
+    #         G.edges.append((v, v))
+    #         v.function = lambda *args: args[0]  # functions need to accept a tuple of arguments
     a_matrix = numpy.matrix([[sympy.symbols("a_{}_{}".format(p, t)) for t in range(T+1)] for p in range(P)])
     v_matrix = numpy.array([[[sympy.symbols("v_{}_{}_{}".format(i, p, t)) for t in range(T+1)] for p in range(P)]
                              for i in range(len(G.vertices))])
@@ -24,7 +25,7 @@ def get_attractorlb_lengthub_formula(G, P, T):
     ACTIVITY_SWITCH = lambda p: sympy.And(*[a_matrix[p, t] | sympy.And(*[~v_matrix[i, p, t]
                                             for i in range(len(G.vertices))]) for t in range(T)])
     MONOTONE = lambda p: sympy.And(*[a_matrix[p, t] >> a_matrix[p, t+1] for t in range(T)])
-    ACTIVE = lambda p: sympy.Or(*[a_matrix[p, t] for t in range(T)])
+    ACTIVE = lambda p: a_matrix[p, T-1]
 
 
     predecessors_vars = lambda i, p, t: [v_matrix[vertex.index, p, t] for vertex in G.vertices[i].predecessors()]
@@ -33,6 +34,12 @@ def get_attractorlb_lengthub_formula(G, P, T):
                                      G.vertices[i].function(*predecessors_vars(i, p, t))))
                                      for i in range(len(G.vertices)) if len(G.vertices[i].predecessors()) > 0])
                                      for t in range(T)])
+    STABLE = lambda p: sympy.And(*[sympy.And(*[
+                                     ~a_matrix[p, t] | (sympy.Equivalent(v_matrix[i, p, t+1],
+                                                        v_matrix[i, p, t]))
+                                     for i in range(len(G.vertices)) if len(G.vertices[i].predecessors()) == 0])
+                                     for t in range(T)])
+
     EQ = lambda p1, p2, t1, t2: sympy.And(*[sympy.Equivalent(v_matrix[i, p1, t1], v_matrix[i, p2, t2])
                                             for i in range(len(G.vertices))])
     CYCLIC = lambda p: (a_matrix[p, 0] & EQ(p, p, 0, T)) | \
@@ -50,7 +57,7 @@ def get_attractorlb_lengthub_formula(G, P, T):
                                                for t in range(T)]) for i in range(len(G.vertices)) if
                                                len(G.vertices[i].predecessors()) == 0])
 
-    ATTRACTORS = sympy.And(*[MONOTONE(p) & ACTIVE(p) & CONSISTENT(p) & CYCLIC(p) & SIMPLE(p) &
+    ATTRACTORS = sympy.And(*[MONOTONE(p) & ACTIVE(p) & CONSISTENT(p) & STABLE(p) & CYCLIC(p) & SIMPLE(p) &
                              UNIQUE(p) & ACTIVITY_SWITCH(p) & STABLE(p) for p in range(P)])
 
     return ATTRACTORS, a_matrix, v_matrix
