@@ -183,7 +183,7 @@ G = graphs.Network.generate_random(5, edge_ratio=0.1)
 # print G
 # find_num_attractors(G, use_ilp=True)
 # find_min_attractors_model(G)
-find_num_attractors_onestage(G, max_len=10, max_num=30)
+find_num_attractors_onestage(G)
 # write_sat_sampling_analysis_table(10, 7, "C:/Ariel/Downloads/graph_sampling.csv")
 
 
