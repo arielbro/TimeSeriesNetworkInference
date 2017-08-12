@@ -2,6 +2,7 @@
 import itertools
 import logic
 import graphs
+import re
 import sympy
 import numpy
 import functools
@@ -9,61 +10,10 @@ import time
 import ilp
 import random
 import csv
+import gurobipy
 
 
-def get_attractorlb_lengthub_formula(G, P, T):
-    # transform input nodes to stable nodes
-    # Cancelled since it can interfere with boolean model search.
-    # for v in G.vertices:
-    #     if len(v.predecessors()) == 0:  # stability - input vertices don't change value
-    #         G.edges.append((v, v))
-    #         v.function = lambda *args: args[0]  # functions need to accept a tuple of arguments
-    a_matrix = numpy.matrix([[sympy.symbols("a_{}_{}".format(p, t)) for t in range(T+1)] for p in range(P)])
-    v_matrix = numpy.array([[[sympy.symbols("v_{}_{}_{}".format(i, p, t)) for t in range(T+1)] for p in range(P)]
-                             for i in range(len(G.vertices))])
-
-    ACTIVITY_SWITCH = lambda p: sympy.And(*[a_matrix[p, t] | sympy.And(*[~v_matrix[i, p, t]
-                                            for i in range(len(G.vertices))]) for t in range(T)])
-    MONOTONE = lambda p: sympy.And(*[a_matrix[p, t] >> a_matrix[p, t+1] for t in range(T)])
-    ACTIVE = lambda p: a_matrix[p, T-1]
-
-
-    predecessors_vars = lambda i, p, t: [v_matrix[vertex.index, p, t] for vertex in G.vertices[i].predecessors()]
-    CONSISTENT = lambda p: sympy.And(*[sympy.And(*[
-                                     ~a_matrix[p, t] | (sympy.Equivalent(v_matrix[i, p, t+1],
-                                     G.vertices[i].function(*predecessors_vars(i, p, t))))
-                                     for i in range(len(G.vertices)) if len(G.vertices[i].predecessors()) > 0])
-                                     for t in range(T)])
-    STABLE = lambda p: sympy.And(*[sympy.And(*[
-                                     ~a_matrix[p, t] | (sympy.Equivalent(v_matrix[i, p, t+1],
-                                                        v_matrix[i, p, t]))
-                                     for i in range(len(G.vertices)) if len(G.vertices[i].predecessors()) == 0])
-                                     for t in range(T)])
-
-    EQ = lambda p1, p2, t1, t2: sympy.And(*[sympy.Equivalent(v_matrix[i, p1, t1], v_matrix[i, p2, t2])
-                                            for i in range(len(G.vertices))])
-    CYCLIC = lambda p: (a_matrix[p, 0] & EQ(p, p, 0, T)) | \
-                       (sympy.Or(*[~a_matrix[p, t - 1] & a_matrix[p, t] & EQ(p, p, t, T)
-                                                                       for t in range(1, T + 1)]))
-    SIMPLE = lambda p: sympy.And(*[(a_matrix[p, t] & a_matrix[p, t-1]) >> ~EQ(p, p, t, T) for t in range(1, T)])
-
-    UNIQUE = lambda p1: sympy.And(*[sympy.And(*[a_matrix[p2, t] >> ~EQ(p1, p2, t, T)
-                                                for p2 in range(p1 + 1, P)]) for t in range(T + 1)])
-
-
-    # TODO: write about this in the paper
-    STABLE = lambda p: sympy.And(*[sympy.And(*[a_matrix[p, t] & a_matrix[p, t+1] >>
-                                               sympy.Equivalent(v_matrix[i, p, t], v_matrix[i, p, t+1])
-                                               for t in range(T)]) for i in range(len(G.vertices)) if
-                                               len(G.vertices[i].predecessors()) == 0])
-
-    ATTRACTORS = sympy.And(*[MONOTONE(p) & ACTIVE(p) & CONSISTENT(p) & STABLE(p) & CYCLIC(p) & SIMPLE(p) &
-                             UNIQUE(p) & ACTIVITY_SWITCH(p) & STABLE(p) for p in range(P)])
-
-    return ATTRACTORS, a_matrix, v_matrix
-
-
-def find_num_attractors(G, use_ilp):
+def find_num_attractors_multistage(G, use_ilp):
     T = 1
     P = 1
     iteration = 1
@@ -73,11 +23,11 @@ def find_num_attractors(G, use_ilp):
         iteration += 1
         start_time = time.time()
 
-        ATTRACTORS, _, _ = get_attractorlb_lengthub_formula(G, P, T)
+        ATTRACTORS = logic.get_attractorlb_lengthub_formula(G, P, T)
         # print ATTRACTORS
 
         if use_ilp:
-            model = ilp.logic_to_ilp(ATTRACTORS)
+            model, _ = ilp.logic_to_ilp(ATTRACTORS)
             model.params.LogToConsole = 0
             model.setObjective(0)
             model.optimize()
@@ -103,6 +53,39 @@ def find_num_attractors(G, use_ilp):
     print "#attractors:{}".format(P)
 
 
+def find_num_attractors_onestage(G, max_len=None, max_num=None):
+    T = 2 ** len(G.vertices) if not max_len else max_len
+    P = 2 ** len(G.vertices) if not max_num else max_num
+    start_time = time.time()
+
+    ATTRACTORS, active_logic_vars = logic.get_attractors_formula(G, P, T)
+    # for arg in ATTRACTORS.args:
+    #     print arg
+
+    # print "\n"
+    # for active_formula in active_formulas:
+    #     print active_formula
+    # print ATTRACTORS
+
+    # print "sat:", sympy.satisfiable(ATTRACTORS & active_logic_vars[0])
+
+    model, formulas_to_variables = ilp.logic_to_ilp(ATTRACTORS)
+    active_ilp_vars = [formulas_to_variables[active_logic_var] for active_logic_var in active_logic_vars]
+    model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
+    model.params.LogToConsole = 0
+    model.optimize()
+    if model.Status != gurobipy.GRB.OPTIMAL:
+        print "warning, model not solved to optimality."
+    # for constr in model.getConstrs():
+    #     print constr
+    print "# attractors = {}".format(model.ObjVal)
+    # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
+    #        if re.match("a_[0-9]*_[0-9]*", v.varName)]  # abs(v.obj) > 1e-6
+    # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
+    #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
+    print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
+
+
 def find_min_attractors_model(G):
     # important - destroys G's current model.
     for i, v in enumerate(G.vertices):
@@ -118,7 +101,7 @@ def find_min_attractors_model(G):
         print "P={}, T={}".format(P, T)
         iteration += 1
         start_time = time.time()
-        ATTRACTORS, _, _ = get_attractorlb_lengthub_formula(G, P, T)
+        ATTRACTORS = logic.get_attractorlb_lengthub_formula(G, P, T)
         # print ATTRACTORS
         sat_models = sympy.satisfiable(ATTRACTORS, all_models=True)  # TODO: replace with ILP enumeration
         function_models = set()
@@ -157,7 +140,7 @@ def sample_graph_sat_results(num_vertices, edge_ratio, T, P):
         boolean_outputs = [random.choice([True, False]) for i in range(len(v.predecessors()))]
         boolean_function = logic.pre_randomized_boolean_func(boolean_outputs)
         v.function = boolean_function
-    ATTRACTORS, _, _ = get_attractorlb_lengthub_formula(G, P, T)
+    ATTRACTORS = logic.get_attractorlb_lengthub_formula(G, P, T)
     sat = sympy.satisfiable(ATTRACTORS)
     return ATTRACTORS, time.time() - start
 
@@ -178,10 +161,13 @@ def write_sat_sampling_analysis_table(n_repeats, num_vertices_bound, output_path
         writer.writerows(lines)
 
 # G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
-#                    vertex_functions=[sympy.Nand])
+#                    vertex_functions=[sympy.And])
 
-G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
-                   vertex_functions=[sympy.Nand]*2)
+# G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
+#                    vertex_functions=[sympy.Nand, sympy.And])
+
+# G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
+#                    vertex_functions=[lambda x: True, lambda x: False])
 
 # G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "A"), ("C", "A")],
 #                    vertex_functions=[sympy.Nand]*3)
@@ -193,10 +179,11 @@ G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
 #                                                         ("C", "A"), ("C", "B")],
 #                    vertex_functions=[sympy.Nor]*3)
 
-# G = graphs.Network.generate_random(8, edge_ratio=0.1)
+G = graphs.Network.generate_random(5, edge_ratio=0.1)
 # print G
 # find_num_attractors(G, use_ilp=True)
-find_min_attractors_model(G)
+# find_min_attractors_model(G)
+find_num_attractors_onestage(G, max_len=10, max_num=30)
 # write_sat_sampling_analysis_table(10, 7, "C:/Ariel/Downloads/graph_sampling.csv")
 
 
@@ -214,4 +201,5 @@ find_min_attractors_model(G)
 # TODO: run with reasonable (?) or upper bound T, and increment P. with each iteration, find all
 # TODO: possible models (function variable assignments), stop when set changes.
 # TODO: create some order on graph states (e.g. lexicographic on the state boolena string), and require each attractor to begin with the lowest value one, and the p'th attractor to start with one less than the p+1'th, so there would be less redundency.
-
+# TODO: try and create the ILP without the SAT translation, a lot of the variables might be uneeded.
+# TODO:     e.g. a_0_0 >> a_0_1 can just be the constraint a_0_1 >= a_0_0 if it isn't needed in other expressions
