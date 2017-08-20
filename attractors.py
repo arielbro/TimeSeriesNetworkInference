@@ -181,27 +181,31 @@ def stochastic_attractor_estimation(G, n_walks, max_walk_len=None):
     attractors = stochastic.estimate_attractors(G, n_walks=n_walks, max_walk_len=max_walk_len)
     end = time.time()
 
-    total_states = len(reduce(lambda s1, s2: s1.union(s2), [basin for _, basin in attractors]))
+    total_states = sum([basin for _, basin in attractors])
     average_length = sum(len(attractor) for attractor, _ in attractors) / float(len(attractors))
-    average_basin = sum(len(basin) for _, basin in attractors) / float(len(attractors))
+    average_basin = total_states / float(len(attractors))
+    coverage_ratio = float(total_states) / 2**len(G.vertices)
     print "Time taken:{:.2f} seconds".format(end - start)
     print "Estimated attractors:{}.\nAverage length:{:.2f}, " \
-          "\nAverage Basin length:{:.2f}.\nTotal states covered:{}".format(len(attractors), average_length,
-                                                                          average_basin, total_states)
+          "\nAverage Basin length found:{:.2f}," \
+          "\nAverage Basin length normalized by coverage: {:.2f}".format(len(attractors), average_length,
+                                                                         average_basin,
+                                                                         average_basin / coverage_ratio)
 
 
 def write_random_graph_estimations_sampling(n_graphs, vertices_bounds, indegree_bounds,
-                                            restrict_symmetric_threshold, path):
-    res = [["vertices", "edges", "attractors", "states_visited", "average_attractor_length", "average_basin_size"]]
+                                            restrict_symmetric_threshold, n_walks, max_walk_len, path):
+    res = [["vertices", "edges", "input_nodes", "attractors", "states_visited", "average_attractor_length", "average_basin_size"]]
     for i in range(n_graphs):
         n = random.randint(*vertices_bounds)
         G = graphs.Network.generate_random(n_vertices=n, indegree_bounds=indegree_bounds,
                                            restrict_signed_symmetric_threshold=restrict_symmetric_threshold)
-        attractors = stochastic.estimate_attractors(G, n_walks=min(300, 2*2**n), max_walk_len=80)
-        total_states = len(reduce(lambda s1, s2: s1.union(s2), [basin for _, basin in attractors]))
+        input_nodes = len([v for v in G.vertices if len(v.predecessors()) == 0])  # not counting semantic inputs
+        attractors = stochastic.estimate_attractors(G, n_walks=min(n_walks, 2*2**n), max_walk_len=max_walk_len)
+        total_states = sum([basin for _, basin in attractors])
         average_length = sum(len(attractor) for attractor, _ in attractors) / float(len(attractors))
-        average_basin = sum(len(basin) for _, basin in attractors) / float(len(attractors))
-        res.append([n, len(G.edges), len(attractors), total_states, average_length, average_basin])
+        average_basin = total_states / float(len(attractors))
+        res.append([n, len(G.edges), input_nodes, len(attractors), total_states, average_length, average_basin])
         print "done {} graphs".format(i + 1)
     with open(path, 'w') as output_file:
         writer = csv.writer(output_file)
@@ -252,15 +256,16 @@ G = graphs.Network(vertex_names=["v1", "v2", "v3", "v4", "v5", "v6"],
 # find_num_attractors_multistage(G, use_ilp=True)
 # find_min_attractors_model(G)
 # find_num_attractors_onestage(G, max_len=5, max_num=10, use_sat=False)
-stochastic_attractor_estimation(G, n_walks=100, max_walk_len=100)
+# stochastic_attractor_estimation(G, n_walks=100, max_walk_len=100)
 # write_sat_sampling_analysis_table(10, 7, "C:/Users/Ariel/Downloads/graph_sampling.csv")
-# write_random_graph_estimations_sampling(n_graphs=200, vertices_bounds=[3, 100],
-#                                         indegree_bounds=[0, 20], restrict_symmetric_threshold=True,
-#                                         path="C:/Users/Ariel/Downloads/graph_sampling_symmetric_with_input_nodes.csv")
-# write_random_graph_estimations_sampling(n_graphs=200, vertices_bounds=[3, 100],
-#                                         indegree_bounds=[0, 20], restrict_symmetric_threshold=False,
-#                                         path="C:/Users/Ariel/Downloads/graph_sampling.csv")
-#
+write_random_graph_estimations_sampling(n_graphs=200, vertices_bounds=[3, 100],
+                                        indegree_bounds=[0, 20], restrict_symmetric_threshold=True,
+                                        n_walks=100, max_walk_len=100,
+                                        path="C:/Users/Ariel/Downloads/graph_sampling_symmetric_with_input_nodes.csv")
+write_random_graph_estimations_sampling(n_graphs=200, vertices_bounds=[3, 100],
+                                        indegree_bounds=[0, 5], restrict_symmetric_threshold=False,
+                                        n_walks=100, max_walk_len=100,
+                                        path="C:/Users/Ariel/Downloads/graph_sampling.csv")
 
 # TODO: think about asynchronous model?
 # TODO: problem size analysis.

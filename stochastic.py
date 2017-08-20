@@ -29,7 +29,7 @@ def next_network_state(G, current_state):
     """
     bool_res = []
     for v, cur_value in zip(G.vertices, current_state):
-        if len(v.predecessors()) == 0:
+        if len(v.predecessors()) != 0:
             bool_res.append(v.function(*[bool(current_state[u.index]) for u in v.predecessors()]))
         else:
             bool_res.append(cur_value)
@@ -78,7 +78,7 @@ def estimate_attractors(G, n_walks, max_walk_len=None):
             # not an attractor!
             continue
         attractor = tuple(visited_states[cycle_start_index:])
-        for existing_attractor, basin in attractors:
+        for existing_attractor in attractors:
             if is_same_attractor(attractor, existing_attractor):
                 raise AssertionError("found an existing attractor without recognizing the basin first.")
         attractors.append(attractor)
