@@ -45,8 +45,8 @@ class Network:
                 v.function = PreRandomizedBooleanSymbolicFunc(boolean_outputs)
             else:
                 if n == 0:
-                    constant_value = random.choice([False, True])
-                    v.function = lambda *_: constant_value
+                    # either no function, or an AND and add node as its own predecessor, to assert stability.
+                    v.function = None
                 else:
                     signs = [random.choice([False, True]) for _ in range(2**n)]
                     threshold = random.randint(1, n)

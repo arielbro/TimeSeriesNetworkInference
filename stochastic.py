@@ -27,7 +27,12 @@ def next_network_state(G, current_state):
     :param current_state: a binary vector of length |G.vertices|
     :return: the next state after activation of G's boolean functions on current_state
     """
-    bool_res = tuple(v.function(*[bool(current_state[u.index]) for u in v.predecessors()]) for v in G.vertices)
+    bool_res = []
+    for v, cur_value in zip(G.vertices, current_state):
+        if len(v.predecessors()) == 0:
+            bool_res.append(v.function(*[bool(current_state[u.index]) for u in v.predecessors()]))
+        else:
+            bool_res.append(cur_value)
     binary_res = tuple(0 if not b else 1 for b in bool_res)
     return binary_res
 
@@ -76,7 +81,11 @@ def estimate_attractors(G, n_walks, max_walk_len=None):
         for existing_attractor, basin in attractors:
             if is_same_attractor(attractor, existing_attractor):
                 raise AssertionError("found an existing attractor without recognizing the basin first.")
-        attractors.append((attractor, set(visited_states)))
+        attractors.append(attractor)
         for state in visited_states:
             state_to_attractor_mapping[state] = attractor
-    return attractors
+
+    attractor_to_basin = dict()
+    for state, attractor in state_to_attractor_mapping.items():
+        attractor_to_basin[attractor] = attractor_to_basin.get(attractor, 0) + 1
+    return attractor_to_basin.items()
