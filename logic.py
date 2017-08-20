@@ -1,29 +1,64 @@
 import sympy
 import itertools
+import math
 import numpy
-
-def pre_randomized_boolean_symbolic_func(boolean_outputs, *variables):
-    formula = sympy.true
-    for b_output, terms in zip(boolean_outputs, itertools.product(*[[~var, var] for var in variables])):
-        if b_output: # TODO: Karnaugh maps?
-            formula = formula | sympy.And(*terms)
-    return formula
+import utility
 
 
-def pre_randomized_boolean_func(boolean_outputs):
-    input_variables = [sympy.symbols("x" + str(i)) for i in range(len(boolean_outputs))]
-    symbolic_func = pre_randomized_boolean_symbolic_func(boolean_outputs, *input_variables)
-    return lambda *boolean_inputs: \
-        symbolic_func.subs({input_variables[i]: boolean_inputs[i] for i in range(len(boolean_inputs))})
+class PreRandomizedBooleanSymbolicFunc:
+    def __init__(self, boolean_outputs):
+        self.truth_table_outputs = boolean_outputs
+        # assumes boolean_outputs is a power of 2
+        n_inputs = math.frexp(len(boolean_outputs))[1] - 1
+        boolean_inputs = [sympy.symbols("x_{}".format(i)) for i in range(n_inputs)]
+        self.input_vars = boolean_inputs
+        if n_inputs == 0:
+            assert len(boolean_outputs) == 1
+            self.formula = boolean_outputs[0]
+            return
+        formula = sympy.false
+        for b_output, terms in zip(boolean_outputs, itertools.product(*[[~var, var] for var in boolean_inputs])):
+            if b_output:  # TODO: Karnaugh maps?
+                formula = formula | sympy.And(*terms)
+        self.formula = formula
+
+    def __call__(self, *input_values):
+        if isinstance(self.formula, bool) or len(self.formula.free_symbols) == 0:
+            return self.formula
+        return self.formula.subs(zip(self.input_vars), input_values)
+
+    def __str__(self):
+        return " " + str(self.formula)
+
+    def __repr__(self):
+        return self.__str__()
 
 
-# TODO: create a pretty print option (e.g. a callable class creating partials with a homemade str()
-def variable_bound_boolean_func(function_output_vars, *variables):
-    formula = sympy.false
-    for output_var, terms in zip(function_output_vars, itertools.product(*[[~var, var] for var in variables])):
-        formula = formula | (sympy.And(*terms) & output_var)
-    return formula
+class PreRandomizedSymmetricThresholdFunction:
+    # TODO: implement in ILP model finding (threshold is not boolean, not supported there ATM)
+    def __init__(self, signs, threshold):
+        # translate signs to bool values, if not already
+        self.signs = []
+        for sign in signs:
+            if isinstance(sign, bool):
+                self.signs.append(sign)
+            elif isinstance(sign, int):
+                assert sign in [1, -1]
+                self.signs.append(True if sign == 1 else False)
+            else:
+                raise ValueError("illegal type for signs:{}".format(type(sign)))
+        self.threshold = threshold
 
+    def __call__(self, *input_values):
+        count = sum(1 if ((sign and val) or (not sign and not val)) else 0
+                    for (sign, val) in zip(self.signs, input_values))
+        return count >= self.threshold
+
+    def __str__(self):
+        print "f: signs={}, threshold={}".format(utility.list_repr(self.signs), self.threshold)
+
+    def __repr__(self):
+        return self.__str__()
 
 def formula_length(formula):
     # defined as the number of (non-unique) atoms in the formula
@@ -62,7 +97,7 @@ def get_attractors_formula(G, P, T):
                                             for i in range(len(G.vertices))])
     CYCLIC = lambda p: (a_matrix[p, 0] >> EQ(p, p, 0, T)) & \
                        (sympy.And(*[(~a_matrix[p, t - 1] & a_matrix[p, t]) >> EQ(p, p, t, T)
-                                                                       for t in range(1, T + 1)]))
+                                                                       for t in range(1, T)]))
     SIMPLE = lambda p: sympy.And(*[(a_matrix[p, t] & a_matrix[p, t-1]) >> ~EQ(p, p, t, T) for t in range(1, T)])
 
     UNIQUE = lambda p1: sympy.And(*[sympy.And(*[(a_matrix[p1, T] & a_matrix[p2, t]) >> ~EQ(p1, p2, T, t)

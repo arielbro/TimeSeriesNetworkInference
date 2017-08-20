@@ -11,6 +11,7 @@ import ilp
 import random
 import csv
 import gurobipy
+import stochastic
 
 
 def find_num_attractors_multistage(G, use_ilp):
@@ -53,32 +54,43 @@ def find_num_attractors_multistage(G, use_ilp):
     print "#attractors:{}".format(P)
 
 
-def find_num_attractors_onestage(G, max_len=None, max_num=None):
+def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False):
     T = 2 ** len(G.vertices) if not max_len else max_len
     P = 2 ** len(G.vertices) if not max_num else max_num
     start_time = time.time()
 
-    ATTRACTORS, active_logic_vars = logic.get_attractors_formula(G, P, T)
-    # for arg in ATTRACTORS.args:
-    #     print arg
+    if use_sat:
+        ATTRACTORS, active_logic_vars = logic.get_attractors_formula(G, P, T)
+        # for arg in ATTRACTORS.args:
+        #     print arg
 
-    # print "\n"
-    # for active_formula in active_formulas:
-    #     print active_formula
-    # print ATTRACTORS
+        # print "\n"
+        # for active_formula in active_formulas:
+        #     print active_formula
+        # print ATTRACTORS
 
-    # print "sat:", sympy.satisfiable(ATTRACTORS & active_logic_vars[0])
-
-    model, formulas_to_variables = ilp.logic_to_ilp(ATTRACTORS)
-    active_ilp_vars = [formulas_to_variables[active_logic_var] for active_logic_var in active_logic_vars]
+        # print "sat:", sympy.satisfiable(ATTRACTORS & active_logic_vars[0])
+        model, formulas_to_variables = ilp.logic_to_ilp(ATTRACTORS)
+        active_ilp_vars = [formulas_to_variables[active_logic_var] for active_logic_var in active_logic_vars]
+    else:
+        model, active_ilp_vars = ilp.direct_graph_to_ilp(G, T, P, find_bool_model=False)
     model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
     model.params.LogToConsole = 0
+
+    # model.tune()  # try automatic parameter tuning
+    # model.getTuneResult(0)  # take best tuning parameters
+    # model.write('tune v-{} P-{} T-{}.prm'.format(len(G.vertices), P, T))
+    print model
+    # for var in model.getVars():
+    #     var.Start = 0
     model.optimize()
+    # print model
     if model.Status != gurobipy.GRB.OPTIMAL:
         print "warning, model not solved to optimality."
+    else:
+        print "# attractors = {}".format(model.ObjVal)
     # for constr in model.getConstrs():
     #     print constr
-    print "# attractors = {}".format(model.ObjVal)
     # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
     #        if re.match("a_[0-9]*_[0-9]*", v.varName)]  # abs(v.obj) > 1e-6
     # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
@@ -91,7 +103,7 @@ def find_min_attractors_model(G):
     for i, v in enumerate(G.vertices):
         truth_table_size = 2**len(v.predecessors())
         function_variables = [sympy.symbols("f_{}_{}".format(i, j)) for j in range(truth_table_size)]
-        v.function = functools.partial(logic.variable_bound_boolean_func, function_variables)
+        v.function = logic.PreRandomizedBooleanSymbolicFunc(function_variables)
 
     T = 2**len(G.vertices)
     iteration = 1
@@ -160,11 +172,49 @@ def write_sat_sampling_analysis_table(n_repeats, num_vertices_bound, output_path
         writer = csv.writer(output_file)
         writer.writerows(lines)
 
+
+def stochastic_attractor_estimation(G, n_walks, max_walk_len=None):
+    if not max_walk_len:
+        max_walk_len = 2**len(G.vertices)
+
+    start = time.time()
+    attractors = stochastic.estimate_attractors(G, n_walks=n_walks, max_walk_len=max_walk_len)
+    end = time.time()
+
+    total_states = len(reduce(lambda s1, s2: s1.union(s2), [basin for _, basin in attractors]))
+    average_length = sum(len(attractor) for attractor, _ in attractors) / float(len(attractors))
+    average_basin = sum(len(basin) for _, basin in attractors) / float(len(attractors))
+    print "Time taken:{:.2f} seconds".format(end - start)
+    print "Estimated attractors:{}.\nAverage length:{:.2f}, " \
+          "\nAverage Basin length:{:.2f}.\nTotal states covered:{}".format(len(attractors), average_length,
+                                                                          average_basin, total_states)
+
+
+def write_random_graph_estimations_sampling(n_graphs, vertices_bounds, indegree_bounds,
+                                            restrict_symmetric_threshold, path):
+    res = [["vertices", "edges", "attractors", "states_visited", "average_attractor_length", "average_basin_size"]]
+    for i in range(n_graphs):
+        n = random.randint(*vertices_bounds)
+        G = graphs.Network.generate_random(n_vertices=n, indegree_bounds=indegree_bounds,
+                                           restrict_signed_symmetric_threshold=restrict_symmetric_threshold)
+        attractors = stochastic.estimate_attractors(G, n_walks=min(300, 2*2**n), max_walk_len=80)
+        total_states = len(reduce(lambda s1, s2: s1.union(s2), [basin for _, basin in attractors]))
+        average_length = sum(len(attractor) for attractor, _ in attractors) / float(len(attractors))
+        average_basin = sum(len(basin) for _, basin in attractors) / float(len(attractors))
+        res.append([n, len(G.edges), len(attractors), total_states, average_length, average_basin])
+        print "done {} graphs".format(i + 1)
+    with open(path, 'w') as output_file:
+        writer = csv.writer(output_file)
+        writer.writerows(res)
+
 # G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
 #                    vertex_functions=[sympy.And])
 
 # G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
 #                    vertex_functions=[sympy.Nand, sympy.And])
+
+# G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
+#                    vertex_functions=[sympy.Nand, sympy.Nand])
 
 # G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
 #                    vertex_functions=[lambda x: True, lambda x: False])
@@ -178,14 +228,39 @@ def write_sat_sampling_analysis_table(n_repeats, num_vertices_bound, output_path
 # G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("A", "C"), ("B", "C"), ("B", "A"),
 #                                                         ("C", "A"), ("C", "B")],
 #                    vertex_functions=[sympy.Nor]*3)
+#
+# G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("A", "C"), ("B", "C"), ("B", "A"),
+#                                                         ("C", "A"), ("C", "B")],
+#                    vertex_functions=[sympy.And] + [sympy.Nor] * 2)
+# G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("A", "C"), ("B", "C"), ("B", "A"),
+#                                                         ("C", "A"), ("C", "B")],
+#                    vertex_functions=[lambda y, z: z, lambda x, z: sympy.logic.Not(x),
+#                                      lambda x, y: sympy.logic.Or(sympy.logic.Not(x),  y)])
 
-G = graphs.Network.generate_random(5, edge_ratio=0.1)
+# acyclic, should have 2**#input_nodes attractors of length 1
+G = graphs.Network(vertex_names=["v1", "v2", "v3", "v4", "v5", "v6"],
+                   edges=[("v1", "v4"), ("v2", "v4"), ("v1", "v5"), ("v4","v6")],
+                   vertex_functions=[lambda *args: sympy.Nand(*args)]*6)
+
+# G.randomize_functions(restrict_signed_symmetric_threshold=True)
+# for experiment in range(20):
+#     G.randomize_functions()
+#     stochastic.estimate_attractors(G, n_walks=100, max_walk_len=100)
+#
+# G = graphs.Network.generate_random(20, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=False)
 # print G
-# find_num_attractors(G, use_ilp=True)
+# find_num_attractors_multistage(G, use_ilp=True)
 # find_min_attractors_model(G)
-find_num_attractors_onestage(G)
-# write_sat_sampling_analysis_table(10, 7, "C:/Ariel/Downloads/graph_sampling.csv")
-
+# find_num_attractors_onestage(G, max_len=5, max_num=10, use_sat=False)
+stochastic_attractor_estimation(G, n_walks=100, max_walk_len=100)
+# write_sat_sampling_analysis_table(10, 7, "C:/Users/Ariel/Downloads/graph_sampling.csv")
+# write_random_graph_estimations_sampling(n_graphs=200, vertices_bounds=[3, 100],
+#                                         indegree_bounds=[0, 20], restrict_symmetric_threshold=True,
+#                                         path="C:/Users/Ariel/Downloads/graph_sampling_symmetric_with_input_nodes.csv")
+# write_random_graph_estimations_sampling(n_graphs=200, vertices_bounds=[3, 100],
+#                                         indegree_bounds=[0, 20], restrict_symmetric_threshold=False,
+#                                         path="C:/Users/Ariel/Downloads/graph_sampling.csv")
+#
 
 # TODO: think about asynchronous model?
 # TODO: problem size analysis.
