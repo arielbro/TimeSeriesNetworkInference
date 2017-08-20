@@ -88,4 +88,5 @@ def estimate_attractors(G, n_walks, max_walk_len=None):
     attractor_to_basin = dict()
     for state, attractor in state_to_attractor_mapping.items():
         attractor_to_basin[attractor] = attractor_to_basin.get(attractor, 0) + 1
+    print 'finished estimation'
     return attractor_to_basin.items()
