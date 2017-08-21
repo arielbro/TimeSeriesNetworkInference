@@ -103,9 +103,13 @@ def get_attractors_formula(G, P, T):
     UNIQUE = lambda p1: sympy.And(*[sympy.And(*[(a_matrix[p1, T] & a_matrix[p2, t]) >> ~EQ(p1, p2, T, t)
                                                 for p2 in range(p1 + 1, P)]) for t in range(T)])
 
+    # to reduce symmetry
+    ACTIVES_FIRST = lambda p: True if p == P else (~a_matrix[p, T] >> ~a_matrix[p + 1, T])
+
     ATTRACTORS = sympy.And(*[ACTIVITY_SWITCH(p) & MONOTONE(p) & IF_NON_ACTIVE(p) & CONSISTENT(p) &
                              STABLE(p) & CYCLIC(p) & SIMPLE(p)
-                             & UNIQUE(p) for p in range(P)])
+                             & UNIQUE(p) & ACTIVES_FIRST(p) for p in range(P)])
+
 
     # print ACTIVITY_SWITCH(0)
     # print MONOTONE(0)

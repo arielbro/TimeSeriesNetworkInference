@@ -257,17 +257,17 @@ G = graphs.Network(vertex_names=["v1", "v2", "v3", "v4", "v5", "v6"],
 # print G
 # find_num_attractors_multistage(G, use_ilp=True)
 # find_min_attractors_model(G)
-# find_num_attractors_onestage(G, max_len=5, max_num=10, use_sat=False)
+find_num_attractors_onestage(G, max_len=5, max_num=10, use_sat=False)
 # stochastic_attractor_estimation(G, n_walks=100, max_walk_len=100)
 # write_sat_sampling_analysis_table(10, 7, "C:/Users/Ariel/Downloads/graph_sampling.csv")
-write_random_graph_estimations_sampling(n_graphs=400, vertices_bounds=[3, 100],
-                                        indegree_bounds=[0, 20], restrict_symmetric_threshold=True,
-                                        n_walks=300, max_walk_len=300,
-                                        path="C:/Users/Ariel/Downloads/graph_sampling_symmetric_with_input_nodes.csv")
-write_random_graph_estimations_sampling(n_graphs=400, vertices_bounds=[3, 100],
-                                        indegree_bounds=[0, 5], restrict_symmetric_threshold=False,
-                                        n_walks=300, max_walk_len=300,
-                                        path="C:/Users/Ariel/Downloads/graph_sampling.csv")
+# write_random_graph_estimations_sampling(n_graphs=400, vertices_bounds=[3, 100],
+#                                         indegree_bounds=[0, 20], restrict_symmetric_threshold=True,
+#                                         n_walks=300, max_walk_len=300,
+#                                         path="C:/Users/Ariel/Downloads/graph_sampling_symmetric_with_input_nodes.csv")
+# write_random_graph_estimations_sampling(n_graphs=400, vertices_bounds=[3, 100],
+#                                         indegree_bounds=[0, 5], restrict_symmetric_threshold=False,
+#                                         n_walks=300, max_walk_len=300,
+#                                         path="C:/Users/Ariel/Downloads/graph_sampling.csv")
 
 # TODO: think about asynchronous model?
 # TODO: problem size analysis.

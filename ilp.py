@@ -177,6 +177,11 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
         model.addConstr(sum(equality_indicator_vars) <= len(G.vertices) + 1 - a_matrix[p1, T] - a_matrix[p2, t],
                         name="unique_{}_{}_{}".format(p1, p2, t))
 
+        # To reduce symmetry in solutions (somehting suggested as helping performance)
+        # enforce the active attractors to be the first ones.
+        for p in range(P - 1): # ~a_p,T -> ~a_p+1,T
+            model.addConstr(a_matrix[p, T] >= a_matrix[p + 1, T])
+
     # print_model_constraints(model)
     # print model
     return model, [a_matrix[p, T] for p in range(P)]
