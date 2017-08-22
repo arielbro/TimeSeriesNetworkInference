@@ -55,7 +55,7 @@ def find_num_attractors_multistage(G, use_ilp):
     print "#attractors:{}".format(P)
 
 
-def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False):
+def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, verbose=False):
     T = 2 ** len(G.vertices) if not max_len else max_len
     P = 2 ** len(G.vertices) if not max_num else max_num
     start_time = time.time()
@@ -76,7 +76,8 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False):
     else:
         model, active_ilp_vars = ilp.direct_graph_to_ilp(G, T, P, find_bool_model=False)
     model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
-    model.params.LogToConsole = 0
+    if not verbose:
+        model.params.LogToConsole = 0
 
     # model.tune()  # try automatic parameter tuning
     # model.getTuneResult(0)  # take best tuning parameters
@@ -253,11 +254,11 @@ def write_random_graph_estimations_sampling(n_graphs, vertices_bounds, indegree_
 #     G.randomize_functions()
 #     stochastic.estimate_attractors(G, n_walks=100, max_walk_len=100)
 #
-G = graphs.Network.generate_random(5, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=False)
+G = graphs.Network.generate_random(10, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=True)
 # print G
 # find_num_attractors_multistage(G, use_ilp=True)
 # find_min_attractors_model(G)
-find_num_attractors_onestage(G, max_len=20, max_num=11, use_sat=False)
+find_num_attractors_onestage(G, max_len=5, max_num=10, use_sat=False, verbose=False)
 # stochastic_attractor_estimation(G, n_walks=100, max_walk_len=100)
 # write_sat_sampling_analysis_table(10, 7, "C:/Users/Ariel/Downloads/graph_sampling.csv")
 # write_random_graph_estimations_sampling(n_graphs=400, vertices_bounds=[3, 100],

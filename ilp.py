@@ -202,6 +202,11 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
         if p != P - 1:
             model.addConstr(final_states_keys[p] >= final_states_keys[p + 1])
 
+    # Constraint the number of active attractors using 2**#input_nodes, P as lower and upper bounds.
+    n_inputs = len([v for v in G.vertices if len(v.predecessors()) == 0])
+    model.addConstr(sum(a_matrix[p, T] for p in range(P)) <= P)
+    model.addConstr(sum(a_matrix[p, T] for p in range(P)) >= 2**n_inputs)
+
     # print_model_constraints(model)
     # print model
     return model, [a_matrix[p, T] for p in range(P)]
