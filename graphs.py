@@ -31,7 +31,11 @@ class Network:
                "]\n\tE=" + list_repr(self.edges) + \
                "\n\tfunctions:"
         for v in self.vertices:
-            res += "\n\t\t" + str(v.function) if v.function is not None else "input node"
+            res += "\n\t\t"
+            if v.function is not None:
+                res += str(v.function)
+            else:
+                res += "input node"
         return res
 
     def __repr__(self):
