@@ -66,6 +66,15 @@ def logic_to_ilp(formula):
     return model, formulas_to_variables
 
 
+def unique_state_key(ordered_state_variables):
+    """
+    For small graphs, assign a unique numbering to a state, by summing 2**i over active vertices.
+    :param Ordered_state_variables: an ordered fixed iterable of vertex state variables.
+    :return: A key identifying this state uniquely among all other states.
+    """
+    return sum(2**i * var for i, var in enumerate(ordered_state_variables))
+
+
 def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
     T = 2**len(G.vertices) if not max_len else max_len
     P = 2**len(G.vertices) if not max_num else max_num
@@ -177,10 +186,21 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
         model.addConstr(sum(equality_indicator_vars) <= len(G.vertices) + 1 - a_matrix[p1, T] - a_matrix[p2, t],
                         name="unique_{}_{}_{}".format(p1, p2, t))
 
-        # To reduce symmetry in solutions (somehting suggested as helping performance)
-        # enforce the active attractors to be the first ones.
-        for p in range(P - 1): # ~a_p,T -> ~a_p+1,T
-            model.addConstr(a_matrix[p, T] >= a_matrix[p + 1, T])
+    # To reduce symmetry, using the order defined by a unique state id function,
+    # constraint each attractor to have its final state be the largest one, and
+    # constraint the final states of attractors to be monotone decreasing amongst.
+    # Also requires the k active attractors to be the first ones. SHOULD TODO: verify
+    # result in only one optimal solution.
+    final_states_keys = [unique_state_key([v_matrix[i, p, T] for i in range(len(G.vertices))])
+                         for p in range(P)]
+    for p in range(P):
+        for t in range(T):
+            current_state_key = unique_state_key([v_matrix[i, p, t] for i in range(len(G.vertices))])
+            # works for inactive states attractors/time points too!
+            model.addConstr(final_states_keys[p] >= current_state_key)
+
+        if p != P - 1:
+            model.addConstr(final_states_keys[p] >= final_states_keys[p + 1])
 
     # print_model_constraints(model)
     # print model

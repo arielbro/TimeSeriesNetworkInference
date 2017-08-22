@@ -244,20 +244,20 @@ def write_random_graph_estimations_sampling(n_graphs, vertices_bounds, indegree_
 #                                      lambda x, y: sympy.logic.Or(sympy.logic.Not(x),  y)])
 
 # acyclic, should have 2**#input_nodes attractors of length 1
-G = graphs.Network(vertex_names=["v1", "v2", "v3", "v4", "v5", "v6"],
-                   edges=[("v1", "v4"), ("v2", "v4"), ("v1", "v5"), ("v4","v6")],
-                   vertex_functions=[lambda *args: sympy.Nand(*args)]*6)
+# G = graphs.Network(vertex_names=["v1", "v2", "v3", "v4", "v5", "v6"],
+#                    edges=[("v1", "v4"), ("v2", "v4"), ("v1", "v5"), ("v4","v6")],
+#                    vertex_functions=[lambda *args: sympy.Nand(*args)]*6)
 
 # G.randomize_functions(restrict_signed_symmetric_threshold=True)
 # for experiment in range(20):
 #     G.randomize_functions()
 #     stochastic.estimate_attractors(G, n_walks=100, max_walk_len=100)
 #
-# G = graphs.Network.generate_random(20, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=False)
+G = graphs.Network.generate_random(5, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=False)
 # print G
 # find_num_attractors_multistage(G, use_ilp=True)
 # find_min_attractors_model(G)
-find_num_attractors_onestage(G, max_len=5, max_num=10, use_sat=False)
+find_num_attractors_onestage(G, max_len=20, max_num=11, use_sat=False)
 # stochastic_attractor_estimation(G, n_walks=100, max_walk_len=100)
 # write_sat_sampling_analysis_table(10, 7, "C:/Users/Ariel/Downloads/graph_sampling.csv")
 # write_random_graph_estimations_sampling(n_graphs=400, vertices_bounds=[3, 100],
