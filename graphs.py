@@ -31,7 +31,7 @@ class Network:
                "]\n\tE=" + list_repr(self.edges) + \
                "\n\tfunctions:"
         for v in self.vertices:
-            res += "\n\t\t"
+            res += "\n\t\t f_{}: ".format(v.name)
             if v.function is not None:
                 res += str(v.function)
             else:

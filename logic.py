@@ -55,7 +55,7 @@ class PreRandomizedSymmetricThresholdFunction:
         return count >= self.threshold
 
     def __str__(self):
-        return "f: signs={}, threshold={}".format(utility.list_repr(self.signs), self.threshold)
+        return "signs={}, threshold={}".format(utility.list_repr(self.signs), self.threshold)
 
     def __repr__(self):
         return self.__str__()
