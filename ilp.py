@@ -70,6 +70,8 @@ def unique_state_key(ordered_state_variables):
     :param Ordered_state_variables: an ordered fixed iterable of vertex state variables.
     :return: A key identifying this state uniquely among all other states.
     """
+    if len(ordered_state_variables) > 29:
+        raise Exception("Can't use unique state key with graphs of size >=30")
     return sum(2**i * var for i, var in enumerate(ordered_state_variables))
 
 
@@ -199,7 +201,7 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
                             name="key_order_in_attractor_{}_{}".format(p, t))
 
         if p != P - 1:  # as long as keys are uniques, this forces uniqueness if p and p + 1 are both active
-            model.addConstr(final_states_keys[p] <= final_states_keys[p + 1]
+            model.addConstr(final_states_keys[p] >= final_states_keys[p + 1]
                             - 1 + a_matrix[p, T] + a_matrix[p + 1, T],
                                                             name="key_order_between_attractors_{}".format(p))
     model.update()
@@ -212,7 +214,7 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
         model.addConstr(sum(a_matrix[p, T] for p in range(P)) >= 2**n_inputs, name="lower_objective_bound")
     model.update()
 
-    print_model_constraints(model)
+    # print_model_constraints(model)
     # print model
     return model, [a_matrix[p, T] for p in range(P)]
 
