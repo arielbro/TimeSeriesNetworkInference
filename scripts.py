@@ -3,8 +3,8 @@ import attractors, graphs, logic, stochastic, cnet_parser, ilp, sympy
 # G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
 #                    vertex_functions=[sympy.And])
 #
-# G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
-#                    vertex_functions=[sympy.Nand, sympy.And])
+G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
+                   vertex_functions=[sympy.Nand, sympy.And])
 #
 # G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
 #                    vertex_functions=[sympy.Nand, sympy.Nand])
@@ -61,8 +61,8 @@ import attractors, graphs, logic, stochastic, cnet_parser, ilp, sympy
 #                                         n_walks=300, max_walk_len=300,
 #                                         path="C:/Users/Ariel/Downloads/graph_sampling_only_simple_gates.csv")
 
-G = cnet_parser.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
-               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
+# G = cnet_parser.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+#                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\arabidopsis.cnet.txt")
 input_nodes = [u for u in G.vertices if len(u.predecessors()) == 0]
 # stochastic_estimation = stochastic.estimate_attractors(G, n_walks=300, max_walk_len=30)
 ilp_estimation = attractors.find_num_attractors_onestage(G, max_len=1, max_num=1, use_sat=False, verbose=True)

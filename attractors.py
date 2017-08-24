@@ -84,6 +84,10 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     # print model
     if model.Status != gurobipy.GRB.OPTIMAL:
         print "warning, model not solved to optimality."
+        print "writing IIS data to model_iis.ilp"
+        model.computeIIS
+        model.write("./model_iis.ilp")
+
     else:
         print "# attractors = {}".format(model.ObjVal)
     # for constr in model.getConstrs():

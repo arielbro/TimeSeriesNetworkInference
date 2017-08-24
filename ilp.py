@@ -195,17 +195,24 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
         for t in range(T):
             current_state_key = unique_state_key([v_matrix[i, p, t] for i in range(len(G.vertices))])
             # works for inactive states attractors/time points too!
-            model.addConstr(final_states_keys[p] >= current_state_key)
+            model.addConstr(final_states_keys[p] >= current_state_key,
+                            name="key_order_in_attractor_{}_{}".format(p, t))
 
-        if p != P - 1:  # as long as keys are uniques, this forces uniqueness
-            model.addConstr(final_states_keys[p] >= final_states_keys[p + 1] + 1)
+        if p != P - 1:  # as long as keys are uniques, this forces uniqueness if p and p + 1 are both active
+            model.addConstr(final_states_keys[p] <= final_states_keys[p + 1]
+                            - 1 + a_matrix[p, T] + a_matrix[p + 1, T],
+                                                            name="key_order_between_attractors_{}".format(p))
+    model.update()
 
     # Constraint the number of active attractors using 2**#input_nodes, P as lower and upper bounds.
+    # lower bound can only be used if the maximal theoretical attractor length is allowed.
     n_inputs = len([v for v in G.vertices if len(v.predecessors()) == 0])
-    model.addConstr(sum(a_matrix[p, T] for p in range(P)) <= P)
-    model.addConstr(sum(a_matrix[p, T] for p in range(P)) >= 2**n_inputs)
+    model.addConstr(sum(a_matrix[p, T] for p in range(P)) <= P, name="upper_objective_bound")
+    if T == 2**len(G.vertices):
+        model.addConstr(sum(a_matrix[p, T] for p in range(P)) >= 2**n_inputs, name="lower_objective_bound")
+    model.update()
 
-    # print_model_constraints(model)
+    print_model_constraints(model)
     # print model
     return model, [a_matrix[p, T] for p in range(P)]
 
