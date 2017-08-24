@@ -17,7 +17,7 @@ def parse_cnet(path):
     with open(path, 'r') as cnet_file:
         text = cnet_file.read()
     # TODO: if runtime is long, stop searching each section for each pattern and use your memory
-    sections = text.split("\n\n")
+    sections = re.split("\n\s*\n", text)
     bool_funcs = []
     edges = []
     last_v_index = -1
@@ -37,7 +37,7 @@ def parse_cnet(path):
         if ".n" in section:
             # boolean functions
             v_index_str, v_n_args_str, v_args_str = re.search(
-                r"\.n\s+([0-9]+)[ \t]+([0-9]+)[ \t]([^\n]*)\n", section).groups()
+                r"\.n\s+([0-9]+)[ \t]+([0-9]+)((?:[ \t][0-9]+)*)\n", section).groups()
             v_index = int(v_index_str) - 1  # cnet indices are 1 based, convert.
             assert v_index == last_v_index + 1
             last_v_index = v_index

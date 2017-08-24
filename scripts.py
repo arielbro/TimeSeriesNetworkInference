@@ -65,5 +65,5 @@ G = cnet_parser.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
 input_nodes = [u for u in G.vertices if len(u.predecessors()) == 0]
 # stochastic_estimation = stochastic.estimate_attractors(G, n_walks=300, max_walk_len=30)
-ilp_estimation = attractors.find_num_attractors_onestage(G, max_len=1, max_num=15, use_sat=False, verbose=True)
+ilp_estimation = attractors.find_num_attractors_onestage(G, max_len=1, max_num=1, use_sat=False, verbose=True)
 pass
