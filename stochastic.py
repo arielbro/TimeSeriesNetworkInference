@@ -1,5 +1,5 @@
 import random
-import time
+import sympy
 
 
 def rotate(l, n):
@@ -33,6 +33,8 @@ def next_network_state(G, current_state):
             bool_res.append(v.function(*[bool(current_state[u.index]) for u in v.predecessors()]))
         else:
             bool_res.append(cur_value)
+    for b in bool_res:
+        assert isinstance(b, bool) or b is sympy.true or b is sympy.false
     binary_res = tuple(0 if not b else 1 for b in bool_res)
     return binary_res
 
@@ -88,5 +90,5 @@ def estimate_attractors(G, n_walks, max_walk_len=None):
     attractor_to_basin = dict()
     for state, attractor in state_to_attractor_mapping.items():
         attractor_to_basin[attractor] = attractor_to_basin.get(attractor, 0) + 1
-    print 'finished estimation'
+    # print 'finished estimation'
     return attractor_to_basin.items()

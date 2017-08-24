@@ -25,7 +25,7 @@ class PreRandomizedBooleanSymbolicFunc:
     def __call__(self, *input_values):
         if isinstance(self.formula, bool) or len(self.formula.free_symbols) == 0:
             return self.formula
-        return self.formula.subs(zip(self.input_vars), input_values)
+        return self.formula.subs(zip(self.input_vars, input_values))
 
     def __str__(self):
         return " " + str(self.formula)
@@ -105,7 +105,7 @@ def get_attractors_formula(G, P, T):
                                                 for p2 in range(p1 + 1, P)]) for t in range(T)])
 
     # to reduce symmetry
-    ACTIVES_FIRST = lambda p: True if p == P else (~a_matrix[p, T] >> ~a_matrix[p + 1, T])
+    ACTIVES_FIRST = lambda p: True if p == P - 1 else (~a_matrix[p, T] >> ~a_matrix[p + 1, T])
 
     ATTRACTORS = sympy.And(*[ACTIVITY_SWITCH(p) & MONOTONE(p) & IF_NON_ACTIVE(p) & CONSISTENT(p) &
                              STABLE(p) & CYCLIC(p) & SIMPLE(p)

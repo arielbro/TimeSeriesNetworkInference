@@ -1,8 +1,6 @@
-from utility import list_repr
 import gurobipy
 import sympy
 import numpy
-import math
 import itertools
 
 
@@ -168,23 +166,23 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
                         name="simple_{}_{}".format(t, p))
 
     # UNIQUE
-    for t, (p1, p2) in itertools.product(range(T), itertools.combinations(range(P), 2)):
-        # (a[p1, T] & a[p2, t]) >> ~EQ(p1, p2, T, t)
-        equality_indicator_vars = [model.addVar(vtype=gurobipy.GRB.BINARY,
-                                   name="eq_unique_ind_{}_{}_{}_{}".format(i, p1, p2, t))
-                                   for i in range(len(G.vertices))]
-        for i in range(len(G.vertices)):
-            model.addConstr(equality_indicator_vars[i] <= 1 + v_matrix[i, p1, T] - v_matrix[i, p2, t],
-                            name="eq_unique_ind_0_{}_{}_{}_{}".format(i, p1, p2, t))
-            model.addConstr(equality_indicator_vars[i] <= 1 - v_matrix[i, p1, T] + v_matrix[i, p2, t],
-                            name="eq_unique_ind_1_{}_{}_{}_{}".format(i, p1, p2, t))
-            model.addConstr(equality_indicator_vars[i] >= -1 + v_matrix[i, p1, T] + v_matrix[i, p2, t],
-                            name="eq_unique_ind_2_{}_{}_{}_{}".format(i, p1, p2, t))
-            model.addConstr(equality_indicator_vars[i] >= 1 - v_matrix[i, p1, T] - v_matrix[i, p2, t],
-                            name="eq_unique_ind_3_{}_{}_{}_{}".format(i, p1, p2, t))
-        # it holds that ~EQ(p1, p2, T, t) <=> sum(equality_indicator_vars) <  len(G.vertices), now create the >> part
-        model.addConstr(sum(equality_indicator_vars) <= len(G.vertices) + 1 - a_matrix[p1, T] - a_matrix[p2, t],
-                        name="unique_{}_{}_{}".format(p1, p2, t))
+    # for t, (p1, p2) in itertools.product(range(T), itertools.combinations(range(P), 2)):
+    #     # (a[p1, T] & a[p2, t]) >> ~EQ(p1, p2, T, t)
+    #     equality_indicator_vars = [model.addVar(vtype=gurobipy.GRB.BINARY,
+    #                                name="eq_unique_ind_{}_{}_{}_{}".format(i, p1, p2, t))
+    #                                for i in range(len(G.vertices))]
+    #     for i in range(len(G.vertices)):
+    #         model.addConstr(equality_indicator_vars[i] <= 1 + v_matrix[i, p1, T] - v_matrix[i, p2, t],
+    #                         name="eq_unique_ind_0_{}_{}_{}_{}".format(i, p1, p2, t))
+    #         model.addConstr(equality_indicator_vars[i] <= 1 - v_matrix[i, p1, T] + v_matrix[i, p2, t],
+    #                         name="eq_unique_ind_1_{}_{}_{}_{}".format(i, p1, p2, t))
+    #         model.addConstr(equality_indicator_vars[i] >= -1 + v_matrix[i, p1, T] + v_matrix[i, p2, t],
+    #                         name="eq_unique_ind_2_{}_{}_{}_{}".format(i, p1, p2, t))
+    #         model.addConstr(equality_indicator_vars[i] >= 1 - v_matrix[i, p1, T] - v_matrix[i, p2, t],
+    #                         name="eq_unique_ind_3_{}_{}_{}_{}".format(i, p1, p2, t))
+    #     # it holds that ~EQ(p1, p2, T, t) <=> sum(equality_indicator_vars) <  len(G.vertices), now create the >> part
+    #     model.addConstr(sum(equality_indicator_vars) <= len(G.vertices) + 1 - a_matrix[p1, T] - a_matrix[p2, t],
+    #                     name="unique_{}_{}_{}".format(p1, p2, t))
 
     # To reduce symmetry, using the order defined by a unique state id function,
     # constraint each attractor to have its final state be the largest one, and
@@ -199,8 +197,8 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
             # works for inactive states attractors/time points too!
             model.addConstr(final_states_keys[p] >= current_state_key)
 
-        if p != P - 1:
-            model.addConstr(final_states_keys[p] >= final_states_keys[p + 1])
+        if p != P - 1:  # as long as keys are uniques, this forces uniqueness
+            model.addConstr(final_states_keys[p] >= final_states_keys[p + 1] + 1)
 
     # Constraint the number of active attractors using 2**#input_nodes, P as lower and upper bounds.
     n_inputs = len([v for v in G.vertices if len(v.predecessors()) == 0])

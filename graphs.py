@@ -1,7 +1,4 @@
-import itertools
 import random
-import functools
-import sympy
 from logic import PreRandomizedBooleanSymbolicFunc, PreRandomizedSymmetricThresholdFunction
 from utility import list_repr
 
@@ -12,14 +9,14 @@ class Network:
         if not vertex_names:
             assert not edges
             assert not vertex_functions
-        for (x,y) in edges:
-            assert x in vertex_names and y in vertex_names
+        for (x, y) in edges:
+            assert (x in vertex_names and y in vertex_names)
         if not vertex_functions:
             vertex_functions = [None] * len(vertex_names)
         self.vertices = [Vertex(self, name, function, i) for
                          name, function, i in zip(vertex_names, vertex_functions, range(len(vertex_names)))] \
             if vertex_names else []  # order important!
-        self.edges = [(self.get_vertex(a), self.get_vertex(b)) for a, b in edges]
+        self.edges = {(self.get_vertex(a).index, self.get_vertex(b).index) for a, b in edges}
 
     def get_vertex(self, name):
         matches = [vertex for vertex in self.vertices if vertex.name == name]
@@ -28,7 +25,7 @@ class Network:
 
     def __str__(self):
         res = "Graph: \n\tV=" + list_repr(self.vertices) + \
-               "]\n\tE=" + list_repr(self.edges) + \
+               "]\n\tE=" + list_repr([(self.vertices[a].name, self.vertices[b].name) for a, b in self.edges]) + \
                "\n\tfunctions:"
         for v in self.vertices:
             res += "\n\t\t f_{}: ".format(v.name)
@@ -41,7 +38,8 @@ class Network:
     def __repr__(self):
         return str(self)
 
-    def randomize_functions(self, restrict_signed_symmetric_threshold=False):
+    def randomize_functions(self, restrict_signed_symmetric_threshold=False,
+                            restrict_and_or_gates=False):
         for v in self.vertices:
             n = len(v.predecessors())
             if not restrict_signed_symmetric_threshold:
@@ -53,21 +51,22 @@ class Network:
                     v.function = None
                 else:
                     signs = [random.choice([False, True]) for _ in range(2**n)]
-                    threshold = random.randint(1, n)
+                    threshold = random.randint(1, n) if not restrict_and_or_gates else random.choice([1, n])
                     v.function = PreRandomizedSymmetricThresholdFunction(signs, threshold)
 
     @staticmethod
-    def generate_random(n_vertices, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=False):
+    def generate_random(n_vertices, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=False,
+                        restrict_and_or_gates=False):
         vertices = list(range(n_vertices))
-        edges = []
+        edges = set()
         for v in vertices:
             indegree = random.randint(indegree_bounds[0], min(indegree_bounds[1], n_vertices))
             predecessors = random.sample(vertices, indegree)
             for u in predecessors:
-                edges.append((u, v))
+                edges.add((u.index, v.index))
 
         G = Network(vertices, edges)
-        G.randomize_functions(restrict_signed_symmetric_threshold)
+        G.randomize_functions(restrict_signed_symmetric_threshold, restrict_and_or_gates)
         return G
 
 
@@ -81,7 +80,8 @@ class Vertex:
 
     def predecessors(self):
         if not self.precomputed_predecessors:
-            predecessors = [u for u in self.graph.vertices if (u, self) in self.graph.edges]
+            predecessors = [self.graph.vertices[u_ind] for u_ind in range(len(self.graph.vertices)) if
+                            (u_ind, self.index) in self.graph.edges]
             self.precomputed_predecessors = predecessors
         return self.precomputed_predecessors
 
