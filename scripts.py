@@ -40,9 +40,9 @@ import attractors, graphs, logic, stochastic, cnet_parser, ilp, sympy
 #     G.randomize_functions()
 #     stochastic.estimate_attractors(G, n_walks=100, max_walk_len=100)
 #
-# G = graphs.Network.generate_random(10, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=True)
+G = graphs.Network.generate_random(10, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=True)
 # print G
-# attractors.find_num_attractors_multistage(G, use_ilp=True)
+attractors.find_num_attractors_multistage(G, use_ilp=True)
 # attractors.find_min_attractors_model(G)
 # attractors.find_num_attractors_onestage(G, max_len=10, max_num=10, use_sat=False, verbose=False)
 # attractors.stochastic_attractor_estimation(G, n_walks=100, max_walk_len=100)
@@ -61,9 +61,12 @@ import attractors, graphs, logic, stochastic, cnet_parser, ilp, sympy
 #                                         n_walks=300, max_walk_len=300,
 #                                         path="C:/Users/Ariel/Downloads/graph_sampling_only_simple_gates.csv")
 
-G = cnet_parser.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
-               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\thelper.cnet.txt")
-input_nodes = [u for u in G.vertices if len(u.predecessors()) == 0]
+# G = cnet_parser.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+#                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
+# input_nodes = [u for u in G.vertices if len(u.predecessors()) == 0]
 # stochastic_estimation = stochastic.estimate_attractors(G, n_walks=300, max_walk_len=30)
-ilp_estimation = attractors.find_num_attractors_onestage(G, max_len=3, max_num=3, use_sat=False, verbose=True)
-pass
+# ilp_estimation = attractors.find_num_attractors_onestage(G, max_len=3, max_num=120, use_sat=False, verbose=True)
+# attractors.write_random_fixed_graph_estimations_sampling(G=G, n_iter=400, restrict_symmetric_threshold=True,
+#                                                          restrict_and_or_gates=False,
+#                                                          n_walks=1500, max_walk_len=1000,
+#                                                          path="C:/Users/Ariel/Downloads/MAPK_large2_sampling_symmetric.csv")

@@ -215,6 +215,26 @@ def write_random_graph_estimations_sampling(n_graphs, vertices_bounds, indegree_
         writer = csv.writer(output_file)
         writer.writerows(res)
 
+def write_random_fixed_graph_estimations_sampling(G, n_iter, restrict_symmetric_threshold,
+                                                  restrict_and_or_gates, n_walks, max_walk_len, path):
+    res = [["vertices", "edges", "input_nodes", "attractors", "states_visited", "average_attractor_length",
+            "average_basin_size"]]
+    n = len(G.vertices)
+    input_nodes = len([v for v in G.vertices if len(v.predecessors()) == 0])  # not counting semantic inputs
+    for i in range(n_iter):
+        G.randomize_functions(restrict_signed_symmetric_threshold=restrict_symmetric_threshold,
+                              restrict_and_or_gates=restrict_and_or_gates)
+        attractors = stochastic.estimate_attractors(G, n_walks=min(n_walks, 2 * 2 ** n), max_walk_len=max_walk_len)
+        total_states = sum([basin for _, basin in attractors])
+        average_length = sum(len(attractor) for attractor, _ in attractors) / float(len(attractors))
+        average_basin = total_states / float(len(attractors))
+        res.append([n, len(G.edges), input_nodes, len(attractors), total_states, average_length, average_basin])
+        print "done {} graphs".format(i + 1)
+    with open(path, 'w') as output_file:
+        writer = csv.writer(output_file)
+        writer.writerows(res)
+
+
 # TODO: think about asynchronous model?
 # TODO: problem size analysis.
 # TODO: measure and plot running time versus P, T and |V|

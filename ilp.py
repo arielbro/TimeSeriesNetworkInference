@@ -2,6 +2,7 @@ import gurobipy
 import sympy
 import numpy
 import itertools
+import time
 
 
 def recursive_logic_to_var(formula, model, formulas_to_variables):
@@ -76,6 +77,7 @@ def unique_state_key(ordered_state_variables):
 
 
 def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
+    start = time.time()
     T = 2**len(G.vertices) if not max_len else max_len
     P = 2**len(G.vertices) if not max_num else max_num
 
@@ -216,6 +218,7 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
 
     # print_model_constraints(model)
     # print model
+    print "Time taken for model preparation:{:.2f} seconds".format(time.time() - start)
     return model, [a_matrix[p, T] for p in range(P)]
 
 

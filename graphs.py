@@ -63,7 +63,7 @@ class Network:
             indegree = random.randint(indegree_bounds[0], min(indegree_bounds[1], n_vertices))
             predecessors = random.sample(vertices, indegree)
             for u in predecessors:
-                edges.add((u.index, v.index))
+                edges.add((u, v))
 
         G = Network(vertices, edges)
         G.randomize_functions(restrict_signed_symmetric_threshold, restrict_and_or_gates)
