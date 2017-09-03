@@ -80,6 +80,7 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
     start = time.time()
     T = 2**len(G.vertices) if not max_len else max_len
     P = 2**len(G.vertices) if not max_num else max_num
+    n = len(G.vertices)
 
     model = gurobipy.Model()
 
@@ -98,13 +99,14 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
                 model.update()
                 boolean_vars_dict[(i, j)] = new_var
 
-    for i, p, t in itertools.product(range(len(G.vertices)), range(P), range(T + 1)):
+    for p, t in itertools.product(range(P), range(T + 1)):
         # assert activity var meaning (ACTIVITY_SWITCH, MONOTONE, IF_NON_ACTIVE)
-        model.addConstr(a_matrix[p, t] >= v_matrix[i, p, t], name="activity_switch_{}_{}_{}".format(i, p, t))
+        model.addConstr(n * a_matrix[p, t] >= sum(v_matrix[i, p, t] for i in range(n)),
+                        name="activity_switch_{}_{}".format(p, t))
         if t != T:
-            model.addConstr(a_matrix[p, t + 1] >= a_matrix[p, t], name="monotone_{}_{}_{}".format(i, p, t))
+            model.addConstr(a_matrix[p, t + 1] >= a_matrix[p, t], name="monotone_{}_{}".format(p, t))
         else:
-            model.addConstr(a_matrix[p, T] <= a_matrix[p, T - 1], name="if_non_active_{}_{}".format(i, p))
+            model.addConstr(a_matrix[p, T] <= a_matrix[p, T - 1], name="if_non_active_{}".format(p))
         model.update()
 
 
@@ -187,6 +189,7 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
     #     # it holds that ~EQ(p1, p2, T, t) <=> sum(equality_indicator_vars) <  len(G.vertices), now create the >> part
     #     model.addConstr(sum(equality_indicator_vars) <= len(G.vertices) + 1 - a_matrix[p1, T] - a_matrix[p2, t],
     #                     name="unique_{}_{}_{}".format(p1, p2, t))
+    # model.update()
 
     # To reduce symmetry, using the order defined by a unique state id function,
     # constraint each attractor to have its final state be the largest one, and

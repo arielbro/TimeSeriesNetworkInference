@@ -1,3 +1,4 @@
+import time
 import attractors, graphs, logic, stochastic, cnet_parser, ilp, sympy
 
 # G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
@@ -40,12 +41,27 @@ import attractors, graphs, logic, stochastic, cnet_parser, ilp, sympy
 #     G.randomize_functions()
 #     stochastic.estimate_attractors(G, n_walks=100, max_walk_len=100)
 #
-G = graphs.Network.generate_random(10, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=True)
+# G = graphs.Network.generate_random(10, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=True)
 # print G
-attractors.find_num_attractors_multistage(G, use_ilp=True)
+# attractors.find_num_attractors_multistage(G, use_ilp=False)
 # attractors.find_min_attractors_model(G)
-# attractors.find_num_attractors_onestage(G, max_len=10, max_num=10, use_sat=False, verbose=False)
-# attractors.stochastic_attractor_estimation(G, n_walks=100, max_walk_len=100)
+
+times = []
+for i in range(10):
+    start_time = time.time()
+    G = graphs.Network.generate_random(7, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=True)
+    attractors.find_num_attractors_onestage(G, max_len=5, max_num=5, use_sat=True, verbose=False)
+    times.append(time.time() - start_time)
+print "average run time for sat-based:{:.2f}".format(sum(times) / float(len(times)))
+times = []
+for i in range(10):
+    start_time = time.time()
+    G = graphs.Network.generate_random(7, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=True)
+    attractors.find_num_attractors_onestage(G, max_len=5, max_num=5, use_sat=False, verbose=False)
+    times.append(time.time() - start_time)
+print "average run time for direct ILP:{:.2f}".format(sum(times) / float(len(times)))
+
+        # attractors.stochastic_attractor_estimation(G, n_walks=100, max_walk_len=100)
 # attractors.write_sat_sampling_analysis_table(10, 7, "C:/Users/Ariel/Downloads/graph_sampling.csv")
 # attractors.write_random_graph_estimations_sampling(n_graphs=400, vertices_bounds=[3, 100],
 #                                         indegree_bounds=[0, 20], restrict_symmetric_threshold=True,
