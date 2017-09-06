@@ -2,11 +2,11 @@ import time
 import attractors, graphs, logic, stochastic, cnet_parser, ilp, sympy
 
 # G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
-#                    vertex_functions=[sympy.And])
+#                    vertex_functions=[sympy.Nand])
 #
 # G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
 #                    vertex_functions=[sympy.Nand, sympy.And])
-#
+
 # G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
 #                    vertex_functions=[sympy.Nand, sympy.Nand])
 #
@@ -41,25 +41,27 @@ import attractors, graphs, logic, stochastic, cnet_parser, ilp, sympy
 #     G.randomize_functions()
 #     stochastic.estimate_attractors(G, n_walks=100, max_walk_len=100)
 #
-# G = graphs.Network.generate_random(10, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=True)
+G = graphs.Network.generate_random(20, indegree_bounds=[1, 3], restrict_signed_symmetric_threshold=True)
 # print G
 # attractors.find_num_attractors_multistage(G, use_ilp=False)
+attractors.find_num_attractors_onestage(G, use_sat=False, max_len=5, max_num=5)
 # attractors.find_min_attractors_model(G)
 
-times = []
-for i in range(10):
-    start_time = time.time()
-    G = graphs.Network.generate_random(7, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=True)
-    attractors.find_num_attractors_onestage(G, max_len=5, max_num=5, use_sat=True, verbose=False)
-    times.append(time.time() - start_time)
-print "average run time for sat-based:{:.2f}".format(sum(times) / float(len(times)))
-times = []
-for i in range(10):
-    start_time = time.time()
-    G = graphs.Network.generate_random(7, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=True)
-    attractors.find_num_attractors_onestage(G, max_len=5, max_num=5, use_sat=False, verbose=False)
-    times.append(time.time() - start_time)
-print "average run time for direct ILP:{:.2f}".format(sum(times) / float(len(times)))
+# times = []
+# for i in range(20):
+#     start_time = time.time()
+#     G = graphs.Network.generate_random(7, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=True)
+#     attractors.find_num_attractors_onestage(G, max_len=5, max_num=5, use_sat=True, verbose=False)
+#     times.append(time.time() - start_time)
+# ave_sat = sum(times) / float(len(times))
+# times = []
+# for i in range(20):
+#     start_time = time.time()
+#     G = graphs.Network.generate_random(7, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=True)
+#     attractors.find_num_attractors_onestage(G, max_len=5, max_num=5, use_sat=False, verbose=False)
+#     times.append(time.time() - start_time)
+# print "average run time for sat-based:{:.2f}".format(ave_sat)
+# print "average run time for direct ILP:{:.2f}".format(sum(times) / float(len(times)))
 
         # attractors.stochastic_attractor_estimation(G, n_walks=100, max_walk_len=100)
 # attractors.write_sat_sampling_analysis_table(10, 7, "C:/Users/Ariel/Downloads/graph_sampling.csv")
@@ -83,6 +85,6 @@ print "average run time for direct ILP:{:.2f}".format(sum(times) / float(len(tim
 # stochastic_estimation = stochastic.estimate_attractors(G, n_walks=300, max_walk_len=30)
 # ilp_estimation = attractors.find_num_attractors_onestage(G, max_len=3, max_num=120, use_sat=False, verbose=True)
 # attractors.write_random_fixed_graph_estimations_sampling(G=G, n_iter=400, restrict_symmetric_threshold=True,
-#                                                          restrict_and_or_gates=False,
+#                                                          restrict_and_or_gates=True,
 #                                                          n_walks=1500, max_walk_len=1000,
-#                                                          path="C:/Users/Ariel/Downloads/MAPK_large2_sampling_symmetric.csv")
+#                                                          path="C:/Users/Ariel/Downloads/MAPK_large2_sampling_gates.csv")

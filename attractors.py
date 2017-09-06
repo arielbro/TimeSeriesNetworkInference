@@ -81,11 +81,12 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     # for var in model.getVars():
     #     var.Start = 0
     model.optimize()
+    # ilp.print_opt_solution(model)
     # print model
     if model.Status != gurobipy.GRB.OPTIMAL:
         print "warning, model not solved to optimality."
         print "writing IIS data to model_iis.ilp"
-        model.computeIIS
+        # model.computeIIS()
         model.write("./model_iis.ilp")
 
     else:

@@ -87,13 +87,13 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
     a_matrix = numpy.matrix([[model.addVar(vtype=gurobipy.GRB.BINARY, name="a_{}_{}".format(p, t))
                               for t in range(T+1)] for p in range(P)])
     v_matrix = numpy.array([[[model.addVar(vtype=gurobipy.GRB.BINARY, name="v_{}_{}_{}".format(i, p, t))
-                               for t in range(T+1)] for p in range(P)] for i in range(len(G.vertices))])
+                               for t in range(T+1)] for p in range(P)] for i in range(n)])
     model.update()
     predecessors_vars = lambda i, p, t: [v_matrix[vertex.index, p, t] for vertex in G.vertices[i].predecessors()]
 
     if find_bool_model:
         boolean_vars_dict = dict()
-        for i in range(len(G.vertices)):
+        for i in range(n):
             for j in range(len(G.vertices[i].predecessors())):
                 new_var = model.addVar(vtype=gurobipy.GRB.BINARY, name="f_{}_{}".format(i, j))
                 model.update()
@@ -101,14 +101,16 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
 
     for p, t in itertools.product(range(P), range(T + 1)):
         # assert activity var meaning (ACTIVITY_SWITCH, MONOTONE, IF_NON_ACTIVE)
-        model.addConstr(n * a_matrix[p, t] >= sum(v_matrix[i, p, t] for i in range(n)),
-                        name="activity_switch_{}_{}".format(p, t))
+        # for i in range(n):
+        #     model.addConstr(a_matrix[p, t] >= v_matrix[i, p, t], name="activity_switch_{}_{}_{}".format(i, p, t))
+        model.addConstr(n * a_matrix[p, t] >= sum(v_matrix[i, p, t] for i in range(n)))
         if t != T:
             model.addConstr(a_matrix[p, t + 1] >= a_matrix[p, t], name="monotone_{}_{}".format(p, t))
         else:
-            model.addConstr(a_matrix[p, T] <= a_matrix[p, T - 1], name="if_non_active_{}".format(p))
+            model.addConstr(a_matrix[p, T] <= a_matrix[p, T - 1], name="if_non_active_{}_{}".format(i, p))
         model.update()
 
+    for i, p, t in itertools.product(range(n), range(P), range(T + 1)):
 
         # assert consistent and stable
         in_degree = len(G.vertices[i].predecessors())
@@ -157,8 +159,8 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
     for t, p in itertools.product(range(1, T), range(P)):
         # (a[p, t] & a[p, t-1]) >> ~EQ(p, p, t, T)
         equality_indicator_vars = [model.addVar(vtype=gurobipy.GRB.BINARY,
-                                   name="eq_simple_ind_{}_{}_{}".format(i, p, t)) for i in range(len(G.vertices))]
-        for i in range(len(G.vertices)):
+                                   name="eq_simple_ind_{}_{}_{}".format(i, p, t)) for i in range(n)]
+        for i in range(n):
             model.addConstr(equality_indicator_vars[i] <= 1 + v_matrix[i, p, t] - v_matrix[i, p, T],
                             name="eq_simple_ind_0_{}_{}_{}".format(i, p, t))
             model.addConstr(equality_indicator_vars[i] <= 1 - v_matrix[i, p, t] + v_matrix[i, p, T],
@@ -170,6 +172,7 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
         # it holds that ~EQ(p, p, t, T) <=> sum(equality_indicator_vars) <  len(G.vertices), now create the >> part
         model.addConstr(sum(equality_indicator_vars) <= len(G.vertices) + 1 - a_matrix[p, t] - a_matrix[p, t - 1],
                         name="simple_{}_{}".format(t, p))
+    model.update()
 
     # UNIQUE
     # for t, (p1, p2) in itertools.product(range(T), itertools.combinations(range(P), 2)):
@@ -196,11 +199,11 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
     # constraint the final states of attractors to be monotone decreasing amongst.
     # Also requires the k active attractors to be the first ones. SHOULD TODO: verify
     # result in only one optimal solution.
-    final_states_keys = [unique_state_key([v_matrix[i, p, T] for i in range(len(G.vertices))])
+    final_states_keys = [unique_state_key([v_matrix[i, p, T] for i in range(n)])
                          for p in range(P)]
     for p in range(P):
         for t in range(T):
-            current_state_key = unique_state_key([v_matrix[i, p, t] for i in range(len(G.vertices))])
+            current_state_key = unique_state_key([v_matrix[i, p, t] for i in range(n)])
             # works for inactive states attractors/time points too!
             model.addConstr(final_states_keys[p] >= current_state_key,
                             name="key_order_in_attractor_{}_{}".format(p, t))
@@ -208,8 +211,8 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_bool_model=False):
         if p != P - 1:  # as long as keys are uniques, this forces uniqueness if p and p + 1 are both active
             model.addConstr(final_states_keys[p] >= final_states_keys[p + 1]
                             - 1 + a_matrix[p, T] + a_matrix[p + 1, T],
-                                                            name="key_order_between_attractors_{}".format(p))
-    model.update()
+                            name="key_order_between_attractors_{}".format(p))
+        model.update()
 
     # Constraint the number of active attractors using 2**#input_nodes, P as lower and upper bounds.
     # lower bound can only be used if the maximal theoretical attractor length is allowed.
@@ -256,3 +259,11 @@ def print_model_constraints(model):
         print con_str
 
 
+def print_opt_solution(model):
+    name_val_pairs = []
+    for var in model.getVars():
+        name_val_pairs.append((var.VarName, var.X))
+    val_str = ""
+    for pair in name_val_pairs:
+        val_str += "{} = {}\n".format(pair[0], int(pair[1]))
+    print val_str
