@@ -1,5 +1,5 @@
 import random
-from logic import PreRandomizedBooleanSymbolicFunc, PreRandomizedSymmetricThresholdFunction
+from logic import BooleanSymbolicFunc, SymmetricThresholdFunction
 from utility import list_repr
 
 
@@ -44,7 +44,7 @@ class Network:
             n = len(v.predecessors())
             if not restrict_signed_symmetric_threshold:
                 boolean_outputs = [random.choice([False, True]) for _ in range(2**n)]
-                v.function = PreRandomizedBooleanSymbolicFunc(boolean_outputs)
+                v.function = BooleanSymbolicFunc(boolean_outputs)
             else:
                 if n == 0:
                     # either no function, or an AND and add node as its own predecessor, to assert stability.
@@ -52,7 +52,7 @@ class Network:
                 else:
                     signs = [random.choice([False, True]) for _ in range(2**n)]
                     threshold = random.randint(1, n) if not restrict_and_or_gates else random.choice([1, n])
-                    v.function = PreRandomizedSymmetricThresholdFunction(signs, threshold)
+                    v.function = SymmetricThresholdFunction(signs, threshold)
 
     @staticmethod
     def generate_random(n_vertices, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=False,

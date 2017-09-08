@@ -5,7 +5,7 @@ import numpy
 import utility
 
 
-class PreRandomizedBooleanSymbolicFunc:
+class BooleanSymbolicFunc:
     def __init__(self, boolean_outputs):
         self.truth_table_outputs = boolean_outputs
         # assumes boolean_outputs is a power of 2
@@ -34,7 +34,7 @@ class PreRandomizedBooleanSymbolicFunc:
         return self.__str__()
 
 
-class PreRandomizedSymmetricThresholdFunction:
+class SymmetricThresholdFunction:
     # TODO: implement in ILP model finding (threshold is not boolean, not supported there ATM)
     def __init__(self, signs, threshold):
         # translate signs to bool values, if not already
@@ -60,6 +60,52 @@ class PreRandomizedSymmetricThresholdFunction:
 
     def __repr__(self):
         return self.__str__()
+
+    # TODO: optimize?
+    @staticmethod
+    def from_function(function, n_args):
+        input_combinations = itertools.product([False, True], repeat=n_args)
+        f_in_out_touples = {tuple(combination): function(*combination) for combination in input_combinations}
+        signs = []
+        # find signs
+        for i in range(n_args):
+            negative = False
+            positive = False
+            for combination in f_in_out_touples.keys():
+                if not combination[i]:  # only need to check half
+                    f_1 = f_in_out_touples[combination]
+                    f_2 = f_in_out_touples[combination[:i] + (True,) + combination[i + 1:]]
+                    if f_2 and not f_1:
+                        positive = True
+                    if f_1 and not f_2:
+                        negative = True
+            if positive and negative:
+                raise ValueError("Tried to convert a non symmetric-threshold function")
+            if not positive and not negative:
+                # constant function
+                assert len(set(f_in_out_touples.values())) == 1
+                if True in set(f_in_out_touples.values()):
+                    return SymmetricThresholdFunction(signs=[True] * n_args, threshold=0)
+                else:
+                    assert False in set(f_in_out_touples.values())
+                    return SymmetricThresholdFunction(signs=[True] * n_args, threshold=n_args+1)
+            else:
+                signs.append(True if positive else False)
+
+        # find out threshold
+        possible_thresholds = []  # have to check all to check if it's indeed a threshold function
+        for i in range(1, n_args + 1):
+            i_combs = [combination for combination in f_in_out_touples.keys() if
+                      sum(1 for val in combination if val == 1) == i]
+            outputs = set([f_in_out_touples[i_comb] for i_comb in i_combs])
+            if len(outputs) != 1:
+                raise ValueError("Tried to convert a non symmetric-threshold function")
+            if True in outputs:
+                possible_thresholds.append(i)
+        if len(possible_thresholds) != 1:
+            raise ValueError("Tried to convert a non symmetric-threshold function")
+        return SymmetricThresholdFunction(signs=signs, threshold=possible_thresholds[0])
+
 
 def formula_length(formula):
     # defined as the number of (non-unique) atoms in the formula

@@ -4,8 +4,8 @@ import attractors, graphs, logic, stochastic, cnet_parser, ilp, sympy
 # G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
 #                    vertex_functions=[sympy.Nand])
 #
-# G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
-#                    vertex_functions=[sympy.Nand, sympy.And])
+G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
+                   vertex_functions=[sympy.Nand, sympy.And])
 
 # G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
 #                    vertex_functions=[sympy.Nand, sympy.Nand])
@@ -37,14 +37,27 @@ import attractors, graphs, logic, stochastic, cnet_parser, ilp, sympy
 #                    vertex_functions=[lambda *args: sympy.Nand(*args)]*6)
 #
 # G.randomize_functions(restrict_signed_symmetric_threshold=True)
+
+start = time.time()
+conversions = 0
+for v in G.vertices:
+    try:
+        v.function = logic.SymmetricThresholdFunction.from_function(v.function, len(v.predecessors()))
+        print v.function
+        conversions += 1
+    except ValueError as e:
+        pass
+print "converted {} out of {} functions. Time taken: {:.2f}".format(
+    conversions, len(G.vertices), time.time() - start)
+
 # for experiment in range(20):
 #     G.randomize_functions()
 #     stochastic.estimate_attractors(G, n_walks=100, max_walk_len=100)
 #
-G = graphs.Network.generate_random(20, indegree_bounds=[1, 3], restrict_signed_symmetric_threshold=True)
+# G = graphs.Network.generate_random(28, indegree_bounds=[1, 10], restrict_signed_symmetric_threshold=True)
 # print G
 # attractors.find_num_attractors_multistage(G, use_ilp=False)
-attractors.find_num_attractors_onestage(G, use_sat=False, max_len=5, max_num=5)
+attractors.find_num_attractors_onestage(G, use_sat=False, max_len=10, max_num=10)
 # attractors.find_min_attractors_model(G)
 
 # times = []

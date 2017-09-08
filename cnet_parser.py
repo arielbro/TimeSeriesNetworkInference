@@ -1,7 +1,7 @@
 import time
 import re
 import itertools
-from logic import PreRandomizedBooleanSymbolicFunc
+from logic import BooleanSymbolicFunc
 from graphs import Network
 
 
@@ -61,7 +61,7 @@ def parse_cnet(path):
                     truth_table_dict[tuple(input_combination)] = output
             ordered_bool_outputs = [truth_table_dict[tuple(input)] for input in
                                     itertools.product([False, True], repeat=v_n_args)]
-            func = PreRandomizedBooleanSymbolicFunc(ordered_bool_outputs)
+            func = BooleanSymbolicFunc(ordered_bool_outputs)
             bool_funcs.append(func)
     assert len(bool_funcs) == n
     G = Network(vertex_names=names, edges=edges, vertex_functions=bool_funcs)

@@ -105,7 +105,7 @@ def find_min_attractors_model(G):
     for i, v in enumerate(G.vertices):
         truth_table_size = 2**len(v.predecessors())
         function_variables = [sympy.symbols("f_{}_{}".format(i, j)) for j in range(truth_table_size)]
-        v.function = logic.PreRandomizedBooleanSymbolicFunc(function_variables)
+        v.function = logic.BooleanSymbolicFunc(function_variables)
 
     T = 2**len(G.vertices)
     iteration = 1
