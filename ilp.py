@@ -145,7 +145,7 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
                     signs = G.vertices[i].function.signs
                     threshold = G.vertices[i].function.threshold
                 input_sum_expression = 0
-                for sign, var, predecessors_index in zip(signs, *enumerate(predecessors_vars(i, p, t))):
+                for predecessors_index, (sign, var) in enumerate(zip(signs, predecessors_vars(i, p, t))):
                     if find_symmetric_bool_model:
                         # signs are variables, so can't multiply. need to have a variable signed_input s.t.:
                         # signed_input = not(xor(sign, var))
@@ -160,7 +160,7 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
                                         format(i, p, t, predecessors_index))
                         model.addConstr(z >= sign + var - 1, name="signed_input_constr_type11_{}_{}_{}_{}".
                                         format(i, p, t, predecessors_index))
-                        model.updatE()
+                        model.update()
                         input_sum_expression += z
                     else:
                         input_sum_expression += var if sign else 1 - var  # sign is bool, unintuitive?

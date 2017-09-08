@@ -2,7 +2,7 @@ import sympy
 import itertools
 import math
 import numpy
-import utility
+from utility import list_repr
 
 
 class BooleanSymbolicFunc:
@@ -33,6 +33,17 @@ class BooleanSymbolicFunc:
     def __repr__(self):
         return self.__str__()
 
+    def __eq__(self, other):
+        try:
+            for input_comb in itertools.product([False, True], repeat=len(self.input_vars)):
+                if self(*input_comb) != other(*input_comb):
+                    return False
+        except ValueError:
+            return False
+        return True
+
+    def __ne__(self, other):
+        return not self == other
 
 class SymmetricThresholdFunction:
     # TODO: implement in ILP model finding (threshold is not boolean, not supported there ATM)
@@ -55,11 +66,23 @@ class SymmetricThresholdFunction:
         return count >= self.threshold
 
     def __str__(self):
-        return "signs={}, threshold={}".format(utility.list_repr([1 if sign else -1 for sign in self.signs]),
+        return "signs={}, threshold={}".format(list_repr([1 if sign else -1 for sign in self.signs]),
                                                self.threshold)
 
     def __repr__(self):
         return self.__str__()
+
+    def __eq__(self, other):
+        try:
+            for input_comb in itertools.product([False, True], repeat=len(self.signs)):
+                if self(*input_comb) != other(*input_comb):
+                    return False
+        except ValueError:
+            return False
+        return True
+
+    def __ne__(self, other):
+        return not self == other
 
     # TODO: optimize?
     @staticmethod

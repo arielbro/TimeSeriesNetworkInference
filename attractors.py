@@ -1,3 +1,4 @@
+import os
 import itertools
 import logic
 import graphs
@@ -8,7 +9,7 @@ import random
 import csv
 import gurobipy
 import stochastic
-
+import subprocess
 
 def find_num_attractors_multistage(G, use_ilp):
     T = 1
@@ -69,7 +70,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         model, formulas_to_variables = ilp.logic_to_ilp(ATTRACTORS)
         active_ilp_vars = [formulas_to_variables[active_logic_var] for active_logic_var in active_logic_vars]
     else:
-        model, active_ilp_vars = ilp.direct_graph_to_ilp(G, T, P, find_bool_model=False)
+        model, active_ilp_vars = ilp.direct_graph_to_ilp(G, T, P, find_general_bool_model=False)
     model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
     if not verbose:
         model.params.LogToConsole = 0
@@ -234,6 +235,25 @@ def write_random_fixed_graph_estimations_sampling(G, n_iter, restrict_symmetric_
     with open(path, 'w') as output_file:
         writer = csv.writer(output_file)
         writer.writerows(res)
+
+
+def find_num_attractors_dubrova(G, dubrova_dir_path):
+    """
+    Export G, call dubrova's algorithm on it, and parse number of attractors from results.
+    :param G:
+    :return: n_attractors
+    """
+    temp_network_path = "./temp_network.cnet"
+    graphs.Network.export_to_cnet(G, temp_network_path)
+    try:
+        return_code = subprocess.call(args=[os.path.join(dubrova_dir_path, "bns"), temp_network_path])
+        if return_code >= 0:
+            raise Exception("Got an erroneous return code while calling Dubrova - {}".format(return_code))
+        
+    except Exception as e:
+        raise e
+    finally:
+        os.remove(temp_network_path)
 
 
 # TODO: think about asynchronous model?

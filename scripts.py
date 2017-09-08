@@ -1,5 +1,5 @@
 import time
-import attractors, graphs, logic, stochastic, cnet_parser, ilp, sympy
+import attractors, graphs, logic, stochastic, utility, ilp, sympy
 
 # G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
 #                    vertex_functions=[sympy.Nand])
@@ -37,18 +37,18 @@ G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
 #                    vertex_functions=[lambda *args: sympy.Nand(*args)]*6)
 #
 # G.randomize_functions(restrict_signed_symmetric_threshold=True)
-
-start = time.time()
-conversions = 0
-for v in G.vertices:
-    try:
-        v.function = logic.SymmetricThresholdFunction.from_function(v.function, len(v.predecessors()))
-        print v.function
-        conversions += 1
-    except ValueError as e:
-        pass
-print "converted {} out of {} functions. Time taken: {:.2f}".format(
-    conversions, len(G.vertices), time.time() - start)
+#
+# start = time.time()
+# conversions = 0
+# for v in G.vertices:
+#     try:
+#         v.function = logic.SymmetricThresholdFunction.from_function(v.function, len(v.predecessors()))
+#         print v.function
+#         conversions += 1
+#     except ValueError as e:
+#         pass
+# print "converted {} out of {} functions. Time taken: {:.2f}".format(
+#     conversions, len(G.vertices), time.time() - start)
 
 # for experiment in range(20):
 #     G.randomize_functions()
@@ -57,7 +57,7 @@ print "converted {} out of {} functions. Time taken: {:.2f}".format(
 # G = graphs.Network.generate_random(28, indegree_bounds=[1, 10], restrict_signed_symmetric_threshold=True)
 # print G
 # attractors.find_num_attractors_multistage(G, use_ilp=False)
-attractors.find_num_attractors_onestage(G, use_sat=False, max_len=10, max_num=10)
+# attractors.find_num_attractors_onestage(G, use_sat=False, max_len=10, max_num=10)
 # attractors.find_min_attractors_model(G)
 
 # times = []
@@ -92,7 +92,7 @@ attractors.find_num_attractors_onestage(G, use_sat=False, max_len=10, max_num=10
 #                                         n_walks=300, max_walk_len=300,
 #                                         path="C:/Users/Ariel/Downloads/graph_sampling_only_simple_gates.csv")
 
-# G = cnet_parser.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+# G = utility.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
 #                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
 # input_nodes = [u for u in G.vertices if len(u.predecessors()) == 0]
 # stochastic_estimation = stochastic.estimate_attractors(G, n_walks=300, max_walk_len=30)
@@ -101,3 +101,5 @@ attractors.find_num_attractors_onestage(G, use_sat=False, max_len=10, max_num=10
 #                                                          restrict_and_or_gates=True,
 #                                                          n_walks=1500, max_walk_len=1000,
 #                                                          path="C:/Users/Ariel/Downloads/MAPK_large2_sampling_gates.csv")
+
+print attractors.find_num_attractors_dubrova(G, "")
