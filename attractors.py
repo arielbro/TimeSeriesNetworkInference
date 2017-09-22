@@ -70,7 +70,8 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         model, formulas_to_variables = ilp.logic_to_ilp(ATTRACTORS)
         active_ilp_vars = [formulas_to_variables[active_logic_var] for active_logic_var in active_logic_vars]
     else:
-        model, active_ilp_vars = ilp.direct_graph_to_ilp(G, T, P, find_general_bool_model=False)
+        model, active_ilp_vars = ilp.direct_graph_to_ilp(G, T, P, find_general_bool_model=False,
+                                                         find_symmetric_bool_model=False)
     model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
     if not verbose:
         model.params.LogToConsole = 0

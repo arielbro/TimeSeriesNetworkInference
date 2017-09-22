@@ -1,6 +1,15 @@
 import time
 import attractors, graphs, logic, stochastic, utility, ilp, sympy
 
+
+def estimate_size(n, m, T, P):
+    # assumes find_symmetric_threshold model, and no input vertices
+    vars = P*(T + 1)*(n + 2) + n + 2*m - 2*P
+    # constr = 4*m + 2*(n+1)*(T+1)*P + 2*n*T*P + 2*(2*n+1)*(T-1)*P + 2*P + 1
+    constr = 8*n*T*P - 2*n*P + 4*T*P + 4*m + 2*P + 1
+    print "vars={}, constrs={}".format(vars, constr)
+
+
 # G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
 #                    vertex_functions=[sympy.Nand])
 #
@@ -96,10 +105,11 @@ G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
 #                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
 # input_nodes = [u for u in G.vertices if len(u.predecessors()) == 0]
 # stochastic_estimation = stochastic.estimate_attractors(G, n_walks=300, max_walk_len=30)
-# ilp_estimation = attractors.find_num_attractors_onestage(G, max_len=3, max_num=120, use_sat=False, verbose=True)
+ilp_estimation = attractors.find_num_attractors_onestage(G, max_len=4, max_num=200, use_sat=False, verbose=True)
 # attractors.write_random_fixed_graph_estimations_sampling(G=G, n_iter=400, restrict_symmetric_threshold=True,
 #                                                          restrict_and_or_gates=True,
 #                                                          n_walks=1500, max_walk_len=1000,
 #                                                          path="C:/Users/Ariel/Downloads/MAPK_large2_sampling_gates.csv")
 
-print attractors.find_num_attractors_dubrova(G, "")
+# print attractors.find_num_attractors_dubrova(G, "")
+# print estimate_size(len(G.vertices), len(G.edges), 4, 200)

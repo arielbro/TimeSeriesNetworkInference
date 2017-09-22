@@ -4,6 +4,8 @@ import numpy
 import itertools
 import logic
 import time
+import math
+import utility
 
 
 def recursive_logic_to_var(formula, model, formulas_to_variables):
@@ -66,19 +68,54 @@ def logic_to_ilp(formula):
     return model, formulas_to_variables
 
 
-def unique_state_key(ordered_state_variables):
+def unique_state_keys(ordered_state_variables):
     """
-    For small graphs, assign a unique numbering to a state, by summing 2**i over active vertices.
+    Assign a unique numbering to a state, by summing 2**i over active vertices.
+    Split the value among several variables, if needed, to fit in 32bit ints with room for mathematical operations.
     :param Ordered_state_variables: an ordered fixed iterable of vertex state variables.
-    :return: A key identifying this state uniquely among all other states.
+    :return: A key, a tuple of integers, identifying this state uniquely among all other states.
     """
-    if len(ordered_state_variables) > 29:
-        raise Exception("Can't use unique state key with graphs of size >=30")
-    return sum(2**i * var for i, var in enumerate(ordered_state_variables))
+    # if len(ordered_state_variables) > 29:
+    #     raise Exception("Can't use unique state key with graphs of size >=30")
+    # according to gurobi documentation (https://www.gurobi.com/documentation/7.5/refman/variables.html#subsubsection:IntVars),
+    # int values are restrained to +-20 billion, or 2**30.9. I choose 2**29 as a very conservative bound.
+    key = sum(2**i * var for i, var in enumerate(ordered_state_variables))
+    assert key > 0
+    return utility.slice_int(key, 29)  # TODO: see if possible to use larger slices.
+
+
+def create_state_keys_comparison_var(model, first_state_keys, second_state_keys, include_equality, name_prefix=""):
+    """
+    Registers and returns a new binary variable, equaling 1 iff first_state_keys > second_state_keys,
+    where the order is a lexicographic order (both inputs are tuples of ints, MSB to LSB).
+    NOTE: creates len(first_state_keys) - 1 auxiliary variables. Assumes numbers are bounded by 2**30
+    :param first_state_keys:
+    :param second_state_keys:
+    :param include_equality: boolean, if true then the indicator gets 1 on equality of the two key sets.
+    :param name_prefix: a string to prepend to all created variables and constraints
+    :return: an indicator variable
+    """
+    # up to i = n-i
+    # Z_i >= (ai - bi + Z_{i + 1}) / (M + 1)
+    # Z_i <= (ai - bi + Z_{i + 1} - 1) / (M + 1) + 1
+    # Z_n >= (a_n - b_n) / M (can divide by M + 1 for convenience)
+    # Z_n <= (a_n - b_n - 1) / (M + 1) + 1
+
+    last_var = 0 if not include_equality else 1
+    M = 2**30
+    for i in range(len(first_state_keys)):
+        a = first_state_keys[-i]
+        b = first_state_keys[-i]
+        z = model.addVar(vtype=gurobipy.GRB.BINARY, name="{}_{}_indicator".format(name_prefix, i))
+        last_var = z
+        model.addConstr(z >= (a - b + last_var)/(M + 1), name="{}_{}_>=constraint".format(name_prefix, i))
+        model.addConstr(z <= (a - b + last_var)/(M + 1) + 1, name="{}_{}_<=constraint".format(name_prefix, i))
+        model.update()
+    return last_var
 
 
 def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=False,
-                        find_symmetric_bool_model=True):
+                        find_symmetric_bool_model=False):
     assert not (find_general_bool_model and find_symmetric_bool_model)
     start = time.time()
     T = 2**len(G.vertices) if not max_len else max_len
@@ -119,7 +156,8 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
         # assert activity var meaning (ACTIVITY_SWITCH, MONOTONE, IF_NON_ACTIVE)
         # for i in range(n):
         #     model.addConstr(a_matrix[p, t] >= v_matrix[i, p, t], name="activity_switch_{}_{}_{}".format(i, p, t))
-        model.addConstr(n * a_matrix[p, t] >= sum(v_matrix[i, p, t] for i in range(n)))
+        model.addConstr(n * a_matrix[p, t] >= sum(v_matrix[i, p, t] for i in range(n)),
+                        name="activity_{}_{}".format(p, t))
         if t != T:
             model.addConstr(a_matrix[p, t + 1] >= a_matrix[p, t], name="monotone_{}_{}".format(p, t))
         else:
@@ -207,7 +245,7 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
             model.addConstr(v_matrix[i, p, t] <= v_matrix[i, p, T] + (1 - a_matrix[p, t] + a_matrix[p, t - 1]),
                             name="cyclic_<=_{}_{}_{}".format(i, p, t))
 
-    # SIMPLE
+    # SIMPLE TODO: use state keys
     for t, p in itertools.product(range(1, T), range(P)):
         # (a[p, t] & a[p, t-1]) >> ~EQ(p, p, t, T)
         equality_indicator_vars = [model.addVar(vtype=gurobipy.GRB.BINARY,
@@ -251,18 +289,23 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
     # constraint the final states of attractors to be monotone decreasing amongst.
     # Also requires the k active attractors to be the first ones. SHOULD TODO: verify
     # result in only one optimal solution.
-    final_states_keys = [unique_state_key([v_matrix[i, p, T] for i in range(n)])
+    final_states_keys = [unique_state_keys([v_matrix[i, p, T] for i in range(n)])
                          for p in range(P)]
     for p in range(P):
         for t in range(T):
-            current_state_key = unique_state_key([v_matrix[i, p, t] for i in range(n)])
+            current_state_keys = unique_state_keys([v_matrix[i, p, t] for i in range(n)])
+            larger_ind = create_state_keys_comparison_var(final_states_keys[p], current_state_keys,
+                                                          include_equality=True,
+                                                          name_prefix="key_order_in_attractor_{}_{}".format(p, t))
             # works for inactive states attractors/time points too!
-            model.addConstr(final_states_keys[p] >= current_state_key,
-                            name="key_order_in_attractor_{}_{}".format(p, t))
+            model.addConstr(larger_ind >= 1, name="key_order_in_attractor_{}_{}".format(p, t))
 
         if p != P - 1:  # as long as keys are uniques, this forces uniqueness if p and p + 1 are both active
-            model.addConstr(final_states_keys[p] >= final_states_keys[p + 1]
-                            - 1 + a_matrix[p, T] + a_matrix[p + 1, T],
+            strictly_larger_ind = create_state_keys_comparison_var(final_states_keys[p + 1], final_states_keys[p],
+                                                                   include_equality=False,
+                                                                   name_prefix="key_order_between_attractors_{}".
+                                                                   format(p))
+            model.addConstr(strictly_larger_ind + a_matrix[p, T] + a_matrix[p + 1, T] >= 3,
                             name="key_order_between_attractors_{}".format(p))
         model.update()
 
