@@ -16,8 +16,8 @@ def estimate_size(n, m, T, P):
 # G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
 #                    vertex_functions=[sympy.Nand, sympy.And])
 
-G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
-                   vertex_functions=[sympy.Nand, sympy.Nand])
+# G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
+#                    vertex_functions=[sympy.Nand, sympy.Nand])
 #
 # G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
 #                    vertex_functions=[lambda x: True, lambda x: False])
@@ -63,7 +63,7 @@ G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
 #     G.randomize_functions()
 #     stochastic.estimate_attractors(G, n_walks=100, max_walk_len=100)
 #
-# G = graphs.Network.generate_random(50, indegree_bounds=[1, 10], restrict_signed_symmetric_threshold=True)
+G = graphs.Network.generate_random(20, indegree_bounds=[1, 10], restrict_signed_symmetric_threshold=True)
 # print G
 # attractors.find_num_attractors_multistage(G, use_ilp=False)
 # attractors.find_num_attractors_onestage(G, use_sat=False, max_len=10, max_num=10)
@@ -105,7 +105,7 @@ G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
 #                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
 # input_nodes = [u for u in G.vertices if len(u.predecessors()) == 0]
 # stochastic_estimation = stochastic.estimate_attractors(G, n_walks=300, max_walk_len=30)
-ilp_estimation = attractors.find_num_attractors_onestage(G, max_len=4, max_num=20, use_sat=False, verbose=True)
+ilp_estimation = attractors.find_num_attractors_onestage(G, max_len=20, max_num=20, use_sat=False, verbose=True)
 # attractors.write_random_fixed_graph_estimations_sampling(G=G, n_iter=400, restrict_symmetric_threshold=True,
 #                                                          restrict_and_or_gates=True,
 #                                                          n_walks=1500, max_walk_len=1000,

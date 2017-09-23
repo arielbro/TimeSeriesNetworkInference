@@ -263,36 +263,36 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
                             name="cyclic_<=_{}_{}_{}".format(i, p, t))
 
     # SIMPLE
-    for t, p in itertools.product(range(1, T), range(P)):
-        # (a[p, t] & a[p, t-1]) >> ~EQ(p, p, t, T)
-        equality_indicator_vars = [model.addVar(vtype=gurobipy.GRB.BINARY,
-                                   name="eq_simple_ind_{}_{}_{}".format(i, p, t)) for i in range(n)]
-        for i in range(n):
-            model.addConstr(equality_indicator_vars[i] <= 1 + v_matrix[i, p, t] - v_matrix[i, p, T],
-                            name="eq_simple_ind_0_{}_{}_{}".format(i, p, t))
-            model.addConstr(equality_indicator_vars[i] <= 1 - v_matrix[i, p, t] + v_matrix[i, p, T],
-                            name="eq_simple_ind_1_{}_{}_{}".format(i, p, t))
-            model.addConstr(equality_indicator_vars[i] >= -1 + v_matrix[i, p, t] + v_matrix[i, p, T],
-                            name="eq__simple_ind_2_{}_{}_{}".format(i, p, t))
-            model.addConstr(equality_indicator_vars[i] >= 1 - v_matrix[i, p, t] - v_matrix[i, p, T],
-                            name="eq_simple_ind_3_{}_{}_{}".format(i, p, t))
-        # it holds that ~EQ(p, p, t, T) <=> sum(equality_indicator_vars) <  len(G.vertices), now create the >> part
-        model.addConstr(sum(equality_indicator_vars) <= len(G.vertices) + 1 - a_matrix[p, t] - a_matrix[p, t - 1],
-                        name="simple_{}_{}".format(t, p))
-    model.update()
     # for t, p in itertools.product(range(1, T), range(P)):
     #     # (a[p, t] & a[p, t-1]) >> ~EQ(p, p, t, T)
-    #     strictly_larger_ind = create_state_keys_comparison_var(model=model, first_state_keys=state_keys[p][T],
-    #                                                            second_state_keys=state_keys[p][t],
-    #                                                            include_equality=False,
-    #                                                            name_prefix="simple>_{}_{}".format(p, t))
-    #     strictly_smaller_ind = create_state_keys_comparison_var(model=model, first_state_keys=state_keys[p][t],
-    #                                                             second_state_keys=state_keys[p][T],
-    #                                                             include_equality=False,
-    #                                                             name_prefix="simple<_{}_{}".format(p, t))
-    #     model.addConstr(strictly_larger_ind + strictly_smaller_ind - a_matrix[p, t] - a_matrix[p, t-1] >= -1,
-    #                     name="key_order_in_attractor_{}_{}".format(p, t))
+    #     equality_indicator_vars = [model.addVar(vtype=gurobipy.GRB.BINARY,
+    #                                name="eq_simple_ind_{}_{}_{}".format(i, p, t)) for i in range(n)]
+    #     for i in range(n):
+    #         model.addConstr(equality_indicator_vars[i] <= 1 + v_matrix[i, p, t] - v_matrix[i, p, T],
+    #                         name="eq_simple_ind_0_{}_{}_{}".format(i, p, t))
+    #         model.addConstr(equality_indicator_vars[i] <= 1 - v_matrix[i, p, t] + v_matrix[i, p, T],
+    #                         name="eq_simple_ind_1_{}_{}_{}".format(i, p, t))
+    #         model.addConstr(equality_indicator_vars[i] >= -1 + v_matrix[i, p, t] + v_matrix[i, p, T],
+    #                         name="eq__simple_ind_2_{}_{}_{}".format(i, p, t))
+    #         model.addConstr(equality_indicator_vars[i] >= 1 - v_matrix[i, p, t] - v_matrix[i, p, T],
+    #                         name="eq_simple_ind_3_{}_{}_{}".format(i, p, t))
+    #     # it holds that ~EQ(p, p, t, T) <=> sum(equality_indicator_vars) <  len(G.vertices), now create the >> part
+    #     model.addConstr(sum(equality_indicator_vars) <= len(G.vertices) + 1 - a_matrix[p, t] - a_matrix[p, t - 1],
+    #                     name="simple_{}_{}".format(t, p))
     # model.update()
+    for t, p in itertools.product(range(1, T), range(P)):
+        # (a[p, t] & a[p, t-1]) >> ~EQ(p, p, t, T)
+        strictly_larger_ind = create_state_keys_comparison_var(model=model, first_state_keys=state_keys[p][T],
+                                                               second_state_keys=state_keys[p][t],
+                                                               include_equality=False,
+                                                               name_prefix="simple>_{}_{}".format(p, t))
+        strictly_smaller_ind = create_state_keys_comparison_var(model=model, first_state_keys=state_keys[p][t],
+                                                                second_state_keys=state_keys[p][T],
+                                                                include_equality=False,
+                                                                name_prefix="simple<_{}_{}".format(p, t))
+        model.addConstr(strictly_larger_ind + strictly_smaller_ind - a_matrix[p, t] - a_matrix[p, t-1] >= -1,
+                        name="key_order_in_attractor_{}_{}".format(p, t))
+    model.update()
 
     # UNIQUE
     # for t, (p1, p2) in itertools.product(range(T), itertools.combinations(range(P), 2)):
