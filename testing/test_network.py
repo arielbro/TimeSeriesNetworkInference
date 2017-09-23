@@ -3,6 +3,7 @@ from graphs import Network
 import itertools
 import random
 
+
 class TestNetwork(TestCase):
     # def test_get_vertex(self):
     #     names = [''.join(random.choice(string.ascii_lowercase) for i in range(100))]

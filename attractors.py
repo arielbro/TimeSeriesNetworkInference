@@ -80,6 +80,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     # model.getTuneResult(0)  # take best tuning parameters
     # model.write('tune v-{} P-{} T-{}.prm'.format(len(G.vertices), P, T))
     print model
+    # ilp.print_model_constraints(model)
     # for var in model.getVars():
     #     var.Start = 0
     model.optimize()
@@ -88,7 +89,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     if model.Status != gurobipy.GRB.OPTIMAL:
         print "warning, model not solved to optimality."
         print "writing IIS data to model_iis.ilp"
-        # model.computeIIS()
+        model.computeIIS()
         model.write("./model_iis.ilp")
 
     else:

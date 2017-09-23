@@ -72,16 +72,26 @@ def unique_state_keys(ordered_state_variables):
     """
     Assign a unique numbering to a state, by summing 2**i over active vertices.
     Split the value among several variables, if needed, to fit in 32bit ints with room for mathematical operations.
-    :param Ordered_state_variables: an ordered fixed iterable of vertex state variables.
+    :param ordered_state_variables: an ordered fixed iterable of vertex state variables.
     :return: A key, a tuple of integers, identifying this state uniquely among all other states.
     """
-    # if len(ordered_state_variables) > 29:
-    #     raise Exception("Can't use unique state key with graphs of size >=30")
+    # TODO: see if possible to use larger slices.
+    slice_size = 29
     # according to gurobi documentation (https://www.gurobi.com/documentation/7.5/refman/variables.html#subsubsection:IntVars),
     # int values are restrained to +-20 billion, or 2**30.9. I choose 2**29 as a very conservative bound.
-    key = sum(2**i * var for i, var in enumerate(ordered_state_variables))
-    assert key > 0
-    return utility.slice_int(key, 29)  # TODO: see if possible to use larger slices.
+    n_parts = int(math.ceil(len(ordered_state_variables)/float(slice_size)))
+    residue = len(ordered_state_variables) % slice_size
+    parts = []
+    for i in range(n_parts - 1):
+        parts.append(sum(ordered_state_variables[slice_size*i + j] * 2**(slice_size*i + j)
+                         for j in range(slice_size)))
+    parts.append(sum(ordered_state_variables[slice_size*(n_parts - 1) + j] *
+                     2**(slice_size*(n_parts - 1) + j)
+                     for j in range(residue)))
+    # key = sum(2**i * var for i, var in enumerate(ordered_state_variables))
+    # assert key > 0
+    # return utility.slice_int(key, 29)
+    return parts
 
 
 def create_state_keys_comparison_var(model, first_state_keys, second_state_keys, include_equality, name_prefix=""):
@@ -100,17 +110,19 @@ def create_state_keys_comparison_var(model, first_state_keys, second_state_keys,
     # Z_i <= (ai - bi + Z_{i + 1} - 1) / (M + 1) + 1
     # Z_n >= (a_n - b_n) / M (can divide by M + 1 for convenience)
     # Z_n <= (a_n - b_n - 1) / (M + 1) + 1
-
+    # multiply by denominator to avoid float inaccuracies
+    assert len(first_state_keys) == len(second_state_keys)
     last_var = 0 if not include_equality else 1
-    M = 2**30
+    M = 2**29  # TODO: link with slice size!!
     for i in range(len(first_state_keys)):
-        a = first_state_keys[-i]
-        b = first_state_keys[-i]
+        a = first_state_keys[-i - 1]
+        b = second_state_keys[-i - 1]
         z = model.addVar(vtype=gurobipy.GRB.BINARY, name="{}_{}_indicator".format(name_prefix, i))
-        last_var = z
-        model.addConstr(z >= (a - b + last_var)/(M + 1), name="{}_{}_>=constraint".format(name_prefix, i))
-        model.addConstr(z <= (a - b + last_var)/(M + 1) + 1, name="{}_{}_<=constraint".format(name_prefix, i))
+        model.addConstr((M + 1)*z >= a - b + last_var, name="{}_{}_>=constraint".format(name_prefix, i))
+        model.addConstr((M + 1)*z <= a - b + last_var + M, name="{}_{}_<=constraint".format(name_prefix, i))
         model.update()
+        last_var = z
+        # print "a_{}={}, b_{}={}, M={}, M+1={}".format(len(first_state_keys) - i-1, a, len(first_state_keys) -i-1, b, M, M+1)
     return last_var
 
 
@@ -202,13 +214,13 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
                         input_sum_expression += z
                     else:
                         input_sum_expression += var if sign else 1 - var  # sign is bool, unintuitive?
-                # input_sum_expression >= threshold <=> v_matrix[i, p, t + 1] = 1
-                model.addConstr(v_matrix[i, p, t + 1] >=
-                                (input_sum_expression - threshold + 1)/float(in_degree + 1),
-                                name="monotone_func_threshold_>=_{}_{}_{}".format(i, p, t))
-                model.addConstr(v_matrix[i, p, t + 1] <=
-                                (in_degree + input_sum_expression - threshold + 1)/float(in_degree + 1),
-                                name="monotone_func_threshold_<=_{}_{}_{}".format(i, p, t))
+                # input_sum_expression >= threshold <=> v_matrix[i, p, t + 1] = 1, if activity is on.
+                model.addConstr((in_degree + 1)*(v_matrix[i, p, t + 1] + 1 - a_matrix[p, t]) >=
+                                (input_sum_expression - threshold + 1),
+                                name="monotone_func_consistency_>=_{}_{}_{}".format(i, p, t))
+                model.addConstr((in_degree + 1)*(v_matrix[i, p, t + 1] - 1 + a_matrix[p, t]) <=
+                                (in_degree + input_sum_expression - threshold + 1),
+                                name="monotone_func_consistency_<=_{}_{}_{}".format(i, p, t))
                 model.update()
             else:
                 for var_comb_index, var_combination in enumerate(itertools.product((False, True), repeat=in_degree)):
@@ -294,18 +306,21 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
     for p in range(P):
         for t in range(T):
             current_state_keys = unique_state_keys([v_matrix[i, p, t] for i in range(n)])
-            larger_ind = create_state_keys_comparison_var(final_states_keys[p], current_state_keys,
+            larger_ind = create_state_keys_comparison_var(model=model, first_state_keys=final_states_keys[p],
+                                                          second_state_keys=current_state_keys,
                                                           include_equality=True,
                                                           name_prefix="key_order_in_attractor_{}_{}".format(p, t))
             # works for inactive states attractors/time points too!
             model.addConstr(larger_ind >= 1, name="key_order_in_attractor_{}_{}".format(p, t))
 
         if p != P - 1:  # as long as keys are uniques, this forces uniqueness if p and p + 1 are both active
-            strictly_larger_ind = create_state_keys_comparison_var(final_states_keys[p + 1], final_states_keys[p],
+            strictly_larger_ind = create_state_keys_comparison_var(model=model,
+                                                                   first_state_keys=final_states_keys[p + 1],
+                                                                   second_state_keys=final_states_keys[p],
                                                                    include_equality=False,
                                                                    name_prefix="key_order_between_attractors_{}".
                                                                    format(p))
-            model.addConstr(strictly_larger_ind + a_matrix[p, T] + a_matrix[p + 1, T] >= 3,
+            model.addConstr(strictly_larger_ind - a_matrix[p, T] - a_matrix[p + 1, T] >= -1,
                             name="key_order_between_attractors_{}".format(p))
         model.update()
 
@@ -342,7 +357,7 @@ def get_matrix_coos(m):
 def print_model_constraints(model):
     quadruples = list(get_matrix_coos(model))
     constr_attrs = [(constr.Sense, constr.RHS) for constr in model.getConstrs()]
-    for constraint_index in range(max(row_index for row_index, _, _, _ in quadruples)):
+    for constraint_index in range(max(row_index for row_index, _, _, _ in quadruples) + 1):
         con_str = None
         for row_index, constr_name, var_name, coeff in quadruples:
             if row_index == constraint_index:
