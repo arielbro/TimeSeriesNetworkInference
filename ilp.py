@@ -142,6 +142,9 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
                                for t in range(T+1)] for p in range(P)] for i in range(n)])
     model.update()
 
+    state_keys = [[unique_state_keys([v_matrix[i, p, t] for i in range(n)]) for t in range(T+1)]
+                  for p in range(P)]
+
     predecessors_vars = lambda i, p, t: [v_matrix[vertex.index, p, t] for vertex in G.vertices[i].predecessors()]
     if find_general_bool_model:
         truth_table_vars_dict = dict()
@@ -164,17 +167,19 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
             model.update()
             signs_threshold_vars_dict[i] = signs, threshold
 
-    for p, t in itertools.product(range(P), range(T + 1)):
+    for p, t in itertools.product(range(P), range(T)):
         # assert activity var meaning (ACTIVITY_SWITCH, MONOTONE, IF_NON_ACTIVE)
         # for i in range(n):
         #     model.addConstr(a_matrix[p, t] >= v_matrix[i, p, t], name="activity_switch_{}_{}_{}".format(i, p, t))
         model.addConstr(n * a_matrix[p, t] >= sum(v_matrix[i, p, t] for i in range(n)),
                         name="activity_{}_{}".format(p, t))
-        if t != T:
-            model.addConstr(a_matrix[p, t + 1] >= a_matrix[p, t], name="monotone_{}_{}".format(p, t))
-        else:
-            model.addConstr(a_matrix[p, T] <= a_matrix[p, T - 1], name="if_non_active_{}_{}".format(i, p))
+        model.addConstr(a_matrix[p, t + 1] >= a_matrix[p, t], name="monotone_{}_{}".format(p, t))
         model.update()
+
+    for p in range(P):
+        model.addConstr(a_matrix[p, T] <= a_matrix[p, T - 1], name="if_non_active_{}".format(p))
+        if p != P - 1:
+            model.addConstr(a_matrix[p, T] <= a_matrix[p + 1, T], name="active_order_{}".format(p))
 
     for i, p, t in itertools.product(range(n), range(P), range(T + 1)):
 
@@ -257,7 +262,7 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
             model.addConstr(v_matrix[i, p, t] <= v_matrix[i, p, T] + (1 - a_matrix[p, t] + a_matrix[p, t - 1]),
                             name="cyclic_<=_{}_{}_{}".format(i, p, t))
 
-    # SIMPLE TODO: use state keys
+    # SIMPLE
     for t, p in itertools.product(range(1, T), range(P)):
         # (a[p, t] & a[p, t-1]) >> ~EQ(p, p, t, T)
         equality_indicator_vars = [model.addVar(vtype=gurobipy.GRB.BINARY,
@@ -275,6 +280,19 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
         model.addConstr(sum(equality_indicator_vars) <= len(G.vertices) + 1 - a_matrix[p, t] - a_matrix[p, t - 1],
                         name="simple_{}_{}".format(t, p))
     model.update()
+    # for t, p in itertools.product(range(1, T), range(P)):
+    #     # (a[p, t] & a[p, t-1]) >> ~EQ(p, p, t, T)
+    #     strictly_larger_ind = create_state_keys_comparison_var(model=model, first_state_keys=state_keys[p][T],
+    #                                                            second_state_keys=state_keys[p][t],
+    #                                                            include_equality=False,
+    #                                                            name_prefix="simple>_{}_{}".format(p, t))
+    #     strictly_smaller_ind = create_state_keys_comparison_var(model=model, first_state_keys=state_keys[p][t],
+    #                                                             second_state_keys=state_keys[p][T],
+    #                                                             include_equality=False,
+    #                                                             name_prefix="simple<_{}_{}".format(p, t))
+    #     model.addConstr(strictly_larger_ind + strictly_smaller_ind - a_matrix[p, t] - a_matrix[p, t-1] >= -1,
+    #                     name="key_order_in_attractor_{}_{}".format(p, t))
+    # model.update()
 
     # UNIQUE
     # for t, (p1, p2) in itertools.product(range(T), itertools.combinations(range(P), 2)):
@@ -301,13 +319,10 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
     # constraint the final states of attractors to be monotone decreasing amongst.
     # Also requires the k active attractors to be the first ones. SHOULD TODO: verify
     # result in only one optimal solution.
-    final_states_keys = [unique_state_keys([v_matrix[i, p, T] for i in range(n)])
-                         for p in range(P)]
     for p in range(P):
         for t in range(T):
-            current_state_keys = unique_state_keys([v_matrix[i, p, t] for i in range(n)])
-            larger_ind = create_state_keys_comparison_var(model=model, first_state_keys=final_states_keys[p],
-                                                          second_state_keys=current_state_keys,
+            larger_ind = create_state_keys_comparison_var(model=model, first_state_keys=state_keys[p][T],
+                                                          second_state_keys=state_keys[p][t],
                                                           include_equality=True,
                                                           name_prefix="key_order_in_attractor_{}_{}".format(p, t))
             # works for inactive states attractors/time points too!
@@ -315,8 +330,8 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
 
         if p != P - 1:  # as long as keys are uniques, this forces uniqueness if p and p + 1 are both active
             strictly_larger_ind = create_state_keys_comparison_var(model=model,
-                                                                   first_state_keys=final_states_keys[p + 1],
-                                                                   second_state_keys=final_states_keys[p],
+                                                                   first_state_keys=state_keys[p + 1][T],
+                                                                   second_state_keys=state_keys[p][T],
                                                                    include_equality=False,
                                                                    name_prefix="key_order_between_attractors_{}".
                                                                    format(p))
