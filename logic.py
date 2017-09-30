@@ -42,8 +42,15 @@ class BooleanSymbolicFunc:
             return False
         return True
 
+    def __hash__(self):
+        output_string = ""
+        for input_comb in itertools.product([False, True], repeat=len(self.input_vars)):
+            output_string += "1" if self(*input_comb) == True else "0"
+        return hash(output_string)
+
     def __ne__(self, other):
         return not self == other
+
 
 class SymmetricThresholdFunction:
     # TODO: implement in ILP model finding (threshold is not boolean, not supported there ATM)
@@ -81,12 +88,20 @@ class SymmetricThresholdFunction:
             return False
         return True
 
+    def __hash__(self):
+        output_string = ""
+        for input_comb in itertools.product([False, True], repeat=len(self.signs)):
+            output_string += "1" if self(*input_comb) == True else "0"
+        return hash(output_string)
+
     def __ne__(self, other):
         return not self == other
 
     # TODO: optimize?
     @staticmethod
-    def from_function(function, n_args):
+    def from_function(function, n_args):  # TODO: tests!!
+        if n_args == 0:
+            return None
         input_combinations = itertools.product([False, True], repeat=n_args)
         f_in_out_touples = {tuple(combination): function(*combination) for combination in input_combinations}
         signs = []
@@ -116,18 +131,22 @@ class SymmetricThresholdFunction:
                 signs.append(True if positive else False)
 
         # find out threshold
-        possible_thresholds = []  # have to check all to check if it's indeed a threshold function
+        threshold = None
         for i in range(1, n_args + 1):
             i_combs = [combination for combination in f_in_out_touples.keys() if
-                      sum(1 for val in combination if val == 1) == i]
+                       sum(1 for sign, val in zip(signs, combination) if (val == int(sign))) == i]
             outputs = set([f_in_out_touples[i_comb] for i_comb in i_combs])
             if len(outputs) != 1:
                 raise ValueError("Tried to convert a non symmetric-threshold function")
-            if True in outputs:
-                possible_thresholds.append(i)
-        if len(possible_thresholds) != 1:
+            if outputs == {True}:
+                if threshold is None:
+                    threshold = i
+            else:
+                if threshold is not None:
+                    raise ValueError("Tried to convert a non symmetric-threshold function")
+        if threshold is None:
             raise ValueError("Tried to convert a non symmetric-threshold function")
-        return SymmetricThresholdFunction(signs=signs, threshold=possible_thresholds[0])
+        return SymmetricThresholdFunction(signs=signs, threshold=threshold)
 
 
 def formula_length(formula):

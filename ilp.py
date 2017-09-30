@@ -7,6 +7,8 @@ import time
 import math
 import utility
 
+unique_key_slicing_size = 1  # TODO: find elegant reformatting for this
+
 
 def recursive_logic_to_var(formula, model, formulas_to_variables):
     if formula in formulas_to_variables:
@@ -68,7 +70,7 @@ def logic_to_ilp(formula):
     return model, formulas_to_variables
 
 
-def unique_state_keys(ordered_state_variables):
+def unique_state_keys(model, ordered_state_variables, name_prefix):
     """
     Assign a unique numbering to a state, by summing 2**i over active vertices.
     Split the value among several variables, if needed, to fit in 32bit ints with room for mathematical operations.
@@ -76,25 +78,24 @@ def unique_state_keys(ordered_state_variables):
     :return: A key, a tuple of integers, identifying this state uniquely among all other states.
     """
     # TODO: see if possible to use larger slices.
-    slice_size = 29
+    slice_size = unique_key_slicing_size
     # according to gurobi documentation (https://www.gurobi.com/documentation/7.5/refman/variables.html#subsubsection:IntVars),
     # int values are restrained to +-20 billion, or 2**30.9. I choose 2**29 as a very conservative bound.
-    n_parts = int(math.ceil(len(ordered_state_variables)/float(slice_size)))
+    n_parts = int(math.floor(len(ordered_state_variables)/float(slice_size)))
     residue = len(ordered_state_variables) % slice_size
     parts = []
-    for i in range(n_parts - 1):
-        parts.append(sum(ordered_state_variables[slice_size*i + j] * 2**(slice_size*i + j)
-                         for j in range(slice_size)))
-    parts.append(sum(ordered_state_variables[slice_size*(n_parts - 1) + j] *
-                     2**(slice_size*(n_parts - 1) + j)
-                     for j in range(residue)))
-    # key = sum(2**i * var for i, var in enumerate(ordered_state_variables))
-    # assert key > 0
-    # return utility.slice_int(key, 29)
+    for i in range(n_parts + 1):
+        sum_expression = sum(ordered_state_variables[slice_size*i + j] * 2**j
+                             for j in range(slice_size if i != n_parts else residue))
+        if i < n_parts or residue != 0:
+            parts.append(sum_expression)
+
+    # print "parts={}".format(parts)
     return parts
 
 
-def create_state_keys_comparison_var(model, first_state_keys, second_state_keys, include_equality, name_prefix=""):
+def create_state_keys_comparison_var(model, first_state_keys, second_state_keys, include_equality, upper_bound,
+                                     name_prefix=""):
     """
     Registers and returns a new binary variable, equaling 1 iff first_state_keys > second_state_keys,
     where the order is a lexicographic order (both inputs are tuples of ints, MSB to LSB).
@@ -113,7 +114,7 @@ def create_state_keys_comparison_var(model, first_state_keys, second_state_keys,
     # multiply by denominator to avoid float inaccuracies
     assert len(first_state_keys) == len(second_state_keys)
     last_var = 0 if not include_equality else 1
-    M = 2**29  # TODO: link with slice size!!
+    M = upper_bound
     for i in range(len(first_state_keys)):
         a = first_state_keys[-i - 1]
         b = second_state_keys[-i - 1]
@@ -137,12 +138,13 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
     model = gurobipy.Model()
 
     a_matrix = numpy.matrix([[model.addVar(vtype=gurobipy.GRB.BINARY, name="a_{}_{}".format(p, t))
-                              for t in range(T+1)] for p in range(P)])
+                              for t in range(T+1)] for p in range(P)]) # TODO: fill for t=-1, and simplify code
     v_matrix = numpy.array([[[model.addVar(vtype=gurobipy.GRB.BINARY, name="v_{}_{}_{}".format(i, p, t))
                                for t in range(T+1)] for p in range(P)] for i in range(n)])
     model.update()
 
-    state_keys = [[unique_state_keys([v_matrix[i, p, t] for i in range(n)]) for t in range(T+1)]
+    state_keys = [[unique_state_keys(model=model, ordered_state_variables=[v_matrix[i, p, t] for i in range(n)],
+                                     name_prefix="state_keys_{}_{}".format(p, t)) for t in range(T+1)]
                   for p in range(P)]
 
     predecessors_vars = lambda i, p, t: [v_matrix[vertex.index, p, t] for vertex in G.vertices[i].predecessors()]
@@ -249,18 +251,33 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
                     model.addConstr(v_matrix[i, p, t + 1] <= desired_val + (2 - indicator - a_matrix[p, t]),
                                     name="consistent_<=_{}_{}_{}".format(i, p, t))
                     model.update()
-        # cyclic constraints
-        # a[p, 0] >> v[i, p, 0] == v[i, p, T]
-        if t == 0:
-            model.addConstr(v_matrix[i, p, 0] >= v_matrix[i, p, T] - (1 - a_matrix[p, 0]),
-                            name="cyclic_>=_{}_{}_{}".format(i, p, t))
-            model.addConstr(v_matrix[i, p, 0] <= v_matrix[i, p, T] + (1 - a_matrix[p, 0]),
-                            name="cyclic_<=_{}_{}_{}".format(i, p, t))
-        elif t < T:  # (~a[p, t - 1] & a[p, t]) >> v[i, p, t] = v[i, p, T], assumes monotonicity of a_matrix
-            model.addConstr(v_matrix[i, p, t] >= v_matrix[i, p, T] - (1 - a_matrix[p, t] + a_matrix[p, t - 1]),
-                            name="cyclic_>=_{}_{}_{}".format(i, p, t))
-            model.addConstr(v_matrix[i, p, t] <= v_matrix[i, p, T] + (1 - a_matrix[p, t] + a_matrix[p, t - 1]),
-                            name="cyclic_<=_{}_{}_{}".format(i, p, t))
+
+    # CYCLIC
+    for p, t in itertools.product(range(P), range(T)):
+        # (~a[p, t - 1] & a[p, t]) >> EQ(p, p, t, T), assumes monotonicity of a_matrix (a[p, -1] assumed 0)
+        larger_ind = create_state_keys_comparison_var(model=model,
+                                                      first_state_keys=state_keys[p][T],
+                                                      second_state_keys=state_keys[p][t],
+                                                      include_equality=True,
+                                                      upper_bound=2**unique_key_slicing_size,
+                                                      name_prefix="cyclic>_{}_{}".format(p, t).
+                                                      format(p))
+        smaller_ind = create_state_keys_comparison_var(model=model,
+                                                       first_state_keys=state_keys[p][t],
+                                                       second_state_keys=state_keys[p][T],
+                                                       include_equality=True,
+                                                       upper_bound=2**unique_key_slicing_size,
+                                                       name_prefix="cyclic<_{}_{}".format(p, t).
+                                                       format(p))
+        last_activity = a_matrix[p, t - 1] if t > 0 else 0
+        model.addConstr(larger_ind + smaller_ind >= 1 - last_activity + a_matrix[p, t],
+                        name="cyclic_{}_{}".format(p, t))
+        # for i in range(n):
+        #     model.addConstr(v_matrix[i, p, t] >= v_matrix[i, p, T] + a_matrix[p, t] - last_activity - 1,
+        #                     name="cyclic<_{}_{}_{}".format(i, p, t))
+        #     model.addConstr(v_matrix[i, p, t] <= v_matrix[i, p, T] - a_matrix[p, t] + last_activity + 1,
+        #                     name="cyclic>_{}_{}_{}".format(i, p, t))
+    model.update()
 
     # SIMPLE
     # for t, p in itertools.product(range(1, T), range(P)):
@@ -280,18 +297,21 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
     #     model.addConstr(sum(equality_indicator_vars) <= len(G.vertices) + 1 - a_matrix[p, t] - a_matrix[p, t - 1],
     #                     name="simple_{}_{}".format(t, p))
     # model.update()
+
     for t, p in itertools.product(range(1, T), range(P)):
         # (a[p, t] & a[p, t-1]) >> ~EQ(p, p, t, T)
         strictly_larger_ind = create_state_keys_comparison_var(model=model, first_state_keys=state_keys[p][T],
                                                                second_state_keys=state_keys[p][t],
                                                                include_equality=False,
+                                                  upper_bound= 2**unique_key_slicing_size,
                                                                name_prefix="simple>_{}_{}".format(p, t))
         strictly_smaller_ind = create_state_keys_comparison_var(model=model, first_state_keys=state_keys[p][t],
                                                                 second_state_keys=state_keys[p][T],
                                                                 include_equality=False,
+                                                  upper_bound= 2**unique_key_slicing_size,
                                                                 name_prefix="simple<_{}_{}".format(p, t))
         model.addConstr(strictly_larger_ind + strictly_smaller_ind - a_matrix[p, t] - a_matrix[p, t-1] >= -1,
-                        name="key_order_in_attractor_{}_{}".format(p, t))
+                        name="simple_{}_{}".format(p, t))
     model.update()
 
     # UNIQUE
@@ -299,8 +319,8 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
     #     # (a[p1, T] & a[p2, t]) >> ~EQ(p1, p2, T, t)
     #     equality_indicator_vars = [model.addVar(vtype=gurobipy.GRB.BINARY,
     #                                name="eq_unique_ind_{}_{}_{}_{}".format(i, p1, p2, t))
-    #                                for i in range(len(G.vertices))]
-    #     for i in range(len(G.vertices)):
+    #                                for i in range(n)]
+    #     for i in range(n):
     #         model.addConstr(equality_indicator_vars[i] <= 1 + v_matrix[i, p1, T] - v_matrix[i, p2, t],
     #                         name="eq_unique_ind_0_{}_{}_{}_{}".format(i, p1, p2, t))
     #         model.addConstr(equality_indicator_vars[i] <= 1 - v_matrix[i, p1, T] + v_matrix[i, p2, t],
@@ -324,6 +344,7 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
             larger_ind = create_state_keys_comparison_var(model=model, first_state_keys=state_keys[p][T],
                                                           second_state_keys=state_keys[p][t],
                                                           include_equality=True,
+                                                          upper_bound=2**unique_key_slicing_size,
                                                           name_prefix="key_order_in_attractor_{}_{}".format(p, t))
             # works for inactive states attractors/time points too!
             model.addConstr(larger_ind >= 1, name="key_order_in_attractor_{}_{}".format(p, t))
@@ -333,6 +354,7 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
                                                                    first_state_keys=state_keys[p + 1][T],
                                                                    second_state_keys=state_keys[p][T],
                                                                    include_equality=False,
+                                                                   upper_bound=2**unique_key_slicing_size,
                                                                    name_prefix="key_order_between_attractors_{}".
                                                                    format(p))
             model.addConstr(strictly_larger_ind - a_matrix[p, T] - a_matrix[p + 1, T] >= -1,
@@ -343,8 +365,8 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
     # lower bound can only be used if the maximal theoretical attractor length is allowed.
     n_inputs = len([v for v in G.vertices if len(v.predecessors()) == 0])
     model.addConstr(sum(a_matrix[p, T] for p in range(P)) <= P, name="upper_objective_bound")
-    if T == 2**len(G.vertices):
-        model.addConstr(sum(a_matrix[p, T] for p in range(P)) >= 2**n_inputs, name="lower_objective_bound")
+    if T >= 2**len(G.vertices):
+        model.addConstr(sum(a_matrix[p, T] for p in range(P)) >= min(2**n_inputs, P), name="lower_objective_bound")
     model.update()
 
     # print_model_constraints(model)
@@ -367,6 +389,14 @@ def get_matrix_coos(m):
     for row_idx, constr in enumerate(constrs):
         for coeff, col_idx in get_expr_coos(m.getRow(constr), var_indices):
             yield row_idx, constr.ConstrName, indices_to_vars[col_idx].VarName, coeff
+
+
+def print_model_values(model, model_vars=None):
+    # assumes optimization has completed successfully
+    if not model_vars:
+        model_vars = model.getVars()
+    for var in model_vars:
+        print "{}\t{}".format(var.VarName, var.X)
 
 
 def print_model_constraints(model):

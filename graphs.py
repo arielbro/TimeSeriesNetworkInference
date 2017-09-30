@@ -11,15 +11,15 @@ class Network:
 
     def __init__(self, vertex_names=None, edges=None, vertex_functions=None):
         assert vertex_names
-
+        assert len(set(vertex_names)) == len(vertex_names)
         for (x, y) in edges:
             assert (x in vertex_names and y in vertex_names)
         if not vertex_functions:
             vertex_functions = [None] * len(vertex_names)
-        self.vertices = [Vertex(self, str(name), function, i) for
-                         name, function, i in zip(vertex_names, vertex_functions, range(len(vertex_names)))] \
+        self.vertices = [Vertex(self, str(name), func, i) for # TODO: switch to sets? Need to sort out function mutability
+                         name, func, i in zip(vertex_names, vertex_functions, range(len(vertex_names)))] \
             if vertex_names else []  # order important!
-        self.edges = {(self.get_vertex(str(a)).index, self.get_vertex(str(b)).index) for a, b in edges}
+        self.edges = [(self.get_vertex(str(a)), self.get_vertex(str(b))) for a, b in edges]
 
     def get_vertex(self, name):
         matches = [vertex for vertex in self.vertices if vertex.name == name]
@@ -28,11 +28,11 @@ class Network:
 
     def __str__(self):
         res = "Graph: \n\tV=" + list_repr(self.vertices) + \
-               "\n\tE=" + list_repr([(self.vertices[a].name, self.vertices[b].name) for a, b in self.edges]) + \
+               "\n\tE=" + list_repr([(a.name, b.name) for a, b in self.edges]) + \
                "\n\tfunctions:"
         for v in self.vertices:
             res += "\n\t\t f_{}: ".format(v.name)
-            if v.function is not None:
+            if len(v.predecessors()) > 0:
                 res += str(v.function)
             else:
                 res += "input node"
@@ -41,21 +41,18 @@ class Network:
     def __repr__(self):
         return str(self)
 
-    def __eq__(self, other):
+    def __eq__(self, other): # TODO: improve from name based matching?
         """
         Checks equality between two networks.
-        Networks are equal if they have the same vertex names, and the same edges between vertices.
-        Networks with same vertices but different indices are currently considered different.
+        Networks are equal if they have the same vertex names, the same edges between vertices,
+        and the same functions on non-input nodes.
         :param other:
         :return:
         """
         if not isinstance(other, Network):
             return False
-        if [v.name for v in self.vertices] != [v.name for v in other.vertices] or self.edges != other.edges:
+        if set(self.vertices) != set(other.vertices) or set(self.edges) != set(other.edges):
             return False
-        for v_1, v_2 in zip(self.vertices, other.vertices):
-            if v_1.function != v_2.function:
-                return False
         return True
 
     def __ne__(self, other):
@@ -65,7 +62,7 @@ class Network:
                             restrict_and_or_gates=False):
         for v in self.vertices:
             n = len(v.predecessors())
-            if not restrict_signed_symmetric_threshold:
+            if (not restrict_signed_symmetric_threshold) and (not restrict_and_or_gates):
                 boolean_outputs = [random.choice([False, True]) for _ in range(2**n)]
                 v.function = BooleanSymbolicFunc(boolean_outputs)
             else:
@@ -76,6 +73,24 @@ class Network:
                     signs = [random.choice([False, True]) for _ in range(n)]
                     threshold = random.randint(1, n) if not restrict_and_or_gates else random.choice([1, n])
                     v.function = SymmetricThresholdFunction(signs, threshold)
+
+    def __add__(self, other):
+        return self.union(self, other)
+
+    @staticmethod
+    def union(a, b):
+        assert isinstance(a, Network)
+        assert isinstance(b, Network)
+
+        sorted_a_vertices = sorted(a.vertices, key=lambda v: v.name)
+        sorted_b_vertices = sorted(b.vertices, key=lambda v: v.name)
+        union_vertex_names = ["a_{}".format(v.name) for v in sorted_a_vertices] + \
+                             ["b_{}".format(v.name) for v in sorted_b_vertices]
+        assert len(union_vertex_names) == len(set(union_vertex_names))
+        union_edges = [("a_{}".format(u.name), ("a_{}".format(v.name))) for (u, v) in a.edges] + \
+                      [("b_{}".format(u.name), "b_{}".format(v.name)) for (u, v) in b.edges]
+        union_functions = [v.function for v in sorted_a_vertices] + [v.function for v in sorted_b_vertices]
+        return Network(vertex_names=union_vertex_names, edges=union_edges, vertex_functions=union_functions)
 
     @staticmethod
     def generate_random(n_vertices, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=False,
@@ -107,10 +122,10 @@ class Network:
                             "https://github.com/arielbro/attractor_learning\n\n")
             cnet_file.write("# total number of nodes\n.v {}\n\n".format(len(self.vertices)))
             cnet_file.write("# labels of nodes and names of corresponding components\n")
-            for v in self.vertices:
+            for v in sorted(self.vertices, key=lambda v: v.index):
                 cnet_file.write("# {} = {}\n".format(v.index + 1, v.name))
             cnet_file.write("\n")
-            for v in self.vertices:
+            for v in sorted(self.vertices, key=lambda v: v.index):
                 cnet_file.write("# {} = {}\n".format(v.index + 1, v.name))
                 cnet_file.write(".n {} {}".format(v.index + 1, len(v.predecessors())))
                 for u in v.predecessors():
@@ -152,7 +167,7 @@ class Network:
                 # vertex names
                 indices = [int(re.search(r"([0-9]+)[ \t]*=", line).group(1)) for
                            line in section.split("\n")[1:]]
-                assert indices == list(range(1, n + 1))
+                assert set(indices) == set(range(1, n + 1))
                 names = [re.search(r"=[ \t]*([0-9a-zA-Z_\-\\ ]+)", line).group(1) for
                          line in section.split("\n")[1:]]
                 continue
@@ -190,25 +205,36 @@ class Network:
         print "time taken for graph import: {:.2f}".format(time.time() - start)
         return G
 
+
 class Vertex:
-    def __init__(self, graph, name, function, index=None):
+    def __init__(self, graph, name, func, index=None):
         self.graph = graph
         self.name = name
-        self.function = function
+        self.function = func
         self.index = index if index is not None else self.graph.vertices.index(self)
         self.precomputed_predecessors = None
 
     def predecessors(self):
         if not self.precomputed_predecessors:
-            predecessors = [self.graph.vertices[u_ind] for u_ind in range(len(self.graph.vertices)) if
-                            (u_ind, self.index) in self.graph.edges]
+            # search using names (asserted to be unique during init) to avoid cyrcular dependencies predecessors <> key
+            name_based_edges  = [(u.name, v.name) for (u, v) in self.graph.edges]
+            predecessors = [u for u in self.graph.vertices if (u.name, self.name) in name_based_edges]
             self.precomputed_predecessors = predecessors
         return self.precomputed_predecessors
+
+    def __key(self):
+        return self.name, (self.function if len(self.predecessors()) > 0 else None)
 
     def __eq__(self, other):
         if not isinstance(other, Vertex):
             return False
-        return self.name == other.name
+        return self.__key() == other.__key()
+
+    def __hash__(self):
+        try:
+            return hash(self.__key())
+        except Exception as e:
+            raise e
 
     def __str__(self):
         # return "name:{}, function:{}".format(self.name, self.function) TODO: add dummy variables for printing

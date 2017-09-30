@@ -51,7 +51,7 @@ def find_num_attractors_multistage(G, use_ilp):
     print "#attractors:{}".format(P)
 
 
-def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, verbose=False):
+def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, verbose=False, require_result=None):
     T = 2 ** len(G.vertices) if not max_len else max_len
     P = 2 ** len(G.vertices) if not max_num else max_num
     start_time = time.time()
@@ -73,6 +73,9 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         model, active_ilp_vars = ilp.direct_graph_to_ilp(G, T, P, find_general_bool_model=False,
                                                          find_symmetric_bool_model=False)
     model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
+    if require_result is not None:
+        model.addConstr(sum(active_ilp_vars) == require_result, name="optimality_constraint")
+        model.update()
     if not verbose:
         model.params.LogToConsole = 0
 
@@ -80,6 +83,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     # model.getTuneResult(0)  # take best tuning parameters
     # model.write('tune v-{} P-{} T-{}.prm'.format(len(G.vertices), P, T))
     print model
+    model_vars = model.getVars()
     # ilp.print_model_constraints(model)
     # for var in model.getVars():
     #     var.Start = 0
@@ -94,13 +98,15 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
 
     else:
         print "# attractors = {}".format(model.ObjVal)
+        print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
+        return model.objVal
+        # ilp.print_model_values(model, model_vars=model_vars)
     # for constr in model.getConstrs():
     #     print constr
     # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
     #        if re.match("a_[0-9]*_[0-9]*", v.varName)]  # abs(v.obj) > 1e-6
     # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
     #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
-    print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
 
 
 def find_min_attractors_model(G):
