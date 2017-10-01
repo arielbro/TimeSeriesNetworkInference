@@ -2,13 +2,19 @@ import itertools
 import random
 import re
 import time
+from enum import Enum
 
 from logic import BooleanSymbolicFunc, SymmetricThresholdFunction
 from utility import list_repr
 
 
-class Network:
+class FunctionTypeRestriction(Enum):
+    NONE = 1
+    SYMMETRIC_THRESHOLD = 2
+    SIMPLE_GATES = 3
 
+
+class Network:
     def __init__(self, vertex_names=None, edges=None, vertex_functions=None):
         assert vertex_names
         assert len(set(vertex_names)) == len(vertex_names)
@@ -16,7 +22,8 @@ class Network:
             assert (x in vertex_names and y in vertex_names)
         if not vertex_functions:
             vertex_functions = [None] * len(vertex_names)
-        self.vertices = [Vertex(self, str(name), func, i) for # TODO: switch to sets? Need to sort out function mutability
+        self.vertices = [Vertex(self, str(name), func, i) for
+                         # TODO: switch to sets? Need to sort out function mutability
                          name, func, i in zip(vertex_names, vertex_functions, range(len(vertex_names)))] \
             if vertex_names else []  # order important!
         self.edges = [(self.get_vertex(str(a)), self.get_vertex(str(b))) for a, b in edges]
@@ -28,8 +35,8 @@ class Network:
 
     def __str__(self):
         res = "Graph: \n\tV=" + list_repr(self.vertices) + \
-               "\n\tE=" + list_repr([(a.name, b.name) for a, b in self.edges]) + \
-               "\n\tfunctions:"
+              "\n\tE=" + list_repr([(a.name, b.name) for a, b in self.edges]) + \
+              "\n\tfunctions:"
         for v in self.vertices:
             res += "\n\t\t f_{}: ".format(v.name)
             if len(v.predecessors()) > 0:
@@ -41,7 +48,7 @@ class Network:
     def __repr__(self):
         return str(self)
 
-    def __eq__(self, other): # TODO: improve from name based matching?
+    def __eq__(self, other):  # TODO: improve from name based matching?
         """
         Checks equality between two networks.
         Networks are equal if they have the same vertex names, the same edges between vertices,
@@ -58,12 +65,11 @@ class Network:
     def __ne__(self, other):
         return not self == other
 
-    def randomize_functions(self, restrict_signed_symmetric_threshold=False,
-                            restrict_and_or_gates=False):
+    def randomize_functions(self, function_type_restriction=FunctionTypeRestriction.NONE):
         for v in self.vertices:
             n = len(v.predecessors())
-            if (not restrict_signed_symmetric_threshold) and (not restrict_and_or_gates):
-                boolean_outputs = [random.choice([False, True]) for _ in range(2**n)]
+            if function_type_restriction == FunctionTypeRestriction.NONE:
+                boolean_outputs = [random.choice([False, True]) for _ in range(2 ** n)]
                 v.function = BooleanSymbolicFunc(boolean_outputs)
             else:
                 if n == 0:
@@ -71,7 +77,9 @@ class Network:
                     v.function = None
                 else:
                     signs = [random.choice([False, True]) for _ in range(n)]
-                    threshold = random.randint(1, n) if not restrict_and_or_gates else random.choice([1, n])
+                    threshold = random.randint(1, n) if \
+                        function_type_restriction != FunctionTypeRestriction.SIMPLE_GATES else \
+                        random.choice([1, n])
                     v.function = SymmetricThresholdFunction(signs, threshold)
 
     def __add__(self, other):
@@ -82,8 +90,8 @@ class Network:
         assert isinstance(a, Network)
         assert isinstance(b, Network)
 
-        sorted_a_vertices = sorted(a.vertices, key=lambda v: v.name)
-        sorted_b_vertices = sorted(b.vertices, key=lambda v: v.name)
+        sorted_a_vertices = sorted(a.vertices, key=lambda vertex: vertex.name)
+        sorted_b_vertices = sorted(b.vertices, key=lambda vertex: vertex.name)
         union_vertex_names = ["a_{}".format(v.name) for v in sorted_a_vertices] + \
                              ["b_{}".format(v.name) for v in sorted_b_vertices]
         assert len(union_vertex_names) == len(set(union_vertex_names))
@@ -93,8 +101,7 @@ class Network:
         return Network(vertex_names=union_vertex_names, edges=union_edges, vertex_functions=union_functions)
 
     @staticmethod
-    def generate_random(n_vertices, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=False,
-                        restrict_and_or_gates=False):
+    def generate_random(n_vertices, indegree_bounds=(1, 5), function_type_restriction=FunctionTypeRestriction.NONE):
         vertices = list(range(n_vertices))
         edges = set()
         for v in vertices:
@@ -104,7 +111,7 @@ class Network:
                 edges.add((u, v))
 
         G = Network(vertices, edges)
-        G.randomize_functions(restrict_signed_symmetric_threshold, restrict_and_or_gates)
+        G.randomize_functions(function_type_restriction=function_type_restriction)
         return G
 
     def export_to_cnet(self, path):
@@ -112,7 +119,6 @@ class Network:
         Given a network G, export G's structure (including the boolean model)
         to a cnet file, as described in BNS's user manual -
         https://people.kth.se/~dubrova/BNS/user_manual.html
-        :param G: A network model (assumes boolean valued functions defined for each non-input vertex
         :param path: Path to the desired cnet file
         :return: G, a graph with a boolean model.
         """
@@ -122,10 +128,10 @@ class Network:
                             "https://github.com/arielbro/attractor_learning\n\n")
             cnet_file.write("# total number of nodes\n.v {}\n\n".format(len(self.vertices)))
             cnet_file.write("# labels of nodes and names of corresponding components\n")
-            for v in sorted(self.vertices, key=lambda v: v.index):
+            for v in sorted(self.vertices, key=lambda vertex: vertex.index):
                 cnet_file.write("# {} = {}\n".format(v.index + 1, v.name))
             cnet_file.write("\n")
-            for v in sorted(self.vertices, key=lambda v: v.index):
+            for v in sorted(self.vertices, key=lambda vertex: vertex.index):
                 cnet_file.write("# {} = {}\n".format(v.index + 1, v.name))
                 cnet_file.write(".n {} {}".format(v.index + 1, len(v.predecessors())))
                 for u in v.predecessors():
@@ -167,6 +173,7 @@ class Network:
                 # vertex names
                 indices = [int(re.search(r"([0-9]+)[ \t]*=", line).group(1)) for
                            line in section.split("\n")[1:]]
+                # noinspection PyUnboundLocalVariable
                 assert set(indices) == set(range(1, n + 1))
                 names = [re.search(r"=[ \t]*([0-9a-zA-Z_\-\\ ]+)", line).group(1) for
                          line in section.split("\n")[1:]]
@@ -196,7 +203,7 @@ class Network:
                                          for bit in ordered_input_bits]
                     for input_combination in itertools.product(*input_value_lists):
                         truth_table_dict[tuple(input_combination)] = output
-                ordered_bool_outputs = [truth_table_dict[tuple(input)] for input in
+                ordered_bool_outputs = [truth_table_dict[tuple(input_value)] for input_value in
                                         itertools.product([False, True], repeat=v_n_args)]
                 func = BooleanSymbolicFunc(ordered_bool_outputs)
                 bool_funcs.append(func)
@@ -217,7 +224,7 @@ class Vertex:
     def predecessors(self):
         if not self.precomputed_predecessors:
             # search using names (asserted to be unique during init) to avoid cyrcular dependencies predecessors <> key
-            name_based_edges  = [(u.name, v.name) for (u, v) in self.graph.edges]
+            name_based_edges = [(u.name, v.name) for (u, v) in self.graph.edges]
             predecessors = [u for u in self.graph.vertices if (u.name, self.name) in name_based_edges]
             self.precomputed_predecessors = predecessors
         return self.precomputed_predecessors

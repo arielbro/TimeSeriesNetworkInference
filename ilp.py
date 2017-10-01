@@ -5,9 +5,9 @@ import itertools
 import logic
 import time
 import math
-import utility
+from graphs import FunctionTypeRestriction
 
-unique_key_slicing_size = 1  # TODO: find elegant reformatting for this
+unique_key_slicing_size = 29  # TODO: find elegant reformatting for this
 
 
 def recursive_logic_to_var(formula, model, formulas_to_variables):
@@ -127,9 +127,9 @@ def create_state_keys_comparison_var(model, first_state_keys, second_state_keys,
     return last_var
 
 
-def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=False,
-                        find_symmetric_bool_model=False):
-    assert not (find_general_bool_model and find_symmetric_bool_model)
+# noinspection PyArgumentList
+def direct_graph_to_ilp(G, max_len=None, max_num=None, find_model=False,
+                        model_type_restriction=FunctionTypeRestriction.NONE):
     start = time.time()
     T = 2**len(G.vertices) if not max_len else max_len
     P = 2**len(G.vertices) if not max_num else max_num
@@ -148,26 +148,33 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
                   for p in range(P)]
 
     predecessors_vars = lambda i, p, t: [v_matrix[vertex.index, p, t] for vertex in G.vertices[i].predecessors()]
-    if find_general_bool_model:
-        truth_table_vars_dict = dict()
-        for i in range(n):
-            for truth_table_index in range(2**len(G.vertices[i].predecessors())):
-                new_var = model.addVar(vtype=gurobipy.GRB.BINARY,
-                                       name="f_{}_{}".format(i, truth_table_index))
+    if find_model:
+        if model_type_restriction == FunctionTypeRestriction.NONE:
+            truth_table_vars_dict = dict()
+            for i in range(n):
+                for truth_table_index in range(2**len(G.vertices[i].predecessors())):
+                    new_var = model.addVar(vtype=gurobipy.GRB.BINARY,
+                                           name="f_{}_{}".format(i, truth_table_index))
+                    model.update()
+                    truth_table_vars_dict[(i, truth_table_index)] = new_var
+        elif model_type_restriction == FunctionTypeRestriction.SYMMETRIC_THRESHOLD\
+                or model_type_restriction == FunctionTypeRestriction.SIMPLE_GATES:
+            signs_threshold_vars_dict = dict()
+            for i in range(n):
+                n_inputs = len(G.vertices[i].predecessors())
+                signs = []
+                for input in range(n_inputs):
+                    sign_var = model.addVar(vtype=gurobipy.GRB.BINARY, name="f_{}_signs_{}".format(i, input))
+                    signs.append(sign_var)
+                if model_type_restriction == FunctionTypeRestriction.SYMMETRIC_THRESHOLD:
+                    threshold_expression = model.addVar(vtype=gurobipy.GRB.INTEGER, lb=0, ub=n_inputs+1,
+                                             name="f_{}_threshold".format(i))
+                else:
+                    threshold_indicator = model.addVar(
+                        vtype=gurobipy.GRB.BINARY, name="f_{}_gate_indicator".format(i))
+                    threshold_expression = 1 + threshold_indicator * (n_inputs - 1)
                 model.update()
-                truth_table_vars_dict[(i, truth_table_index)] = new_var
-    elif find_symmetric_bool_model:
-        signs_threshold_vars_dict = dict()
-        for i in range(n):
-            n_inputs = len(G.vertices[i].predecessors())
-            signs = []
-            for input in range(n_inputs):
-                sign_var = model.addVar(vtype=gurobipy.GRB.BINARY, name="f_{}_signs_{}".format(i, input))
-                signs.append(sign_var)
-            threshold = model.addVar(vtype=gurobipy.GRB.INTEGER, lb=0, ub=n_inputs+1,
-                                     name="f_{}_threshold".format(i))
-            model.update()
-            signs_threshold_vars_dict[i] = signs, threshold
+                signs_threshold_vars_dict[i] = signs, threshold_expression
 
     for p, t in itertools.product(range(P), range(T)):
         # assert activity var meaning (ACTIVITY_SWITCH, MONOTONE, IF_NON_ACTIVE)
@@ -195,15 +202,15 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
             model.update()
         elif t < T:
             if isinstance(G.vertices[i].function, logic.SymmetricThresholdFunction) or \
-                    find_symmetric_bool_model:
-                if find_symmetric_bool_model:
+                    (find_model and model_type_restriction != FunctionTypeRestriction.NONE):
+                if find_model and model_type_restriction != FunctionTypeRestriction.NONE:
                     signs, threshold = signs_threshold_vars_dict[i]
                 else:
                     signs = G.vertices[i].function.signs
                     threshold = G.vertices[i].function.threshold
                 input_sum_expression = 0
                 for predecessors_index, (sign, var) in enumerate(zip(signs, predecessors_vars(i, p, t))):
-                    if find_symmetric_bool_model:
+                    if model_type_restriction != FunctionTypeRestriction.NONE:
                         # signs are variables, so can't multiply. need to have a variable signed_input s.t.:
                         # signed_input = not(xor(sign, var))
                         z = model.addVar(vtype=gurobipy.GRB.BINARY, name="signed_input_var_{}_{}_{}_{}".
@@ -242,7 +249,7 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_general_bool_model=F
                     model.addConstr(indicator >= indicator_expression - in_degree + 1,
                                     name="truth_table_row_indicator_>=_{}_{}_{}_{}".format(i, p, t, var_comb_index))
                     # noinspection PyUnboundLocalVariable
-                    desired_val = truth_table_vars_dict[i, var_comb_index] if find_general_bool_model else \
+                    desired_val = truth_table_vars_dict[i, var_comb_index] if find_model else \
                         (1 if G.vertices[i].function(*var_combination) else 0)
                     # a[p, t] & indicator => v[i,p,t+1] = f(var_combination).
                     # For x&y => a=b, require a <= b + (2 -x -b), a >= b - (2 -x -y)
@@ -397,6 +404,44 @@ def print_model_values(model, model_vars=None):
         model_vars = model.getVars()
     for var in model_vars:
         print "{}\t{}".format(var.VarName, var.X)
+
+
+def print_attractors(model):
+    """
+    Prints the attractors of a model after it has been optimized.
+    :param model:
+    :return:
+    """
+    n_attracotrs = int(round(model.ObjVal))
+    if n_attracotrs != model.ObjVal:
+        print "warning, model solved with non-integral objective value {}".format(model.ObjVal)
+    v_name_parts = [var.VarName.split("_")[1:] for var in model.getVars() if "v_" in var.VarName]
+    max_i = 0
+    max_p = 0
+    max_t = 0
+    for name_part_list in v_name_parts:
+        assert len(name_part_list) == 3
+        i, p, t = name_part_list
+        max_i = max(max_i, int(i))
+        max_p = max(max_p, int(p))
+        max_t = max(max_t, int(t))
+    T = max_t
+    P = max_p + 1
+    n = max_i + 1
+    a_variables = [[model.getVarByName("a_{}_{}".format(p, t)) for t in range(T+1)] for p in range(P)]
+    v_variables = [[[model.getVarByName("v_{}_{}_{}".format(i, p, t)) for t in range(T)] for p in range(P)]
+                   for i in range(n)]
+    assert len([None for p in range(P) if int(round(a_variables[p][T-1].X)) == 1]) == n_attracotrs
+    for attractor_number in range(int(n_attracotrs)):
+        p = P - attractor_number - 1
+        length = len([None for t in range(T) if a_variables[p][t].X == 1])
+        print "Attractor #{}, length {}".format(attractor_number + 1, length)
+        # TODO: support for original graph names?
+        print reduce(lambda a, b: "{}\t{}".format(a, b), ["v_{}".format(i) for i in range(n)])
+        for t in range(T - length, T):
+            # noinspection PyTypeChecker
+            print reduce(lambda a, b: "{}\t{}".format(a, b), [int(round(v_variables[i][p][t].X)) for i in range(n)])
+        print "\n"
 
 
 def print_model_constraints(model):

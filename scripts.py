@@ -105,7 +105,7 @@ G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
 #                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
 # input_nodes = [u for u in G.vertices if len(u.predecessors()) == 0]
 # stochastic_estimation = stochastic.estimate_attractors(G, n_walks=300, max_walk_len=30)
-ilp_estimation = attractors.find_num_attractors_onestage(G, max_len=2, max_num=2, use_sat=False, verbose=True)
+# ilp_estimation = attractors.find_num_attractors_onestage(G, max_len=2, max_num=2, use_sat=False, verbose=True)
 # attractors.write_random_fixed_graph_estimations_sampling(G=G, n_iter=400, restrict_symmetric_threshold=True,
 #                                                          restrict_and_or_gates=True,
 #                                                          n_walks=1500, max_walk_len=1000,
@@ -113,3 +113,5 @@ ilp_estimation = attractors.find_num_attractors_onestage(G, max_len=2, max_num=2
 
 # print attractors.find_num_attractors_dubrova(G, "")
 # print estimate_size(len(G.vertices), len(G.edges), 4, 200)
+
+attractors.find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.FunctionTypeRestriction.NONE)

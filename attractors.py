@@ -11,6 +11,7 @@ import gurobipy
 import stochastic
 import subprocess
 
+
 def find_num_attractors_multistage(G, use_ilp):
     T = 1
     P = 1
@@ -70,8 +71,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         model, formulas_to_variables = ilp.logic_to_ilp(ATTRACTORS)
         active_ilp_vars = [formulas_to_variables[active_logic_var] for active_logic_var in active_logic_vars]
     else:
-        model, active_ilp_vars = ilp.direct_graph_to_ilp(G, T, P, find_general_bool_model=False,
-                                                         find_symmetric_bool_model=False)
+        model, active_ilp_vars = ilp.direct_graph_to_ilp(G, T, P, find_model=False)
     model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
     if require_result is not None:
         model.addConstr(sum(active_ilp_vars) == require_result, name="optimality_constraint")
@@ -83,7 +83,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     # model.getTuneResult(0)  # take best tuning parameters
     # model.write('tune v-{} P-{} T-{}.prm'.format(len(G.vertices), P, T))
     print model
-    model_vars = model.getVars()
+    # model_vars = model.getVars()
     # ilp.print_model_constraints(model)
     # for var in model.getVars():
     #     var.Start = 0
@@ -98,7 +98,10 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
 
     else:
         print "# attractors = {}".format(model.ObjVal)
+        if model.ObjVal != int(round(model.ObjVal)):
+            print "warning - model solved with non-integral objective function"
         print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
+        ilp.print_attractors(model)
         return model.objVal
         # ilp.print_model_values(model, model_vars=model_vars)
     # for constr in model.getConstrs():
@@ -109,7 +112,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
 
 
-def find_min_attractors_model(G):
+def find_min_attractors_model(G, use_sat=False):
     # important - destroys G's current model.
     for i, v in enumerate(G.vertices):
         truth_table_size = 2**len(v.predecessors())
@@ -151,37 +154,46 @@ def find_min_attractors_model(G):
                 print model
 
 
-def sample_graph_sat_results(num_vertices, edge_ratio, T, P):
-    start = time.time()
-    vertex_names = ["v_" + str(i) for i in range(num_vertices)]
-    edges = []
-    for possible_edge in itertools.product(vertex_names, vertex_names):
-        if random.random() < edge_ratio:
-            edges.append(possible_edge)
-    G = graphs.Network(vertex_names, edges)
-    for v in G.vertices:
-        boolean_outputs = [random.choice([True, False]) for i in range(len(v.predecessors()))]
-        boolean_function = logic.pre_randomized_boolean_func(boolean_outputs)
-        v.function = boolean_function
-    ATTRACTORS = logic.get_attractorlb_lengthub_formula(G, P, T)
-    sat = sympy.satisfiable(ATTRACTORS)
-    return ATTRACTORS, time.time() - start
-
-
-def write_sat_sampling_analysis_table(n_repeats, num_vertices_bound, output_path):
-    lines = []
-    for i in range(n_repeats):
-        n_vertices = random.randint(1, num_vertices_bound)
-        edge_ratio = random.random()
-        T = random.randint(1, 2**n_vertices)
-        P = random.randint(1, 2**n_vertices)
-        formula, time_taken = sample_graph_sat_results(n_vertices, edge_ratio, T, P)
-        lines.append([n_vertices, edge_ratio, T, P, logic.formula_length(formula), time_taken])
-        print "finished iteration #{}".format(i)
-    lines.insert(0, ["n_vertices, edge_ratio, T, P, formula_length, time_taken_secs"])
-    with open(output_path, 'w') as output_file:
-        writer = csv.writer(output_file)
-        writer.writerows(lines)
+def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.FunctionTypeRestriction.NONE):
+    """
+    Finds a model with maximum attractors for a given graph and function restrictions.
+    Performed a binary search on sizes of attractors, and increases number of attractors to search by one each time.
+    :param G:
+    :param verbose:
+    :param model_type_restriction:
+    :return:
+    """
+    # TODO: consider binary search for T
+    P = 1
+    T = 1
+    while True:
+        start_time = time.time()
+        model, active_ilp_vars = ilp.direct_graph_to_ilp(G, T, P, find_model=True,
+                                                         model_type_restriction=model_type_restriction)
+        model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
+        if not verbose:
+            model.params.LogToConsole = 0
+        model.optimize()
+        print "Time taken for ILP solve: {:.2f} (T={}, P={})".format(time.time() - start_time, T, P)
+        if model.Status != gurobipy.GRB.OPTIMAL:
+            print "warning, model not solved to optimality."
+            print "writing IIS data to model_iis.ilp"
+            model.computeIIS()
+            model.write("./model_iis.ilp")
+            return None
+        else:
+            found_attractors = model.ObjVal
+            if found_attractors == P:
+                P = P + 1
+                continue
+            else:
+                assert found_attractors == P - 1
+                if T == 2**len(G.vertices):
+                    break
+                T *= 2
+    print "Found maximal model with {} attractors".format(found_attractors)
+    function_vars = [var for var in model.getVars() if "f_" in var.VarName]
+    ilp.print_model_values(model, model_vars=function_vars)
 
 
 def stochastic_attractor_estimation(G, n_walks, max_walk_len=None):
@@ -205,15 +217,14 @@ def stochastic_attractor_estimation(G, n_walks, max_walk_len=None):
 
 
 def write_random_graph_estimations_sampling(n_graphs, vertices_bounds, indegree_bounds,
-                                            restrict_symmetric_threshold,
-                                            restrict_and_or_gates,  n_walks, max_walk_len, path):
-    res = [["vertices", "edges", "input_nodes", "attractors", "states_visited", "average_attractor_length", "average_basin_size"]]
+                                            function_type_restriction,  n_walks, max_walk_len, path):
+    res = [["vertices", "edges", "input_nodes", "attractors", "states_visited", "average_attractor_length",
+            "average_basin_size"]]
     for i in range(n_graphs):
         n = random.randint(*vertices_bounds)
         G = graphs.Network.generate_random(n_vertices=n,
-                                       indegree_bounds=indegree_bounds,
-                                       restrict_signed_symmetric_threshold=restrict_symmetric_threshold,
-                                       restrict_and_or_gates=restrict_and_or_gates)
+                                           indegree_bounds=indegree_bounds,
+                                           function_type_restriction=function_type_restriction)
         input_nodes = len([v for v in G.vertices if len(v.predecessors()) == 0])  # not counting semantic inputs
         attractors = stochastic.estimate_attractors(G, n_walks=min(n_walks, 2*2**n), max_walk_len=max_walk_len)
         total_states = sum([basin for _, basin in attractors])
@@ -225,15 +236,14 @@ def write_random_graph_estimations_sampling(n_graphs, vertices_bounds, indegree_
         writer = csv.writer(output_file)
         writer.writerows(res)
 
-def write_random_fixed_graph_estimations_sampling(G, n_iter, restrict_symmetric_threshold,
-                                                  restrict_and_or_gates, n_walks, max_walk_len, path):
+
+def write_random_fixed_graph_estimations_sampling(G, n_iter, function_type_restriction, n_walks, max_walk_len, path):
     res = [["vertices", "edges", "input_nodes", "attractors", "states_visited", "average_attractor_length",
             "average_basin_size"]]
     n = len(G.vertices)
     input_nodes = len([v for v in G.vertices if len(v.predecessors()) == 0])  # not counting semantic inputs
     for i in range(n_iter):
-        G.randomize_functions(restrict_signed_symmetric_threshold=restrict_symmetric_threshold,
-                              restrict_and_or_gates=restrict_and_or_gates)
+        G.randomize_functions(function_type_restriction=function_type_restriction)
         attractors = stochastic.estimate_attractors(G, n_walks=min(n_walks, 2 * 2 ** n), max_walk_len=max_walk_len)
         total_states = sum([basin for _, basin in attractors])
         average_length = sum(len(attractor) for attractor, _ in attractors) / float(len(attractors))
@@ -249,6 +259,7 @@ def find_num_attractors_dubrova(G, dubrova_dir_path):
     """
     Export G, call dubrova's algorithm on it, and parse number of attractors from results.
     :param G:
+    :param dubrova_dir_path:
     :return: n_attractors
     """
     temp_network_path = "./temp_network.cnet"
@@ -257,7 +268,8 @@ def find_num_attractors_dubrova(G, dubrova_dir_path):
         return_code = subprocess.call(args=[os.path.join(dubrova_dir_path, "bns"), temp_network_path])
         if return_code >= 0:
             raise Exception("Got an erroneous return code while calling Dubrova - {}".format(return_code))
-        
+        else:
+            pass
     except Exception as e:
         raise e
     finally:
