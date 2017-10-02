@@ -1,5 +1,8 @@
 import os
 import itertools
+
+from scipy.stats._discrete_distns import poisson_gen
+
 import logic
 import graphs
 import sympy
@@ -104,7 +107,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         if model.ObjVal != int(round(model.ObjVal)):
             print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
         print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
-        # ilp.print_attractors(model)
+        ilp.print_attractors(model)
         return int(round(model.objVal))
         # ilp.print_model_values(model, model_vars=model_vars)
     # for constr in model.getConstrs():
@@ -115,37 +118,52 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
 
 
-def find_min_attractors_model(G, use_sat=False):
-    # important - destroys G's current model.
-    for i, v in enumerate(G.vertices):
-        truth_table_size = 2**len(v.predecessors())
-        function_variables = [sympy.symbols("f_{}_{}".format(i, j)) for j in range(truth_table_size)]
-        v.function = logic.BooleanSymbolicFunc(function_variables)
-
-    T = 2**len(G.vertices)
+def find_min_attractors_model(G, max_len=None, min_attractors=None):
+    T = max_len if max_len is not None else 2**len(G.vertices)
     iteration = 1
     p_to_models = dict()
-    for P in range(1, 2 ** len(G.vertices) + 1):
+    P = min_attractors if min_attractors is not None else 1
+    pool_size = 10  # 2000000000
+    while True:
         print "iteration {}".format(iteration)
         print "P={}, T={}".format(P, T)
         iteration += 1
         start_time = time.time()
-        ATTRACTORS = logic.get_attractorlb_lengthub_formula(G, P, T)
-        # print ATTRACTORS
-        sat_models = sympy.satisfiable(ATTRACTORS, all_models=True)  # TODO: replace with ILP enumeration
+        model, activity_variables = ilp.direct_graph_to_ilp_with_keys(G, max_len=T, max_num=P, find_model=True,
+                                                                      model_type_restriction=
+                                                                      graphs.FunctionTypeRestriction.NONE)
+        model.setObjective(sum(activity_variables))
+        model.addConstr(sum(activity_variables) == P)
+        model.params.PoolSolutions = pool_size
+        model.params.PoolSearchMode = 2
+        model.params.MIPGap = 0
+        model.params.LogToConsole = 0
+        model.optimize()
+        if model.SolCount == pool_size and 2*pool_size < 2000000000:
+            print "reached pool size capacity ({}). Doubling capacity".format(pool_size)
+            pool_size *= 2
+            continue
+        elif pool_size == 2*pool_size >= 2000000000:
+            print "too much solutions, ignoring this P"
+            P += 1
+            continue
         function_models = set()
-        for model in sat_models:
-            if model:  # take only values of function variables
+        if model.Status != gurobipy.GRB.OPTIMAL:
+            p_to_models[P] = function_models
+        else:
+            if model.ObjVal != int(round(model.ObjVal)):
+                print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
+            print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
+            for i in range(model.SolCount):
+                model.setParam(gurobipy.GRB.Param.SolutionNumber, i)
                 function_model = []
-                for key, val in model.items():
-                    if key.name.startswith("f_"):
-                        function_model.append((key, val))
+                for var in model.getVars():
+                    if "f_" in var.VarName:
+                        function_model.append((var.VarName, int(round(var.Xn))))
                 function_model = tuple(sorted(function_model, key=lambda tup: str(tup[0])))
                 function_models.add(function_model)
-            else:
-                print "not sat!"
-        p_to_models[P] = function_models
 
+        p_to_models[P] = function_models
         if P > 1:
             selected_models = [model for model in p_to_models[P-1] if model not in p_to_models[P]]
             print "Models with {} attractors: {}".format(P-1, len(selected_models))
@@ -155,6 +173,10 @@ def find_min_attractors_model(G, use_sat=False):
             print "Models with {} attractors: {}".format(P, len(function_models))
             for model in function_models:
                 print model
+        if model.Status != gurobipy.GRB.OPTIMAL:
+            break
+        P += 1
+        continue
 
 
 def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.FunctionTypeRestriction.NONE,

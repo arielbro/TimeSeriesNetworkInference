@@ -7,7 +7,7 @@ import time
 import math
 from graphs import FunctionTypeRestriction
 
-unique_key_slicing_size = 29  # TODO: find elegant reformatting for this
+unique_key_slicing_size = 10  # TODO: find elegant reformatting for this
 
 
 def recursive_logic_to_var(formula, model, formulas_to_variables):
@@ -148,8 +148,8 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None, find_model=Fals
                   for p in range(P)]
     predecessors_vars = lambda i, p, t: [v_matrix[vertex.index, p, t] for vertex in G.vertices[i].predecessors()]
 
-    print "Time taken for basic prep:{:.2f} seconds".format(time.time() - part_start)
-    part_start = time.time()
+    # print "Time taken for basic prep:{:.2f} seconds".format(time.time() - part_start)
+    # part_start = time.time()
 
     if find_model:
         if model_type_restriction == FunctionTypeRestriction.NONE:
@@ -179,8 +179,8 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None, find_model=Fals
                 model.update()
                 signs_threshold_vars_list[i] = signs, threshold_expression
 
-    print "Time taken for boolean model search variables preparation:{:.2f} seconds".format(time.time() - part_start)
-    part_start = time.time()
+    # print "Time taken for boolean model search variables preparation:{:.2f} seconds".format(time.time() - part_start)
+    # part_start = time.time()
 
     for p, t in itertools.product(range(P), range(T)):
         # assert activity var meaning (ACTIVITY_SWITCH, MONOTONE, IF_NON_ACTIVE)
@@ -196,8 +196,8 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None, find_model=Fals
         if p != P - 1:
             model.addConstr(a_matrix[p, T] <= a_matrix[p + 1, T], name="active_order_{}".format(p))
 
-    print "Time taken for activity constraints preparation:{:.2f} seconds".format(time.time() - part_start)
-    part_start = time.time()
+    # print "Time taken for activity constraints preparation:{:.2f} seconds".format(time.time() - part_start)
+    # part_start = time.time()
 
     for i in range(n):
         # assert consistent and stable
@@ -262,8 +262,8 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None, find_model=Fals
                                         name="consistent_<=_{}_{}_{}".format(i, p, t))
                         # model.update()
 
-    print "Time taken for consistent and stable preparation:{:.2f} seconds".format(time.time() - part_start)
-    part_start = time.time()
+    # print "Time taken for consistent and stable preparation:{:.2f} seconds".format(time.time() - part_start)
+    # part_start = time.time()
 
     # CYCLIC
     for p, t in itertools.product(range(P), range(T)):
@@ -287,8 +287,8 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None, find_model=Fals
                         name="cyclic_{}_{}".format(p, t))
     # model.update()
 
-    print "Time taken for cyclic constraints preparation:{:.2f} seconds".format(time.time() - part_start)
-    part_start = time.time()
+    # print "Time taken for cyclic constraints preparation:{:.2f} seconds".format(time.time() - part_start)
+    # part_start = time.time()
 
     # SIMPLE
     for t, p in itertools.product(range(1, T), range(P)):
@@ -307,8 +307,8 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None, find_model=Fals
                         name="simple_{}_{}".format(p, t))
     # model.update()
 
-    print "Time taken for simple constraints preparation:{:.2f} seconds".format(time.time() - part_start)
-    part_start = time.time()
+    # print "Time taken for simple constraints preparation:{:.2f} seconds".format(time.time() - part_start)
+    # part_start = time.time()
 
     # UNIQUE
     # To reduce symmetry, using the order defined by a unique state id function,
@@ -347,7 +347,7 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None, find_model=Fals
 
     model.update()
 
-    print "Time taken for unique constraints preparation:{:.2f} seconds".format(time.time() - part_start)
+    # print "Time taken for unique constraints preparation:{:.2f} seconds".format(time.time() - part_start)
 
     # print_model_constraints(model)
     # print model
@@ -621,11 +621,10 @@ def print_attractors(model):
         length = len([None for t in range(T) if a_variables[p][t].X == 1])
         print "Attractor #{}, length {}".format(attractor_number + 1, length)
         # TODO: support for original graph names?
-        print reduce(lambda a, b: "{}\t{}".format(a, b), ["v_{}".format(i) for i in range(n)])
+        # print reduce(lambda a, b: "{}\t{}".format(a, b), ["v_{}".format(i) for i in range(n)])
         for t in range(T - length, T):
             # noinspection PyTypeChecker
-            print reduce(lambda a, b: "{}\t{}".format(a, b), [int(round(v_variables[i][p][t].X)) for i in range(n)])
-        print "\n"
+            print reduce(lambda a, b: "{}{}".format(a, b), [int(round(v_variables[i][p][t].X)) for i in range(n)])
 
 
 def print_model_constraints(model):

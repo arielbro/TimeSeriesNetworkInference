@@ -100,6 +100,8 @@ def estimate_size(n, m, T, P):
 
 G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
+# print G
+# print len(G.vertices)
 # input_nodes = [u for u in G.vertices if len(u.predecessors()) == 0]
 # stochastic_estimation = stochastic.estimate_attractors(G, n_walks=300, max_walk_len=30)
 # ilp_estimation = attractors.find_num_attractors_onestage(G, max_len=2, max_num=2, use_sat=False, verbose=True)
@@ -117,5 +119,5 @@ G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ari
 #                                     use_state_keys=True)
 # print G
 # attractors.find_num_attractors_multistage(G, use_ilp=False)
-attractors.find_num_attractors_onestage(G, use_sat=False, max_len=14, max_num=42, use_state_keys=True)
-# attractors.find_min_attractors_model(G)
+# attractors.find_num_attractors_onestage(G, use_sat=False, max_len=13, max_num=42, use_state_keys=True)
+attractors.find_min_attractors_model(G, max_len=12, min_attractors=2)
