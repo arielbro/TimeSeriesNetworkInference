@@ -1,8 +1,5 @@
 import os
 import itertools
-
-from scipy.stats._discrete_distns import poisson_gen
-
 import logic
 import graphs
 import sympy
@@ -132,12 +129,12 @@ def find_min_attractors_model(G, max_len=None, min_attractors=None):
         model, activity_variables = ilp.direct_graph_to_ilp_with_keys(G, max_len=T, max_num=P, find_model=True,
                                                                       model_type_restriction=
                                                                       graphs.FunctionTypeRestriction.NONE)
+        model.params.LogToConsole = 0
         model.setObjective(sum(activity_variables))
         model.addConstr(sum(activity_variables) == P)
         model.params.PoolSolutions = pool_size
         model.params.PoolSearchMode = 2
         model.params.MIPGap = 0
-        model.params.LogToConsole = 0
         model.optimize()
         if model.SolCount == pool_size and 2*pool_size < 2000000000:
             print "reached pool size capacity ({}). Doubling capacity".format(pool_size)
@@ -169,14 +166,14 @@ def find_min_attractors_model(G, max_len=None, min_attractors=None):
             print "Models with {} attractors: {}".format(P-1, len(selected_models))
             for model in selected_models:
                 print model
-        if P == 2**len(G.vertices):  # all that remain
-            print "Models with {} attractors: {}".format(P, len(function_models))
-            for model in function_models:
-                print model
         if model.Status != gurobipy.GRB.OPTIMAL:
             break
         P += 1
         continue
+    if P == 2 ** len(G.vertices) and len(p_to_models[P]) != 0:  # all that remain
+        print "Models with {} attractors: {}".format(P, len(function_models))
+        for model in function_models:
+            print model
 
 
 def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.FunctionTypeRestriction.NONE,
