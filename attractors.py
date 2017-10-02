@@ -162,10 +162,10 @@ def find_min_attractors_model(G, max_len=None, min_attractors=None):
 
         p_to_models[P] = function_models
         if P > 1:
-            selected_models = [model for model in p_to_models[P-1] if model not in p_to_models[P]]
+            selected_models = [boolean_model for boolean_model in p_to_models[P-1] if boolean_model not in p_to_models[P]]
             print "Models with {} attractors: {}".format(P-1, len(selected_models))
-            for model in selected_models:
-                print model
+            for boolean_model in selected_models:
+                print boolean_model
         if model.Status != gurobipy.GRB.OPTIMAL:
             break
         P += 1
