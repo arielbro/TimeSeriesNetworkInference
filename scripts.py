@@ -10,8 +10,8 @@ def estimate_size(n, m, T, P):
     print "vars={}, constrs={}".format(vars, constr)
 
 
-G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
-                   vertex_functions=[sympy.Nand])
+# G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+#                    vertex_functions=[sympy.Nand])
 
 # G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
 #                    vertex_functions=[sympy.Nand, sympy.And])
@@ -63,11 +63,8 @@ G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
 #     G.randomize_functions()
 #     stochastic.estimate_attractors(G, n_walks=100, max_walk_len=100)
 #
-# G = graphs.Network.generate_random(20, indegree_bounds=[1, 5], restrict_signed_symmetric_threshold=True)
-# print G
-# attractors.find_num_attractors_multistage(G, use_ilp=False)
-# attractors.find_num_attractors_onestage(G, use_sat=False, max_len=10, max_num=10)
-# attractors.find_min_attractors_model(G)
+# G = graphs.Network.generate_random(5, indegree_bounds=[1, 4],
+#                                    function_type_restriction=graphs.FunctionTypeRestriction.NONE)
 
 # times = []
 # for i in range(20):
@@ -101,8 +98,8 @@ G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
 #                                         n_walks=300, max_walk_len=300,
 #                                         path="C:/Users/Ariel/Downloads/graph_sampling_only_simple_gates.csv")
 
-# G = utility.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
-#                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
+G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
 # input_nodes = [u for u in G.vertices if len(u.predecessors()) == 0]
 # stochastic_estimation = stochastic.estimate_attractors(G, n_walks=300, max_walk_len=30)
 # ilp_estimation = attractors.find_num_attractors_onestage(G, max_len=2, max_num=2, use_sat=False, verbose=True)
@@ -114,4 +111,11 @@ G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
 # print attractors.find_num_attractors_dubrova(G, "")
 # print estimate_size(len(G.vertices), len(G.edges), 4, 200)
 
-attractors.find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.FunctionTypeRestriction.NONE)
+# attractors.find_max_attractor_model(G, verbose=False,
+#                                     model_type_restriction=graphs.FunctionTypeRestriction.NONE,
+#                                     attractor_length_threshold=100, attractor_num_threshold=100,
+#                                     use_state_keys=True)
+# print G
+# attractors.find_num_attractors_multistage(G, use_ilp=False)
+attractors.find_num_attractors_onestage(G, use_sat=False, max_len=14, max_num=42, use_state_keys=True)
+# attractors.find_min_attractors_model(G)

@@ -52,7 +52,8 @@ def find_num_attractors_multistage(G, use_ilp):
     print "#attractors:{}".format(P)
 
 
-def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, verbose=False, require_result=None):
+def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, verbose=False, require_result=None,
+                                 use_state_keys=True):
     T = 2 ** len(G.vertices) if not max_len else max_len
     P = 2 ** len(G.vertices) if not max_num else max_num
     start_time = time.time()
@@ -71,7 +72,10 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         model, formulas_to_variables = ilp.logic_to_ilp(ATTRACTORS)
         active_ilp_vars = [formulas_to_variables[active_logic_var] for active_logic_var in active_logic_vars]
     else:
-        model, active_ilp_vars = ilp.direct_graph_to_ilp(G, T, P, find_model=False)
+        if use_state_keys:
+            model, active_ilp_vars = ilp.direct_graph_to_ilp_with_keys(G, T, P, find_model=False)
+        else:
+            model, active_ilp_vars = ilp.direct_graph_to_ilp_classic(G, T, P, find_model=False)
     model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
     if require_result is not None:
         model.addConstr(sum(active_ilp_vars) == require_result, name="optimality_constraint")
@@ -82,7 +86,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     # model.tune()  # try automatic parameter tuning
     # model.getTuneResult(0)  # take best tuning parameters
     # model.write('tune v-{} P-{} T-{}.prm'.format(len(G.vertices), P, T))
-    print model
+    # print model
     # model_vars = model.getVars()
     # ilp.print_model_constraints(model)
     # for var in model.getVars():
@@ -95,14 +99,13 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         print "writing IIS data to model_iis.ilp"
         model.computeIIS()
         model.write("./model_iis.ilp")
-
     else:
         print "# attractors = {}".format(model.ObjVal)
         if model.ObjVal != int(round(model.ObjVal)):
-            print "warning - model solved with non-integral objective function"
+            print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
         print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
-        ilp.print_attractors(model)
-        return model.objVal
+        # ilp.print_attractors(model)
+        return int(round(model.objVal))
         # ilp.print_model_values(model, model_vars=model_vars)
     # for constr in model.getConstrs():
     #     print constr
@@ -154,25 +157,38 @@ def find_min_attractors_model(G, use_sat=False):
                 print model
 
 
-def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.FunctionTypeRestriction.NONE):
+def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.FunctionTypeRestriction.NONE,
+                             attractor_length_threshold=None, attractor_num_threshold=None,
+                             use_state_keys=True):
     """
     Finds a model with maximum attractors for a given graph and function restrictions.
-    Performed a binary search on sizes of attractors, and increases number of attractors to search by one each time.
+    Performed a modified binary search on sizes of attractors, and a regular one on number of attractors.
     :param G:
     :param verbose:
-    :param model_type_restriction:
+    :param model_type_restriction: one of none, symmetric-threshold, and-or-gates.
+    :param attractor_length_threshold: maximal length of attractors to consider.
+    :param attractor_num_threshold: number of attractors to be satisfied with
+    :param use_state_keys: whether to use the state-key version of direct graph to ilp.
     :return:
     """
+    if attractor_length_threshold is None:
+        attractor_length_threshold = 2 ** len(G.vertices)
+    if attractor_num_threshold is None:
+        attractor_num_threshold = 2 ** len(G.vertices)
     # TODO: consider binary search for T
     P = 1
     T = 1
     while True:
-        start_time = time.time()
-        model, active_ilp_vars = ilp.direct_graph_to_ilp(G, T, P, find_model=True,
-                                                         model_type_restriction=model_type_restriction)
+        if use_state_keys:
+            model, active_ilp_vars = ilp.direct_graph_to_ilp_with_keys(G, T, P, find_model=True,
+                                                                       model_type_restriction=model_type_restriction)
+        else:
+            model, active_ilp_vars = ilp.direct_graph_to_ilp_classic(G, T, P, find_model=True,
+                                                                     model_type_restriction=model_type_restriction)
         model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
         if not verbose:
             model.params.LogToConsole = 0
+        start_time = time.time()
         model.optimize()
         print "Time taken for ILP solve: {:.2f} (T={}, P={})".format(time.time() - start_time, T, P)
         if model.Status != gurobipy.GRB.OPTIMAL:
@@ -182,18 +198,24 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
             model.write("./model_iis.ilp")
             return None
         else:
-            found_attractors = model.ObjVal
+            found_attractors = int(round(model.ObjVal))
+            if found_attractors >= attractor_num_threshold:
+                break
             if found_attractors == P:
-                P = P + 1
+                P *= 2
                 continue
             else:
-                assert found_attractors == P - 1
-                if T == 2**len(G.vertices):
+                if found_attractors != P - 1:
+                    print "found {} attractors so far".format(found_attractors)
+                if T >= attractor_length_threshold:
                     break
                 T *= 2
     print "Found maximal model with {} attractors".format(found_attractors)
-    function_vars = [var for var in model.getVars() if "f_" in var.VarName]
-    ilp.print_model_values(model, model_vars=function_vars)
+    function_vars = [var for var in model.getVars() if "f_" in var.VarName
+                     or "signs" in var.VarName or "threshold" in var.VarName]
+    # print G
+    # ilp.print_model_values(model, model_vars=function_vars)
+    # ilp.print_attractors(model)
 
 
 def stochastic_attractor_estimation(G, n_walks, max_walk_len=None):

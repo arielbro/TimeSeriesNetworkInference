@@ -22,6 +22,17 @@ class TestAttractors(TestCase):
         experiments.append(ExperimentParameters(G=G, T=2, P=3, n_attractors=1))
 
         G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+                           vertex_functions=[logic.SymmetricThresholdFunction(signs=[-1], threshold=1)])
+        experiments.append(ExperimentParameters(G=G, T=1, P=1, n_attractors=0))
+        experiments.append(ExperimentParameters(G=G, T=2, P=3, n_attractors=1))
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "A")],
+                           vertex_functions=[logic.SymmetricThresholdFunction(signs=[-1], threshold=1),
+                                             None])
+        experiments.append(ExperimentParameters(G=G, T=1, P=1, n_attractors=0))
+        experiments.append(ExperimentParameters(G=G, T=2, P=3, n_attractors=2))
+
+        G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
                            vertex_functions=[sympy.And])
         experiments.append(ExperimentParameters(G=G, T=1, P=2, n_attractors=2))
         experiments.append(ExperimentParameters(G=G, T=3, P=1, n_attractors=1))
@@ -144,17 +155,34 @@ class TestAttractors(TestCase):
         #                                                 n_attractors=attractor_number))
         #         n_random_experiment += 1
 
-        print "number of experiments={}".format(len(experiments))
+        print "number of experiments (with keys)={}".format(len(experiments))
         for i, experiment in enumerate(experiments):
             print "experiment #{}".format(i)
             print "n={}, T={}, P={}, expected_n_attractors={}".format(len(experiment.G.vertices),
                                                                    experiment.T, experiment.P, experiment.n_attractors)
             # continue
             n_attractors = find_num_attractors_onestage(G=experiment.G, max_len=experiment.T, max_num=experiment.P,
-                                                        use_sat=False, verbose=False)  # require_result=experiment.n_attractors
+                                                        use_sat=False, verbose=False,
+                                                        use_state_keys=True, require_result=experiment.n_attractors)
             try:
                 self.assertEqual(n_attractors, experiment.n_attractors)
             except AssertionError as e:
                 print e
                 print experiment.G
                 raise e
+
+        # print "number of experiments (without keys)={}".format(len(experiments))
+        # for i, experiment in enumerate(experiments):
+        #     print "experiment #{}".format(i)
+        #     print "n={}, T={}, P={}, expected_n_attractors={}".format(len(experiment.G.vertices),
+        #                                                            experiment.T, experiment.P, experiment.n_attractors)
+        #     # continue
+        #     n_attractors = find_num_attractors_onestage(G=experiment.G, max_len=experiment.T, max_num=experiment.P,
+        #                                                 use_sat=False, verbose=False,
+        #                                                 use_state_keys=False, require_result=experiment.n_attractors)
+        #     try:
+        #         self.assertEqual(n_attractors, experiment.n_attractors)
+        #     except AssertionError as e:
+        #         print e
+        #         print experiment.G
+        #         raise e

@@ -119,35 +119,38 @@ def create_state_keys_comparison_var(model, first_state_keys, second_state_keys,
         a = first_state_keys[-i - 1]
         b = second_state_keys[-i - 1]
         z = model.addVar(vtype=gurobipy.GRB.BINARY, name="{}_{}_indicator".format(name_prefix, i))
+        model.update()
         model.addConstr((M + 1)*z >= a - b + last_var, name="{}_{}_>=constraint".format(name_prefix, i))
         model.addConstr((M + 1)*z <= a - b + last_var + M, name="{}_{}_<=constraint".format(name_prefix, i))
-        model.update()
         last_var = z
         # print "a_{}={}, b_{}={}, M={}, M+1={}".format(len(first_state_keys) - i-1, a, len(first_state_keys) -i-1, b, M, M+1)
     return last_var
 
 
 # noinspection PyArgumentList
-def direct_graph_to_ilp(G, max_len=None, max_num=None, find_model=False,
-                        model_type_restriction=FunctionTypeRestriction.NONE):
-    start = time.time()
+def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None, find_model=False,
+                                  model_type_restriction=FunctionTypeRestriction.NONE):
+    total_start = time.time()
+    part_start = time.time()
     T = 2**len(G.vertices) if not max_len else max_len
     P = 2**len(G.vertices) if not max_num else max_num
     n = len(G.vertices)
 
     model = gurobipy.Model()
-
     a_matrix = numpy.matrix([[model.addVar(vtype=gurobipy.GRB.BINARY, name="a_{}_{}".format(p, t))
-                              for t in range(T+1)] for p in range(P)]) # TODO: fill for t=-1, and simplify code
+                              for t in range(T+1)] for p in range(P)])  # TODO: fill for t=-1, and simplify code
     v_matrix = numpy.array([[[model.addVar(vtype=gurobipy.GRB.BINARY, name="v_{}_{}_{}".format(i, p, t))
-                               for t in range(T+1)] for p in range(P)] for i in range(n)])
+                              for t in range(T+1)] for p in range(P)] for i in range(n)])
     model.update()
 
     state_keys = [[unique_state_keys(model=model, ordered_state_variables=[v_matrix[i, p, t] for i in range(n)],
                                      name_prefix="state_keys_{}_{}".format(p, t)) for t in range(T+1)]
                   for p in range(P)]
-
     predecessors_vars = lambda i, p, t: [v_matrix[vertex.index, p, t] for vertex in G.vertices[i].predecessors()]
+
+    print "Time taken for basic prep:{:.2f} seconds".format(time.time() - part_start)
+    part_start = time.time()
+
     if find_model:
         if model_type_restriction == FunctionTypeRestriction.NONE:
             truth_table_vars_dict = dict()
@@ -159,7 +162,7 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_model=False,
                     truth_table_vars_dict[(i, truth_table_index)] = new_var
         elif model_type_restriction == FunctionTypeRestriction.SYMMETRIC_THRESHOLD\
                 or model_type_restriction == FunctionTypeRestriction.SIMPLE_GATES:
-            signs_threshold_vars_dict = dict()
+            signs_threshold_vars_list = [None]*n
             for i in range(n):
                 n_inputs = len(G.vertices[i].predecessors())
                 signs = []
@@ -168,13 +171,16 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_model=False,
                     signs.append(sign_var)
                 if model_type_restriction == FunctionTypeRestriction.SYMMETRIC_THRESHOLD:
                     threshold_expression = model.addVar(vtype=gurobipy.GRB.INTEGER, lb=0, ub=n_inputs+1,
-                                             name="f_{}_threshold".format(i))
+                                                        name="f_{}_threshold".format(i))
                 else:
                     threshold_indicator = model.addVar(
                         vtype=gurobipy.GRB.BINARY, name="f_{}_gate_indicator".format(i))
                     threshold_expression = 1 + threshold_indicator * (n_inputs - 1)
                 model.update()
-                signs_threshold_vars_dict[i] = signs, threshold_expression
+                signs_threshold_vars_list[i] = signs, threshold_expression
+
+    print "Time taken for boolean model search variables preparation:{:.2f} seconds".format(time.time() - part_start)
+    part_start = time.time()
 
     for p, t in itertools.product(range(P), range(T)):
         # assert activity var meaning (ACTIVITY_SWITCH, MONOTONE, IF_NON_ACTIVE)
@@ -183,81 +189,81 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_model=False,
         model.addConstr(n * a_matrix[p, t] >= sum(v_matrix[i, p, t] for i in range(n)),
                         name="activity_{}_{}".format(p, t))
         model.addConstr(a_matrix[p, t + 1] >= a_matrix[p, t], name="monotone_{}_{}".format(p, t))
-        model.update()
+        # model.update()
 
     for p in range(P):
         model.addConstr(a_matrix[p, T] <= a_matrix[p, T - 1], name="if_non_active_{}".format(p))
         if p != P - 1:
             model.addConstr(a_matrix[p, T] <= a_matrix[p + 1, T], name="active_order_{}".format(p))
 
-    for i, p, t in itertools.product(range(n), range(P), range(T + 1)):
+    print "Time taken for activity constraints preparation:{:.2f} seconds".format(time.time() - part_start)
+    part_start = time.time()
 
+    for i in range(n):
         # assert consistent and stable
-        in_degree = len(G.vertices[i].predecessors())
-        if in_degree == 0 and t < T:  # stable, i.e. a[i,p,t] => v[i,p,t+1] = v[i, p , t].
-            model.addConstr(v_matrix[i, p, t + 1] >= v_matrix[i, p, t] - (1 - a_matrix[p, t]),
-                            name="stable_>=_{}_{}_{}".format(i, p, t))
-            model.addConstr(v_matrix[i, p, t + 1] <= v_matrix[i, p, t] + (1 - a_matrix[p, t]),
-                            name="stable_<=_{}_{}_{}".format(i, p, t))
-            model.update()
-        elif t < T:
+        in_degree = len(predecessors_vars(i, 0, 0))
+        if in_degree == 0:  # stable, just don't use the extra time variables.
+            for p, t in itertools.product(range(P), range(1, T + 1)):
+                # TODO: figure out how to remove variables
+                v_matrix[i, p, t] = v_matrix[i, p, 0]
+        else:
             if isinstance(G.vertices[i].function, logic.SymmetricThresholdFunction) or \
                     (find_model and model_type_restriction != FunctionTypeRestriction.NONE):
                 if find_model and model_type_restriction != FunctionTypeRestriction.NONE:
-                    signs, threshold = signs_threshold_vars_dict[i]
+                    signs, threshold = signs_threshold_vars_list[i]
                 else:
                     signs = G.vertices[i].function.signs
                     threshold = G.vertices[i].function.threshold
-                input_sum_expression = 0
-                for predecessors_index, (sign, var) in enumerate(zip(signs, predecessors_vars(i, p, t))):
-                    if model_type_restriction != FunctionTypeRestriction.NONE:
-                        # signs are variables, so can't multiply. need to have a variable signed_input s.t.:
-                        # signed_input = not(xor(sign, var))
-                        z = model.addVar(vtype=gurobipy.GRB.BINARY, name="signed_input_var_{}_{}_{}_{}".
-                                     format(i, p, t, predecessors_index))
-                        model.update()
-                        model.addConstr(z >= -sign - var + 1, name="signed_input_constr_type00_{}_{}_{}_{}".
-                                        format(i, p, t, predecessors_index))
-                        model.addConstr(z <= sign - var + 1, name="signed_input_constr_type01_{}_{}_{}_{}".
-                                        format(i, p, t, predecessors_index))
-                        model.addConstr(z <= -sign + var + 1, name="signed_input_constr_type10_{}_{}_{}_{}".
-                                        format(i, p, t, predecessors_index))
-                        model.addConstr(z >= sign + var - 1, name="signed_input_constr_type11_{}_{}_{}_{}".
-                                        format(i, p, t, predecessors_index))
-                        model.update()
-                        input_sum_expression += z
-                    else:
-                        input_sum_expression += var if sign else 1 - var  # sign is bool, unintuitive?
-                # input_sum_expression >= threshold <=> v_matrix[i, p, t + 1] = 1, if activity is on.
-                model.addConstr((in_degree + 1)*(v_matrix[i, p, t + 1] + 1 - a_matrix[p, t]) >=
-                                (input_sum_expression - threshold + 1),
-                                name="monotone_func_consistency_>=_{}_{}_{}".format(i, p, t))
-                model.addConstr((in_degree + 1)*(v_matrix[i, p, t + 1] - 1 + a_matrix[p, t]) <=
-                                (in_degree + input_sum_expression - threshold + 1),
-                                name="monotone_func_consistency_<=_{}_{}_{}".format(i, p, t))
-                model.update()
+                for p, t in itertools.product(range(P), range(T)):
+                    input_sum_expression = 0
+                    for predecessors_index, (sign, var) in enumerate(zip(signs, predecessors_vars(i, p, t))):
+                        if find_model:
+                            # signs are variables, so can't multiply. need to have a variable signed_input s.t.:
+                            # signed_input = not(xor(sign, var))
+                            z = model.addVar(vtype=gurobipy.GRB.BINARY, name="signed_input_var_{}_{}_{}_{}".
+                                             format(i, p, t, predecessors_index))
+                            model.update()
+                            model.addConstr(z >= -sign - var + 1, name="signed_input_constr_type00_{}_{}_{}_{}".
+                                            format(i, p, t, predecessors_index))
+                            model.addConstr(z <= sign - var + 1, name="signed_input_constr_type01_{}_{}_{}_{}".
+                                            format(i, p, t, predecessors_index))
+                            model.addConstr(z <= -sign + var + 1, name="signed_input_constr_type10_{}_{}_{}_{}".
+                                            format(i, p, t, predecessors_index))
+                            model.addConstr(z >= sign + var - 1, name="signed_input_constr_type11_{}_{}_{}_{}".
+                                            format(i, p, t, predecessors_index))
+                            # model.update()
+                            input_sum_expression += z
+                        else:
+                            assert sign in [False, True]
+                            input_sum_expression += var if sign else 1 - var  # sign is bool, unintuitive?
+                            # input_sum_expression >= threshold <=> v_matrix[i, p, t + 1] = 1, if activity is on.
+                    model.addConstr((in_degree + 1)*(v_matrix[i, p, t + 1] + 1 - a_matrix[p, t]) >=
+                                    (input_sum_expression - threshold + 1),
+                                    name="monotone_func_consistency_>=_{}_{}_{}".format(i, p, t))
+                    model.addConstr((in_degree + 1)*(v_matrix[i, p, t + 1] - 1 + a_matrix[p, t]) <=
+                                    (in_degree + input_sum_expression - threshold + 1),
+                                    name="monotone_func_consistency_<=_{}_{}_{}".format(i, p, t))
             else:
-                for var_comb_index, var_combination in enumerate(itertools.product((False, True), repeat=in_degree)):
-                    # this expression is |in_degree| iff their states agrees with var_combination
-                    indicator_expression = sum(v if state else 1 - v for (v, state) in
-                                               zip(predecessors_vars(i, p, t), var_combination))
-                    # TODO: see if the indicator expression can be used without the matching variable
-                    indicator = model.addVar(vtype=gurobipy.GRB.BINARY,
-                                             name="truth_table_row_indicator_{}_{}_{}_{}".format(i, p, t, var_comb_index))
-                    model.addConstr(in_degree * indicator <= indicator_expression,
-                                    name="truth_table_row_indicator_<=_{}_{}_{}_{}".format(i, p, t, var_comb_index))
-                    model.addConstr(indicator >= indicator_expression - in_degree + 1,
-                                    name="truth_table_row_indicator_>=_{}_{}_{}_{}".format(i, p, t, var_comb_index))
-                    # noinspection PyUnboundLocalVariable
-                    desired_val = truth_table_vars_dict[i, var_comb_index] if find_model else \
-                        (1 if G.vertices[i].function(*var_combination) else 0)
-                    # a[p, t] & indicator => v[i,p,t+1] = f(var_combination).
-                    # For x&y => a=b, require a <= b + (2 -x -b), a >= b - (2 -x -y)
-                    model.addConstr(v_matrix[i, p, t + 1] >= desired_val - (2 - indicator - a_matrix[p, t]),
-                                    name="consistent_>=_{}_{}_{}".format(i, p, t))
-                    model.addConstr(v_matrix[i, p, t + 1] <= desired_val + (2 - indicator - a_matrix[p, t]),
-                                    name="consistent_<=_{}_{}_{}".format(i, p, t))
-                    model.update()
+                for p, t in itertools.product(range(P), range(T)):
+                    for var_comb_index, var_combination in enumerate(itertools.product((False, True), repeat=in_degree)):
+                        # this expression is |in_degree| iff their states agrees with var_combination
+                        indicator_expression = sum(v if state else 1 - v for (v, state) in
+                                                   zip(predecessors_vars(i, p, t), var_combination))
+                        # noinspection PyUnboundLocalVariable
+                        desired_val = truth_table_vars_dict[i, var_comb_index] if find_model else \
+                            (1 if G.vertices[i].function(*var_combination) else 0)
+                        # a[p, t] & (indicator_expression = in_degree) => v[i,p,t+1] = f(var_combination).
+                        # For x&y => a=b, require a <= b + (2 -x -b), a >= b - (2 -x -y)
+                        model.addConstr(v_matrix[i, p, t + 1] >= desired_val -
+                                        (in_degree + 1 - indicator_expression - a_matrix[p, t]),
+                                        name="consistent_>=_{}_{}_{}".format(i, p, t))
+                        model.addConstr(v_matrix[i, p, t + 1] <= desired_val +
+                                        (in_degree + 1 - indicator_expression - a_matrix[p, t]),
+                                        name="consistent_<=_{}_{}_{}".format(i, p, t))
+                        # model.update()
+
+    print "Time taken for consistent and stable preparation:{:.2f} seconds".format(time.time() - part_start)
+    part_start = time.time()
 
     # CYCLIC
     for p, t in itertools.product(range(P), range(T)):
@@ -279,32 +285,12 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_model=False,
         last_activity = a_matrix[p, t - 1] if t > 0 else 0
         model.addConstr(larger_ind + smaller_ind >= 1 - last_activity + a_matrix[p, t],
                         name="cyclic_{}_{}".format(p, t))
-        # for i in range(n):
-        #     model.addConstr(v_matrix[i, p, t] >= v_matrix[i, p, T] + a_matrix[p, t] - last_activity - 1,
-        #                     name="cyclic<_{}_{}_{}".format(i, p, t))
-        #     model.addConstr(v_matrix[i, p, t] <= v_matrix[i, p, T] - a_matrix[p, t] + last_activity + 1,
-        #                     name="cyclic>_{}_{}_{}".format(i, p, t))
-    model.update()
-
-    # SIMPLE
-    # for t, p in itertools.product(range(1, T), range(P)):
-    #     # (a[p, t] & a[p, t-1]) >> ~EQ(p, p, t, T)
-    #     equality_indicator_vars = [model.addVar(vtype=gurobipy.GRB.BINARY,
-    #                                name="eq_simple_ind_{}_{}_{}".format(i, p, t)) for i in range(n)]
-    #     for i in range(n):
-    #         model.addConstr(equality_indicator_vars[i] <= 1 + v_matrix[i, p, t] - v_matrix[i, p, T],
-    #                         name="eq_simple_ind_0_{}_{}_{}".format(i, p, t))
-    #         model.addConstr(equality_indicator_vars[i] <= 1 - v_matrix[i, p, t] + v_matrix[i, p, T],
-    #                         name="eq_simple_ind_1_{}_{}_{}".format(i, p, t))
-    #         model.addConstr(equality_indicator_vars[i] >= -1 + v_matrix[i, p, t] + v_matrix[i, p, T],
-    #                         name="eq__simple_ind_2_{}_{}_{}".format(i, p, t))
-    #         model.addConstr(equality_indicator_vars[i] >= 1 - v_matrix[i, p, t] - v_matrix[i, p, T],
-    #                         name="eq_simple_ind_3_{}_{}_{}".format(i, p, t))
-    #     # it holds that ~EQ(p, p, t, T) <=> sum(equality_indicator_vars) <  len(G.vertices), now create the >> part
-    #     model.addConstr(sum(equality_indicator_vars) <= len(G.vertices) + 1 - a_matrix[p, t] - a_matrix[p, t - 1],
-    #                     name="simple_{}_{}".format(t, p))
     # model.update()
 
+    print "Time taken for cyclic constraints preparation:{:.2f} seconds".format(time.time() - part_start)
+    part_start = time.time()
+
+    # SIMPLE
     for t, p in itertools.product(range(1, T), range(P)):
         # (a[p, t] & a[p, t-1]) >> ~EQ(p, p, t, T)
         strictly_larger_ind = create_state_keys_comparison_var(model=model, first_state_keys=state_keys[p][T],
@@ -319,28 +305,12 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_model=False,
                                                                 name_prefix="simple<_{}_{}".format(p, t))
         model.addConstr(strictly_larger_ind + strictly_smaller_ind - a_matrix[p, t] - a_matrix[p, t-1] >= -1,
                         name="simple_{}_{}".format(p, t))
-    model.update()
-
-    # UNIQUE
-    # for t, (p1, p2) in itertools.product(range(T), itertools.combinations(range(P), 2)):
-    #     # (a[p1, T] & a[p2, t]) >> ~EQ(p1, p2, T, t)
-    #     equality_indicator_vars = [model.addVar(vtype=gurobipy.GRB.BINARY,
-    #                                name="eq_unique_ind_{}_{}_{}_{}".format(i, p1, p2, t))
-    #                                for i in range(n)]
-    #     for i in range(n):
-    #         model.addConstr(equality_indicator_vars[i] <= 1 + v_matrix[i, p1, T] - v_matrix[i, p2, t],
-    #                         name="eq_unique_ind_0_{}_{}_{}_{}".format(i, p1, p2, t))
-    #         model.addConstr(equality_indicator_vars[i] <= 1 - v_matrix[i, p1, T] + v_matrix[i, p2, t],
-    #                         name="eq_unique_ind_1_{}_{}_{}_{}".format(i, p1, p2, t))
-    #         model.addConstr(equality_indicator_vars[i] >= -1 + v_matrix[i, p1, T] + v_matrix[i, p2, t],
-    #                         name="eq_unique_ind_2_{}_{}_{}_{}".format(i, p1, p2, t))
-    #         model.addConstr(equality_indicator_vars[i] >= 1 - v_matrix[i, p1, T] - v_matrix[i, p2, t],
-    #                         name="eq_unique_ind_3_{}_{}_{}_{}".format(i, p1, p2, t))
-    #     # it holds that ~EQ(p1, p2, T, t) <=> sum(equality_indicator_vars) <  len(G.vertices), now create the >> part
-    #     model.addConstr(sum(equality_indicator_vars) <= len(G.vertices) + 1 - a_matrix[p1, T] - a_matrix[p2, t],
-    #                     name="unique_{}_{}_{}".format(p1, p2, t))
     # model.update()
 
+    print "Time taken for simple constraints preparation:{:.2f} seconds".format(time.time() - part_start)
+    part_start = time.time()
+
+    # UNIQUE
     # To reduce symmetry, using the order defined by a unique state id function,
     # constraint each attractor to have its final state be the largest one, and
     # constraint the final states of attractors to be monotone decreasing amongst.
@@ -366,7 +336,7 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_model=False,
                                                                    format(p))
             model.addConstr(strictly_larger_ind - a_matrix[p, T] - a_matrix[p + 1, T] >= -1,
                             name="key_order_between_attractors_{}".format(p))
-        model.update()
+        # model.update()
 
     # Constraint the number of active attractors using 2**#input_nodes, P as lower and upper bounds.
     # lower bound can only be used if the maximal theoretical attractor length is allowed.
@@ -374,11 +344,225 @@ def direct_graph_to_ilp(G, max_len=None, max_num=None, find_model=False,
     model.addConstr(sum(a_matrix[p, T] for p in range(P)) <= P, name="upper_objective_bound")
     if T >= 2**len(G.vertices):
         model.addConstr(sum(a_matrix[p, T] for p in range(P)) >= min(2**n_inputs, P), name="lower_objective_bound")
+
+    model.update()
+
+    print "Time taken for unique constraints preparation:{:.2f} seconds".format(time.time() - part_start)
+
+    # print_model_constraints(model)
+    # print model
+    print "Time taken for model preparation:{:.2f} seconds".format(time.time() - total_start)
+    return model, [a_matrix[p, T] for p in range(P)]
+
+
+# noinspection PyArgumentList
+def direct_graph_to_ilp_classic(G, max_len=None, max_num=None, find_model=False,
+                                model_type_restriction=FunctionTypeRestriction.NONE):
+    total_start = time.time()
+    part_start = time.time()
+    T = 2**len(G.vertices) if not max_len else max_len
+    P = 2**len(G.vertices) if not max_num else max_num
+    n = len(G.vertices)
+
+    model = gurobipy.Model()
+
+    a_matrix = numpy.matrix([[model.addVar(vtype=gurobipy.GRB.BINARY, name="a_{}_{}".format(p, t))
+                              for t in range(T+1)] for p in range(P)]) # TODO: fill for t=-1, and simplify code
+    v_matrix = numpy.array([[[model.addVar(vtype=gurobipy.GRB.BINARY, name="v_{}_{}_{}".format(i, p, t))
+                              for t in range(T+1)] for p in range(P)] for i in range(n)])
+    model.update()
+    predecessors_vars = lambda i, p, t: [v_matrix[vertex.index, p, t] for vertex in G.vertices[i].predecessors()]
+
+    print "Time taken for basic prep:{:.2f} seconds".format(time.time() - part_start)
+    part_start = time.time()
+
+    if find_model:
+        if model_type_restriction == FunctionTypeRestriction.NONE:
+            truth_table_vars_dict = dict()
+            for i in range(n):
+                for truth_table_index in range(2**len(G.vertices[i].predecessors())):
+                    new_var = model.addVar(vtype=gurobipy.GRB.BINARY,
+                                           name="f_{}_{}".format(i, truth_table_index))
+                    model.update()
+                    truth_table_vars_dict[(i, truth_table_index)] = new_var
+        elif model_type_restriction == FunctionTypeRestriction.SYMMETRIC_THRESHOLD\
+                or model_type_restriction == FunctionTypeRestriction.SIMPLE_GATES:
+            signs_threshold_vars_dict = dict()
+            for i in range(n):
+                n_inputs = len(G.vertices[i].predecessors())
+                signs = []
+                for input in range(n_inputs):
+                    sign_var = model.addVar(vtype=gurobipy.GRB.BINARY, name="f_{}_signs_{}".format(i, input))
+                    signs.append(sign_var)
+                if model_type_restriction == FunctionTypeRestriction.SYMMETRIC_THRESHOLD:
+                    threshold_expression = model.addVar(vtype=gurobipy.GRB.INTEGER, lb=0, ub=n_inputs+1,
+                                                        name="f_{}_threshold".format(i))
+                else:
+                    threshold_indicator = model.addVar(
+                        vtype=gurobipy.GRB.BINARY, name="f_{}_gate_indicator".format(i))
+                    threshold_expression = 1 + threshold_indicator * (n_inputs - 1)
+                model.update()
+                signs_threshold_vars_dict[i] = signs, threshold_expression
+
+    print "Time taken for boolean model search variables preparation:{:.2f} seconds".format(time.time() - part_start)
+    part_start = time.time()
+
+    for p, t in itertools.product(range(P), range(T)):
+        # assert activity var meaning (ACTIVITY_SWITCH, MONOTONE, IF_NON_ACTIVE)
+        # for i in range(n):
+        #     model.addConstr(a_matrix[p, t] >= v_matrix[i, p, t], name="activity_switch_{}_{}_{}".format(i, p, t))
+        model.addConstr(n * a_matrix[p, t] >= sum(v_matrix[i, p, t] for i in range(n)),
+                        name="activity_{}_{}".format(p, t))
+        model.addConstr(a_matrix[p, t + 1] >= a_matrix[p, t], name="monotone_{}_{}".format(p, t))
+        # model.update()
+
+    for p in range(P):
+        model.addConstr(a_matrix[p, T] <= a_matrix[p, T - 1], name="if_non_active_{}".format(p))
+        if p != P - 1:
+            model.addConstr(a_matrix[p, T] <= a_matrix[p + 1, T], name="active_order_{}".format(p))
+
+    print "Time taken for activity constraints preparation:{:.2f} seconds".format(time.time() - part_start)
+    part_start = time.time()
+
+    for i, p, t in itertools.product(range(n), range(P), range(T + 1)):
+        # assert consistent and stable
+        in_degree = len(G.vertices[i].predecessors())
+        if in_degree == 0 and t < T:  # stable, i.e. a[i,p,t] => v[i,p,t+1] = v[i, p , t].
+            model.addConstr(v_matrix[i, p, t + 1] >= v_matrix[i, p, t] - (1 - a_matrix[p, t]),
+                            name="stable_>=_{}_{}_{}".format(i, p, t))
+            model.addConstr(v_matrix[i, p, t + 1] <= v_matrix[i, p, t] + (1 - a_matrix[p, t]),
+                            name="stable_<=_{}_{}_{}".format(i, p, t))
+            # model.update()
+        elif t < T:
+            if isinstance(G.vertices[i].function, logic.SymmetricThresholdFunction) or \
+                    (find_model and model_type_restriction != FunctionTypeRestriction.NONE):
+                if find_model and model_type_restriction != FunctionTypeRestriction.NONE:
+                    signs, threshold = signs_threshold_vars_dict[i]
+                else:
+                    signs = G.vertices[i].function.signs
+                    threshold = G.vertices[i].function.threshold
+                input_sum_expression = 0
+                for predecessors_index, (sign, var) in enumerate(zip(signs, predecessors_vars(i, p, t))):
+                    if find_model:
+                        # signs are variables, so can't multiply. need to have a variable signed_input s.t.:
+                        # signed_input = not(xor(sign, var))
+                        z = model.addVar(vtype=gurobipy.GRB.BINARY, name="signed_input_var_{}_{}_{}_{}".
+                                         format(i, p, t, predecessors_index))
+                        model.update()
+                        model.addConstr(z >= -sign - var + 1, name="signed_input_constr_type00_{}_{}_{}_{}".
+                                        format(i, p, t, predecessors_index))
+                        model.addConstr(z <= sign - var + 1, name="signed_input_constr_type01_{}_{}_{}_{}".
+                                        format(i, p, t, predecessors_index))
+                        model.addConstr(z <= -sign + var + 1, name="signed_input_constr_type10_{}_{}_{}_{}".
+                                        format(i, p, t, predecessors_index))
+                        model.addConstr(z >= sign + var - 1, name="signed_input_constr_type11_{}_{}_{}_{}".
+                                        format(i, p, t, predecessors_index))
+                        # model.update()
+                        input_sum_expression += z
+                    else:
+                        assert sign in [False, True]
+                        input_sum_expression += var if sign else 1 - var  # sign is bool, unintuitive?
+                # input_sum_expression >= threshold <=> v_matrix[i, p, t + 1] = 1, if activity is on.
+                model.addConstr((in_degree + 1)*(v_matrix[i, p, t + 1] + 1 - a_matrix[p, t]) >=
+                                (input_sum_expression - threshold + 1),
+                                name="monotone_func_consistency_>=_{}_{}_{}".format(i, p, t))
+                model.addConstr((in_degree + 1)*(v_matrix[i, p, t + 1] - 1 + a_matrix[p, t]) <=
+                                (in_degree + input_sum_expression - threshold + 1),
+                                name="monotone_func_consistency_<=_{}_{}_{}".format(i, p, t))
+                # model.update()
+            else:
+                for var_comb_index, var_combination in enumerate(itertools.product((False, True), repeat=in_degree)):
+                    # this expression is |in_degree| iff their states agrees with var_combination
+                    indicator_expression = sum(v if state else 1 - v for (v, state) in
+                                               zip(predecessors_vars(i, p, t), var_combination))
+                    # TODO: see if the indicator expression can be used without the matching variable
+                    indicator = model.addVar(vtype=gurobipy.GRB.BINARY,
+                                             name="truth_table_row_indicator_{}_{}_{}_{}".format(i, p, t, var_comb_index))
+                    model.update()
+                    model.addConstr(in_degree * indicator <= indicator_expression,
+                                    name="truth_table_row_indicator_<=_{}_{}_{}_{}".format(i, p, t, var_comb_index))
+                    model.addConstr(indicator >= indicator_expression - in_degree + 1,
+                                    name="truth_table_row_indicator_>=_{}_{}_{}_{}".format(i, p, t, var_comb_index))
+                    # noinspection PyUnboundLocalVariable
+                    desired_val = truth_table_vars_dict[i, var_comb_index] if find_model else \
+                        (1 if G.vertices[i].function(*var_combination) else 0)
+                    model.addConstr(v_matrix[i, p, t + 1] >= desired_val - (2 - indicator - a_matrix[p, t]),
+                                    name="consistent_>=_{}_{}_{}".format(i, p, t))
+                    model.addConstr(v_matrix[i, p, t + 1] <= desired_val + (2 - indicator - a_matrix[p, t]),
+                                    name="consistent_<=_{}_{}_{}".format(i, p, t))
+                    # model.update()
+
+    print "Time taken for consistent and stable preparation:{:.2f} seconds".format(time.time() - part_start)
+    part_start = time.time()
+
+    # CYCLIC
+    for p, t in itertools.product(range(P), range(T)):
+        # (~a[p, t - 1] & a[p, t]) >> EQ(p, p, t, T), assumes monotonicity of a_matrix (a[p, -1] assumed 0)
+        last_activity = a_matrix[p, t - 1] if t > 0 else 0
+        for i in range(n):
+            model.addConstr(v_matrix[i, p, t] >= v_matrix[i, p, T] + a_matrix[p, t] - last_activity - 1,
+                            name="cyclic<_{}_{}_{}".format(i, p, t))
+            model.addConstr(v_matrix[i, p, t] <= v_matrix[i, p, T] - a_matrix[p, t] + last_activity + 1,
+                            name="cyclic>_{}_{}_{}".format(i, p, t))
+
+    print "Time taken for cyclic constraints preparation:{:.2f} seconds".format(time.time() - part_start)
+    part_start = time.time()
+
+    # SIMPLE
+    for t, p in itertools.product(range(1, T), range(P)):
+        # (a[p, t] & a[p, t-1]) >> ~EQ(p, p, t, T)
+        equality_indicator_vars = [model.addVar(vtype=gurobipy.GRB.BINARY,
+                                   name="eq_simple_ind_{}_{}_{}".format(i, p, t)) for i in range(n)]
+        for i in range(n):
+            model.addConstr(equality_indicator_vars[i] <= 1 + v_matrix[i, p, t] - v_matrix[i, p, T],
+                            name="eq_simple_ind_0_{}_{}_{}".format(i, p, t))
+            model.addConstr(equality_indicator_vars[i] <= 1 - v_matrix[i, p, t] + v_matrix[i, p, T],
+                            name="eq_simple_ind_1_{}_{}_{}".format(i, p, t))
+            model.addConstr(equality_indicator_vars[i] >= -1 + v_matrix[i, p, t] + v_matrix[i, p, T],
+                            name="eq__simple_ind_2_{}_{}_{}".format(i, p, t))
+            model.addConstr(equality_indicator_vars[i] >= 1 - v_matrix[i, p, t] - v_matrix[i, p, T],
+                            name="eq_simple_ind_3_{}_{}_{}".format(i, p, t))
+        # it holds that ~EQ(p, p, t, T) <=> sum(equality_indicator_vars) <  len(G.vertices), now create the >> part
+        model.addConstr(sum(equality_indicator_vars) <= len(G.vertices) + 1 - a_matrix[p, t] - a_matrix[p, t - 1],
+                        name="simple_{}_{}".format(t, p))
+    # model.update()
+
+    print "Time taken for simple constraints preparation:{:.2f} seconds".format(time.time() - part_start)
+    part_start = time.time()
+
+    # UNIQUE
+    for t, (p1, p2) in itertools.product(range(T), itertools.combinations(range(P), 2)):
+        # (a[p1, T] & a[p2, t]) >> ~EQ(p1, p2, T, t)
+        equality_indicator_vars = [model.addVar(vtype=gurobipy.GRB.BINARY,
+                                   name="eq_unique_ind_{}_{}_{}_{}".format(i, p1, p2, t))
+                                   for i in range(n)]
+        for i in range(n):
+            model.addConstr(equality_indicator_vars[i] <= 1 + v_matrix[i, p1, T] - v_matrix[i, p2, t],
+                            name="eq_unique_ind_0_{}_{}_{}_{}".format(i, p1, p2, t))
+            model.addConstr(equality_indicator_vars[i] <= 1 - v_matrix[i, p1, T] + v_matrix[i, p2, t],
+                            name="eq_unique_ind_1_{}_{}_{}_{}".format(i, p1, p2, t))
+            model.addConstr(equality_indicator_vars[i] >= -1 + v_matrix[i, p1, T] + v_matrix[i, p2, t],
+                            name="eq_unique_ind_2_{}_{}_{}_{}".format(i, p1, p2, t))
+            model.addConstr(equality_indicator_vars[i] >= 1 - v_matrix[i, p1, T] - v_matrix[i, p2, t],
+                            name="eq_unique_ind_3_{}_{}_{}_{}".format(i, p1, p2, t))
+        # it holds that ~EQ(p1, p2, T, t) <=> sum(equality_indicator_vars) <  len(G.vertices), now create the >> part
+        model.addConstr(sum(equality_indicator_vars) <= len(G.vertices) + 1 - a_matrix[p1, T] - a_matrix[p2, t],
+                        name="unique_{}_{}_{}".format(p1, p2, t))
+    model.update()
+
+    # Constraint the number of active attractors using 2**#input_nodes, P as lower and upper bounds.
+    # lower bound can only be used if the maximal theoretical attractor length is allowed.
+    n_inputs = len([v for v in G.vertices if len(v.predecessors()) == 0])
+    model.addConstr(sum(a_matrix[p, T] for p in range(P)) <= P, name="upper_objective_bound")
+    if T >= 2**len(G.vertices):
+        model.addConstr(sum(a_matrix[p, T] for p in range(P)) >= min(2**n_inputs, P), name="lower_objective_bound")
+    print "Time taken for unique constraints preparation:{:.2f} seconds".format(time.time() - part_start)
+
     model.update()
 
     # print_model_constraints(model)
     # print model
-    print "Time taken for model preparation:{:.2f} seconds".format(time.time() - start)
+    print "Time taken for model preparation:{:.2f} seconds".format(time.time() - total_start)
     return model, [a_matrix[p, T] for p in range(P)]
 
 
