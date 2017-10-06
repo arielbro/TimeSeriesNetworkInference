@@ -8,6 +8,7 @@ import math
 from graphs import FunctionTypeRestriction
 
 unique_key_slicing_size = 10  # TODO: find elegant reformatting for this
+# TODO: find good upper bound again, why didn't 29 work on MAPK_large2??
 
 
 def recursive_logic_to_var(formula, model, formulas_to_variables):
@@ -274,7 +275,7 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None, find_model=Fals
                                                       include_equality=True,
                                                       upper_bound=2**unique_key_slicing_size,
                                                       name_prefix="cyclic>_{}_{}".format(p, t).
-                                                      format(p))
+                                                      format(p)) # TODO: remove, last state is already guaranteed larger
         smaller_ind = create_state_keys_comparison_var(model=model,
                                                        first_state_keys=state_keys[p][t],
                                                        second_state_keys=state_keys[p][T],
@@ -302,7 +303,7 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None, find_model=Fals
                                                                 second_state_keys=state_keys[p][T],
                                                                 include_equality=False,
                                                   upper_bound= 2**unique_key_slicing_size,
-                                                                name_prefix="simple<_{}_{}".format(p, t))
+                                                                name_prefix="simple<_{}_{}".format(p, t)) # TODO: remove, last state is already guaranteed larger
         model.addConstr(strictly_larger_ind + strictly_smaller_ind - a_matrix[p, t] - a_matrix[p, t-1] >= -1,
                         name="simple_{}_{}".format(p, t))
     # model.update()
@@ -334,7 +335,7 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None, find_model=Fals
                                                                    upper_bound=2**unique_key_slicing_size,
                                                                    name_prefix="key_order_between_attractors_{}".
                                                                    format(p))
-            model.addConstr(strictly_larger_ind - a_matrix[p, T] - a_matrix[p + 1, T] >= -1,
+            model.addConstr(strictly_larger_ind - a_matrix[p, T] >= 0,  # need only a[p, T] because they're monotone
                             name="key_order_between_attractors_{}".format(p))
         # model.update()
 

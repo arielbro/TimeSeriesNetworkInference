@@ -77,6 +77,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         else:
             model, active_ilp_vars = ilp.direct_graph_to_ilp_classic(G, T, P, find_model=False)
     model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
+    model.setParam(gurobipy.GRB.Param.OptimalityTol, 1e-9)
     if require_result is not None:
         model.addConstr(sum(active_ilp_vars) == require_result, name="optimality_constraint")
         model.update()
@@ -170,7 +171,7 @@ def find_min_attractors_model(G, max_len=None, min_attractors=None):
             break
         P += 1
         continue
-    if P == 2 ** len(G.vertices) and len(p_to_models[P]) != 0:  # all that remain
+    if P == 2 ** len(G.vertices) + 1 and len(p_to_models[P]) != 0:  # all that remain
         print "Models with {} attractors: {}".format(P, len(function_models))
         for model in function_models:
             print model

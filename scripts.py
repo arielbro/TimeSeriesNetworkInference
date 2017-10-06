@@ -119,5 +119,7 @@ G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ari
 #                                     use_state_keys=True)
 # print G
 # attractors.find_num_attractors_multistage(G, use_ilp=False)
-# attractors.find_num_attractors_onestage(G, use_sat=False, max_len=13, max_num=42, use_state_keys=True)
-attractors.find_min_attractors_model(G, max_len=12, min_attractors=2)
+attractors.find_num_attractors_onestage(G, use_sat=False, max_len=1, max_num=30, use_state_keys=True,
+                                        verbose=True)
+# attractors.find_min_attractors_model(G, max_len=12, min_attractors=2)
+pass

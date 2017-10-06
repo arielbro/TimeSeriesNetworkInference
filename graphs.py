@@ -3,6 +3,7 @@ import random
 import re
 import time
 from enum import Enum
+import sympy
 
 from logic import BooleanSymbolicFunc, SymmetricThresholdFunction
 from utility import list_repr
@@ -84,6 +85,27 @@ class Network:
 
     def __add__(self, other):
         return self.union(self, other)
+
+    def next_state(self, vertex_states, return_as_string=True):
+        v_states = []
+        assert len(vertex_states) == len(self.vertices)
+        if isinstance(vertex_states, str):
+            vertex_states = [c for c in vertex_states]
+        for v, v_state in zip(self.vertices, vertex_states):
+            assert isinstance(v_state, bool) or v_state in [0, 1, "0", "1"]
+            v_states.append(True if v_state in [True, 1, "1"] else False)
+        v_next_states = []
+        for v in self.vertices:
+            input_values = [v_states[u.index] for u in v.predecessors()]
+            v_next_states.append(v.function(*input_values))
+        if return_as_string:
+            res = ""
+            for state in v_next_states:
+                assert state in [False, True, sympy.false, sympy.true]
+                res += '1' if state in [True, sympy.true] else '0'
+            return res
+        else:
+            return v_next_states
 
     @staticmethod
     def union(a, b):
