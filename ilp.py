@@ -7,7 +7,7 @@ import time
 import math
 from graphs import FunctionTypeRestriction
 
-unique_key_slicing_size = 10  # TODO: find elegant reformatting for this
+unique_key_slicing_size = 29  # TODO: find elegant reformatting for this
 # TODO: find good upper bound again, why didn't 29 work on MAPK_large2??
 
 
@@ -203,10 +203,16 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None, find_model=Fals
     for i in range(n):
         # assert consistent and stable
         in_degree = len(predecessors_vars(i, 0, 0))
-        if in_degree == 0:  # stable, just don't use the extra time variables.
-            for p, t in itertools.product(range(P), range(1, T + 1)):
-                # TODO: figure out how to remove variables
-                v_matrix[i, p, t] = v_matrix[i, p, 0]
+        if in_degree == 0:  # stable, might have a predefined value. Don't use the extra time variables.
+            if G.vertices[i].function == None:
+                for p, t in itertools.product(range(P), range(1, T + 1)):
+                    # TODO: figure out how to remove variables
+                    v_matrix[i, p, t] = v_matrix[i, p, 0]
+            else:
+                assert G.vertices[i].function in [False, True]
+                # TODO: can actually delete node from graph, and modify successors' functions. Should I?
+                for p, t in itertools.product(range(P), range(T + 1)):
+                    v_matrix[i, p, t] = int(G.vertices[i].function)
         else:
             if isinstance(G.vertices[i].function, logic.SymmetricThresholdFunction) or \
                     (find_model and model_type_restriction != FunctionTypeRestriction.NONE):
@@ -268,14 +274,7 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None, find_model=Fals
 
     # CYCLIC
     for p, t in itertools.product(range(P), range(T)):
-        # (~a[p, t - 1] & a[p, t]) >> EQ(p, p, t, T), assumes monotonicity of a_matrix (a[p, -1] assumed 0)
-        larger_ind = create_state_keys_comparison_var(model=model,
-                                                      first_state_keys=state_keys[p][T],
-                                                      second_state_keys=state_keys[p][t],
-                                                      include_equality=True,
-                                                      upper_bound=2**unique_key_slicing_size,
-                                                      name_prefix="cyclic>_{}_{}".format(p, t).
-                                                      format(p)) # TODO: remove, last state is already guaranteed larger
+        # (~a[p, t - 1] & a[p, t]) >> EQ(p, p, t, T), assumes monotonicity of a_matrix.
         smaller_ind = create_state_keys_comparison_var(model=model,
                                                        first_state_keys=state_keys[p][t],
                                                        second_state_keys=state_keys[p][T],
@@ -284,7 +283,7 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None, find_model=Fals
                                                        name_prefix="cyclic<_{}_{}".format(p, t).
                                                        format(p))
         last_activity = a_matrix[p, t - 1] if t > 0 else 0
-        model.addConstr(larger_ind + smaller_ind >= 1 - last_activity + a_matrix[p, t],
+        model.addConstr(smaller_ind >= - last_activity + a_matrix[p, t],
                         name="cyclic_{}_{}".format(p, t))
     # model.update()
 
@@ -293,18 +292,13 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None, find_model=Fals
 
     # SIMPLE
     for t, p in itertools.product(range(1, T), range(P)):
-        # (a[p, t] & a[p, t-1]) >> ~EQ(p, p, t, T)
+        # (a[p, t] & a[p, t-1]) >> ~EQ(p, p, t, T) (assumes a_matrix monotone)
         strictly_larger_ind = create_state_keys_comparison_var(model=model, first_state_keys=state_keys[p][T],
                                                                second_state_keys=state_keys[p][t],
                                                                include_equality=False,
-                                                  upper_bound= 2**unique_key_slicing_size,
+                                                               upper_bound=2**unique_key_slicing_size,
                                                                name_prefix="simple>_{}_{}".format(p, t))
-        strictly_smaller_ind = create_state_keys_comparison_var(model=model, first_state_keys=state_keys[p][t],
-                                                                second_state_keys=state_keys[p][T],
-                                                                include_equality=False,
-                                                  upper_bound= 2**unique_key_slicing_size,
-                                                                name_prefix="simple<_{}_{}".format(p, t)) # TODO: remove, last state is already guaranteed larger
-        model.addConstr(strictly_larger_ind + strictly_smaller_ind - a_matrix[p, t] - a_matrix[p, t-1] >= -1,
+        model.addConstr(strictly_larger_ind - a_matrix[p, t-1] >= 0,
                         name="simple_{}_{}".format(p, t))
     # model.update()
 
@@ -619,7 +613,7 @@ def print_attractors(model):
     assert len([None for p in range(P) if int(round(a_variables[p][T-1].X)) == 1]) == n_attracotrs
     for attractor_number in range(int(n_attracotrs)):
         p = P - attractor_number - 1
-        length = len([None for t in range(T) if a_variables[p][t].X == 1])
+        length = len([None for t in range(T) if int(round(a_variables[p][t].X)) == 1])
         print "Attractor #{}, length {}".format(attractor_number + 1, length)
         # TODO: support for original graph names?
         # print reduce(lambda a, b: "{}\t{}".format(a, b), ["v_{}".format(i) for i in range(n)])

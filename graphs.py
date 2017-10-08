@@ -28,6 +28,11 @@ class Network:
                          name, func, i in zip(vertex_names, vertex_functions, range(len(vertex_names)))] \
             if vertex_names else []  # order important!
         self.edges = [(self.get_vertex(str(a)), self.get_vertex(str(b))) for a, b in edges]
+        for v in self.vertices:
+            if len(v.predecessors()) == 0 and v.function not in [None, False, True]:
+                print "warning, input node {} created with non-constant function {}. Removing function".\
+                      format(v.name, v.function)
+                v.function = None
 
     def get_vertex(self, name):
         matches = [vertex for vertex in self.vertices if vertex.name == name]
@@ -214,7 +219,12 @@ class Network:
                 #     assert v_args[i] < v_args[i + 1]
                 edges.extend([(names[arg], names[v_index]) for arg in v_args])
                 if v_n_args == 0:
-                    bool_funcs.append(None)
+                    if len(section.split("\n")[-1]) == 1:
+                        val = section.split("\n")[-1]
+                        assert val == '0' or val == '1'
+                        bool_funcs.append(lambda _: bool(int(val)))
+                    else:
+                        bool_funcs.append(None)
                     continue
                 truth_table_dict = dict()
                 # input is stated in bits, with - representing wildcards (/dontcares)
@@ -252,7 +262,7 @@ class Vertex:
         return self.precomputed_predecessors
 
     def __key(self):
-        return self.name, (self.function if len(self.predecessors()) > 0 else None)
+        return self.name, self.function
 
     def __eq__(self, other):
         if not isinstance(other, Vertex):

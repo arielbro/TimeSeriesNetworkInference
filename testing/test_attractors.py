@@ -64,6 +64,13 @@ class TestAttractors(TestCase):
         experiments.append(ExperimentParameters(G=G, T=2, P=4, n_attractors=4))
         experiments.append(ExperimentParameters(G=G, T=3, P=4, n_attractors=4))
 
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "A"), ("C", "A")],
+                           vertex_functions=[logic.SymmetricThresholdFunction.from_function(sympy.Nand, 2),
+                                             logic.SymmetricThresholdFunction.from_function(sympy.Nand, 1),
+                                             False])
+        experiments.append(ExperimentParameters(G=G, T=3, P=3, n_attractors=1))
+
+
         G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
                            vertex_functions=[sympy.Nand]*3)
         experiments.append(ExperimentParameters(G=G, T=6, P=2, n_attractors=2))

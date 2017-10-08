@@ -77,7 +77,10 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         else:
             model, active_ilp_vars = ilp.direct_graph_to_ilp_classic(G, T, P, find_model=False)
     model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
-    model.setParam(gurobipy.GRB.Param.OptimalityTol, 1e-9)
+    model.setParam(gurobipy.GRB.Param.OptimalityTol, 1e-6)
+    model.setParam(gurobipy.GRB.Param.IntFeasTol, 1e-9)
+    model.setParam(gurobipy.GRB.Param.MIPGapAbs, 0.1)
+    # TODO: find out why without it I got non-optimal solution values (that I could manually improve without violations)
     if require_result is not None:
         model.addConstr(sum(active_ilp_vars) == require_result, name="optimality_constraint")
         model.update()
