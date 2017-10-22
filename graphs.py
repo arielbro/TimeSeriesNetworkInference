@@ -19,6 +19,7 @@ class Network:
     def __init__(self, vertex_names=None, edges=None, vertex_functions=None):
         assert vertex_names
         assert len(set(vertex_names)) == len(vertex_names)
+        assert len(vertex_names) == len(vertex_functions)
         for (x, y) in edges:
             assert (x in vertex_names and y in vertex_names)
         if not vertex_functions:
@@ -29,13 +30,14 @@ class Network:
             if vertex_names else []  # order important!
         self.edges = [(self.get_vertex(str(a)), self.get_vertex(str(b))) for a, b in edges]
         for v in self.vertices:
-            if len(v.predecessors()) == 0 and v.function not in [None, False, True]:
+            if len(v.predecessors()) == 0 and v.function not in [None, lambda _: False, lambda _:True, False, True]:
                 print "warning, input node {} created with non-constant function {}. Removing function".\
                       format(v.name, v.function)
                 v.function = None
 
     def get_vertex(self, name):
         matches = [vertex for vertex in self.vertices if vertex.name == name]
+
         assert len(matches) == 1
         return matches[0]
 
@@ -100,9 +102,12 @@ class Network:
             assert isinstance(v_state, bool) or v_state in [0, 1, "0", "1"]
             v_states.append(True if v_state in [True, 1, "1"] else False)
         v_next_states = []
-        for v in self.vertices:
+        for v_index, v in enumerate(self.vertices):
             input_values = [v_states[u.index] for u in v.predecessors()]
-            v_next_states.append(v.function(*input_values))
+            if len(input_values) == 0:
+                v_next_states.append(v_states[v_index])
+            else:
+                v_next_states.append(v.function(*input_values))
         if return_as_string:
             res = ""
             for state in v_next_states:

@@ -13,7 +13,7 @@ ExperimentParameters = namedtuple("ExperimentParameters", "G T P n_attractors")
 class TestAttractors(TestCase):
     def test_find_num_attractors_onestage(self):
         experiments = []
-        tests_dict = dict() # keys are tuples of graph, T, P
+        tests_dict = dict()  # keys are tuples of graph, T, P
 
         """test on known toy models"""
         G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
@@ -26,6 +26,17 @@ class TestAttractors(TestCase):
         experiments.append(ExperimentParameters(G=G, T=1, P=1, n_attractors=0))
         experiments.append(ExperimentParameters(G=G, T=2, P=3, n_attractors=1))
 
+        G = graphs.Network(vertex_names=["A"], edges=[],
+                           vertex_functions=[None])
+        experiments.append(ExperimentParameters(G=G, T=1, P=3, n_attractors=2))
+        experiments.append(ExperimentParameters(G=G, T=2, P=3, n_attractors=2))
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "A")],
+                           vertex_functions=[logic.SymmetricThresholdFunction(signs=[1], threshold=1),
+                                             None])
+        experiments.append(ExperimentParameters(G=G, T=1, P=5, n_attractors=4))
+        experiments.append(ExperimentParameters(G=G, T=2, P=5, n_attractors=4))
+
         G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "A")],
                            vertex_functions=[logic.SymmetricThresholdFunction(signs=[-1], threshold=1),
                                              None])
@@ -36,6 +47,21 @@ class TestAttractors(TestCase):
                            vertex_functions=[sympy.And])
         experiments.append(ExperimentParameters(G=G, T=1, P=2, n_attractors=2))
         experiments.append(ExperimentParameters(G=G, T=3, P=1, n_attractors=1))
+
+        G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+                           vertex_functions=[None])
+        experiments.append(ExperimentParameters(G=G, T=2, P=3, n_attractors=2))
+        experiments.append(ExperimentParameters(G=G, T=1, P=3, n_attractors=2))
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "A")],
+                           vertex_functions=[None, None])
+        experiments.append(ExperimentParameters(G=G, T=2, P=5, n_attractors=4))
+        experiments.append(ExperimentParameters(G=G, T=1, P=6, n_attractors=4))
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "A")],
+                           vertex_functions=[None, True])
+        experiments.append(ExperimentParameters(G=G, T=2, P=5, n_attractors=2))
+        experiments.append(ExperimentParameters(G=G, T=1, P=6, n_attractors=2))
 
         G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
                            vertex_functions=[sympy.Nand, sympy.And])
@@ -53,6 +79,21 @@ class TestAttractors(TestCase):
                            vertex_functions=[lambda x: True, lambda x: False])
         experiments.append(ExperimentParameters(G=G, T=4, P=2, n_attractors=1))
         experiments.append(ExperimentParameters(G=G, T=1, P=2, n_attractors=1))
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
+                           vertex_functions=[None, sympy.And])
+        experiments.append(ExperimentParameters(G=G, T=2, P=4, n_attractors=3))
+        experiments.append(ExperimentParameters(G=G, T=1, P=4, n_attractors=2))
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
+                           vertex_functions=[None, lambda _: True])
+        experiments.append(ExperimentParameters(G=G, T=2, P=3, n_attractors=1))
+        experiments.append(ExperimentParameters(G=G, T=4, P=2, n_attractors=1))
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
+                           vertex_functions=[None, None])
+        experiments.append(ExperimentParameters(G=G, T=2, P=6, n_attractors=3))
+        experiments.append(ExperimentParameters(G=G, T=1, P=6, n_attractors=2))
 
         G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "A"), ("C", "A")],
                            vertex_functions=[logic.SymmetricThresholdFunction.from_function(sympy.Nand, 2),
@@ -90,6 +131,30 @@ class TestAttractors(TestCase):
         experiments.append(ExperimentParameters(G=G, T=1, P=10, n_attractors=8))
         experiments.append(ExperimentParameters(G=G, T=2, P=18, n_attractors=18))
         experiments.append(ExperimentParameters(G=G, T=3, P=40, n_attractors=20))  # offsets!
+
+        # a failed random graph added as a constant test
+        G = graphs.Network(
+            vertex_names=['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16',
+                          '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30', '31',
+                          '32', '33', '34'],
+            edges=[('1', '2'), ('2', '16'), ('3', '17'), ('5', '15'), ('6', '29'), ('7', '28'), ('8', '22'),
+                   ('9', '28'), ('10', '18'), ('11', '15'), ('12', '24'), ('13', '14'), ('15', '18'), ('16', '26'),
+                   ('17', '27'), ('18', '20'), ('19', '23'), ('20', '27'), ('23', '26'), ('24', '29'), ('25', '33'),
+                   ('26', '30'), ('27', '32'), ('28', '32'), ('30', '32'), ('31', '34'), ('32', '33'), ('33', '34')],
+            vertex_functions=[None, None, sympy.Nand, None, None, None, None, None, None, None, None, None, None, None,
+                              sympy.Or, sympy.Nand,
+                              sympy.Nand, sympy.Nand, sympy.Nand, None, sympy.Xor, None, sympy.And, sympy.Nand,
+                              sympy.Xor, None, sympy.And, sympy.Nand, sympy.And, sympy.Xor, sympy.Or, None, sympy.Or,
+                              sympy.And, sympy.And])
+        experiments.append(ExperimentParameters(G=G, T=1, P=6, n_attractors=6))
+        experiments.append(ExperimentParameters(G=G, T=1, P=10, n_attractors=10))
+        experiments.append(ExperimentParameters(G=G, T=2, P=10, n_attractors=10))
+
+        G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
+        experiments.append(ExperimentParameters(G=G, T=1, P=15, n_attractors=12))
+        experiments.append(ExperimentParameters(G=G, T=2, P=15, n_attractors=14))
+        experiments.append(ExperimentParameters(G=G, T=3, P=15, n_attractors=14))
 
         for _ in range(5):
             size = 35
@@ -169,8 +234,7 @@ class TestAttractors(TestCase):
                                                                    experiment.T, experiment.P, experiment.n_attractors)
             # continue
             n_attractors = find_num_attractors_onestage(G=experiment.G, max_len=experiment.T, max_num=experiment.P,
-                                                        use_sat=False, verbose=False,
-                                                        use_state_keys=True, require_result=experiment.n_attractors)
+                                                        use_sat=False, verbose=False)#, require_result=experiment.n_attractors)
             try:
                 self.assertEqual(n_attractors, experiment.n_attractors)
             except AssertionError as e:

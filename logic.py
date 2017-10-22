@@ -34,6 +34,8 @@ class BooleanSymbolicFunc:
         return self.__str__()
 
     def __eq__(self, other):
+        if other is None:
+            return False
         try:
             for input_comb in itertools.product([False, True], repeat=len(self.input_vars)):
                 if self(*input_comb) != other(*input_comb):
@@ -80,11 +82,17 @@ class SymmetricThresholdFunction:
         return self.__str__()
 
     def __eq__(self, other):
+        if other is None:
+            return False
+        elif other in [False, True, sympy.false, sympy.true]:
+            other_func = lambda _: other
+        else:
+            other_func = other
         try:
             for input_comb in itertools.product([False, True], repeat=len(self.signs)):
-                if self(*input_comb) != other(*input_comb):
+                if self(*input_comb) != other_func(*input_comb):
                     return False
-        except ValueError:
+        except ValueError, TypeError:
             return False
         return True
 

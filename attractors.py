@@ -52,8 +52,7 @@ def find_num_attractors_multistage(G, use_ilp):
     print "#attractors:{}".format(P)
 
 
-def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, verbose=False, require_result=None,
-                                 use_state_keys=True):
+def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, verbose=False, require_result=None):
     T = 2 ** len(G.vertices) if not max_len else max_len
     P = 2 ** len(G.vertices) if not max_num else max_num
     start_time = time.time()
@@ -72,14 +71,12 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         model, formulas_to_variables = ilp.logic_to_ilp(ATTRACTORS)
         active_ilp_vars = [formulas_to_variables[active_logic_var] for active_logic_var in active_logic_vars]
     else:
-        if use_state_keys:
-            model, active_ilp_vars = ilp.direct_graph_to_ilp_with_keys(G, T, P, find_model=False)
-        else:
-            model, active_ilp_vars = ilp.direct_graph_to_ilp_classic(G, T, P, find_model=False)
+        model, active_ilp_vars = ilp.direct_graph_to_ilp_with_keys(G, T, P)
     model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
-    model.setParam(gurobipy.GRB.Param.OptimalityTol, 1e-6)
-    model.setParam(gurobipy.GRB.Param.IntFeasTol, 1e-9)
-    model.setParam(gurobipy.GRB.Param.MIPGapAbs, 0.1)
+    model.setParam(gurobipy.GRB.Param.NumericFocus, 3)
+    # model.setParam(gurobipy.GRB.Param.OptimalityTol, 1e-6) # gurobi warns against using those for numerical issues
+    # model.setParam(gurobipy.GRB.Param.IntFeasTol, 1e-9)
+    # model.setParam(gurobipy.GRB.Param.MIPGapAbs, 0.1)
     # TODO: find out why without it I got non-optimal solution values (that I could manually improve without violations)
     if require_result is not None:
         model.addConstr(sum(active_ilp_vars) == require_result, name="optimality_constraint")
@@ -109,6 +106,8 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
             print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
         print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
         ilp.print_attractors(model)
+        # ilp.print_model_values(model)
+        # model.printStats()
         return int(round(model.objVal))
         # ilp.print_model_values(model, model_vars=model_vars)
     # for constr in model.getConstrs():
@@ -130,7 +129,7 @@ def find_min_attractors_model(G, max_len=None, min_attractors=None):
         print "P={}, T={}".format(P, T)
         iteration += 1
         start_time = time.time()
-        model, activity_variables = ilp.direct_graph_to_ilp_with_keys(G, max_len=T, max_num=P, find_model=True,
+        model, activity_variables = ilp.direct_graph_to_ilp_with_keys(G, max_len=T, max_num=P, find_full_model=True,
                                                                       model_type_restriction=
                                                                       graphs.FunctionTypeRestriction.NONE)
         model.params.LogToConsole = 0
@@ -203,7 +202,7 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
     T = 1
     while True:
         if use_state_keys:
-            model, active_ilp_vars = ilp.direct_graph_to_ilp_with_keys(G, T, P, find_model=True,
+            model, active_ilp_vars = ilp.direct_graph_to_ilp_with_keys(G, T, P, find_full_model=True,
                                                                        model_type_restriction=model_type_restriction)
         else:
             model, active_ilp_vars = ilp.direct_graph_to_ilp_classic(G, T, P, find_model=True,

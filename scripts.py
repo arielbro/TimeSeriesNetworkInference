@@ -119,7 +119,22 @@ G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ari
 #                                     use_state_keys=True)
 # print G
 # attractors.find_num_attractors_multistage(G, use_ilp=False)
-attractors.find_num_attractors_onestage(G, use_sat=False, max_len=1, max_num=30, use_state_keys=True,
-                                        verbose=True)
+# attractors.find_num_attractors_onestage(G, use_sat=False, max_len=1, max_num=30,
+#                                         verbose=True)
 # attractors.find_min_attractors_model(G, max_len=12, min_attractors=2)
+
+G = graphs.Network(
+    vertex_names=['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16',
+                  '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30', '31',
+                  '32', '33', '34'],
+    edges=[('1', '2'), ('2', '16'), ('3', '17'), ('5', '15'), ('6', '29'), ('7', '28'), ('8', '22'),
+           ('9', '28'), ('10', '18'), ('11', '15'), ('12', '24'), ('13', '14'), ('15', '18'), ('16', '26'),
+           ('17', '27'), ('18', '20'), ('19', '23'), ('20', '27'), ('23', '26'), ('24', '29'), ('25', '33'),
+           ('26', '30'), ('27', '32'), ('28', '32'), ('30', '32'), ('31', '34'), ('32', '33'), ('33', '34')],
+    vertex_functions=[None, None, sympy.Nand, None, None, None, None, None, None, None, None, None, None, None,
+                      sympy.Or, sympy.Nand,
+                      sympy.Nand, sympy.Nand, sympy.Nand, None, sympy.Xor, None, sympy.And, sympy.Nand,
+                      sympy.Xor, None, sympy.And, sympy.Nand, sympy.And, sympy.Xor, sympy.Or, None, sympy.Or,
+                      sympy.And, sympy.And])
+attractors.find_num_attractors_onestage(G=G, max_len=1, max_num=10)
 pass
