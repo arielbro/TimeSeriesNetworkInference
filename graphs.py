@@ -19,7 +19,8 @@ class Network:
     def __init__(self, vertex_names=None, edges=None, vertex_functions=None):
         assert vertex_names
         assert len(set(vertex_names)) == len(vertex_names)
-        assert len(vertex_names) == len(vertex_functions)
+        if vertex_functions:
+            assert len(vertex_names) == len(vertex_functions)
         for (x, y) in edges:
             assert (x in vertex_names and y in vertex_names)
         if not vertex_functions:
@@ -50,7 +51,7 @@ class Network:
             if len(v.predecessors()) > 0:
                 res += str(v.function)
             else:
-                res += "input node"
+                res += "input node, value={}".format(v.function)
         return res
 
     def __repr__(self):

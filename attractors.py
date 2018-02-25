@@ -106,7 +106,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
             print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
         print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
         ilp.print_attractors(model)
-        # ilp.print_model_values(model)
+        ilp.print_model_values(model)
         # model.printStats()
         return int(round(model.objVal))
         # ilp.print_model_values(model, model_vars=model_vars)
@@ -181,7 +181,7 @@ def find_min_attractors_model(G, max_len=None, min_attractors=None):
 
 def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.FunctionTypeRestriction.NONE,
                              attractor_length_threshold=None, attractor_num_threshold=None,
-                             use_state_keys=True):
+                             use_state_keys=True, clean_up=False):
     """
     Finds a model with maximum attractors for a given graph and function restrictions.
     Performed a modified binary search on sizes of attractors, and a regular one on number of attractors.
@@ -202,10 +202,10 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
     T = 1
     while True:
         if use_state_keys:
-            model, active_ilp_vars = ilp.direct_graph_to_ilp_with_keys(G, T, P, find_full_model=True,
+            model, active_ilp_vars = ilp.direct_graph_to_ilp_with_keys(G, T, P,
                                                                        model_type_restriction=model_type_restriction)
         else:
-            model, active_ilp_vars = ilp.direct_graph_to_ilp_classic(G, T, P, find_model=True,
+            model, active_ilp_vars = ilp.direct_graph_to_ilp_classic(G, T, P,
                                                                      model_type_restriction=model_type_restriction)
         model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
         if not verbose:
@@ -238,7 +238,41 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
     # print G
     # ilp.print_model_values(model, model_vars=function_vars)
     # ilp.print_attractors(model)
+    function_vars = [(v.VarName, v.X) for v in function_vars]
+    if clean_up:
+        del model
+    return found_attractors, function_vars
 
+
+def vertex_impact_scores(G, model_type_restriction=graphs.FunctionTypeRestriction.NONE,
+                         attractor_length_threshold=None, attractor_num_threshold=None):
+    """
+    Iterate over G's vertices, for each one "erease" the knowledge about its function, and find the maximal
+    number of attractors using find_max_attractor_model. Score vertices according to that number, and return the
+    scores and models achieving them.
+    :param G: A graph, assumed to have a complete boolean model defined.
+    :param model_type_restriction:
+    :param attractor_length_threshold:
+    :param attractor_num_threshold:
+    :return: vertex_scores[i] = score(v_i), vertex_models[i] = opt f_i.
+    """
+    for v in G.vertices:
+        assert v.function is not None or len(v.predecessors()) == 0
+    vertex_scores = []
+    vertex_models = []
+    for i, v in enumerate(G.vertices):
+        # TODO: handle input nodes.
+        last_func = v.function
+        v.function = None
+
+        score, function_var_values = find_max_attractor_model(G, model_type_restriction=model_type_restriction,
+                                 attractor_length_threshold=attractor_length_threshold,
+                                 attractor_num_threshold=attractor_num_threshold, clean_up=True)
+        vertex_scores.append(score)
+        vertex_models.append([pair for pair in function_var_values if pair[0].startswith("f_{}_".format(i))])
+        print "cur score={}".format(vertex_scores[-1])
+        v.function = last_func
+    return vertex_scores, vertex_models
 
 def stochastic_attractor_estimation(G, n_walks, max_walk_len=None):
     if not max_walk_len:

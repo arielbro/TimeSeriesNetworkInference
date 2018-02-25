@@ -133,49 +133,49 @@ class TestAttractors(TestCase):
         experiments.append(ExperimentParameters(G=G, T=3, P=40, n_attractors=20))  # offsets!
 
         # a failed random graph added as a constant test
-        G = graphs.Network(
-            vertex_names=['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16',
-                          '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30', '31',
-                          '32', '33', '34'],
-            edges=[('1', '2'), ('2', '16'), ('3', '17'), ('5', '15'), ('6', '29'), ('7', '28'), ('8', '22'),
-                   ('9', '28'), ('10', '18'), ('11', '15'), ('12', '24'), ('13', '14'), ('15', '18'), ('16', '26'),
-                   ('17', '27'), ('18', '20'), ('19', '23'), ('20', '27'), ('23', '26'), ('24', '29'), ('25', '33'),
-                   ('26', '30'), ('27', '32'), ('28', '32'), ('30', '32'), ('31', '34'), ('32', '33'), ('33', '34')],
-            vertex_functions=[None, None, sympy.Nand, None, None, None, None, None, None, None, None, None, None, None,
-                              sympy.Or, sympy.Nand,
-                              sympy.Nand, sympy.Nand, sympy.Nand, None, sympy.Xor, None, sympy.And, sympy.Nand,
-                              sympy.Xor, None, sympy.And, sympy.Nand, sympy.And, sympy.Xor, sympy.Or, None, sympy.Or,
-                              sympy.And, sympy.And])
-        experiments.append(ExperimentParameters(G=G, T=1, P=6, n_attractors=6))
-        experiments.append(ExperimentParameters(G=G, T=1, P=10, n_attractors=10))
-        experiments.append(ExperimentParameters(G=G, T=2, P=10, n_attractors=10))
+        # G = graphs.Network(
+        #     vertex_names=['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16',
+        #                   '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30', '31',
+        #                   '32', '33', '34'],
+        #     edges=[('1', '2'), ('2', '16'), ('3', '17'), ('5', '15'), ('6', '29'), ('7', '28'), ('8', '22'),
+        #            ('9', '28'), ('10', '18'), ('11', '15'), ('12', '24'), ('13', '14'), ('15', '18'), ('16', '26'),
+        #            ('17', '27'), ('18', '20'), ('19', '23'), ('20', '27'), ('23', '26'), ('24', '29'), ('25', '33'),
+        #            ('26', '30'), ('27', '32'), ('28', '32'), ('30', '32'), ('31', '34'), ('32', '33'), ('33', '34')],
+        #     vertex_functions=[None, None, sympy.Nand, None, None, None, None, None, None, None, None, None, None, None,
+        #                       sympy.Or, sympy.Nand,
+        #                       sympy.Nand, sympy.Nand, sympy.Nand, None, sympy.Xor, None, sympy.And, sympy.Nand,
+        #                       sympy.Xor, None, sympy.And, sympy.Nand, sympy.And, sympy.Xor, sympy.Or, None, sympy.Or,
+        #                       sympy.And, sympy.And])
+        # experiments.append(ExperimentParameters(G=G, T=1, P=6, n_attractors=6))
+        # experiments.append(ExperimentParameters(G=G, T=1, P=10, n_attractors=10))
+        # experiments.append(ExperimentParameters(G=G, T=2, P=10, n_attractors=10))
 
-        G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
-               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
-        experiments.append(ExperimentParameters(G=G, T=1, P=15, n_attractors=12))
-        experiments.append(ExperimentParameters(G=G, T=2, P=15, n_attractors=14))
-        experiments.append(ExperimentParameters(G=G, T=3, P=15, n_attractors=14))
+        # G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+        #        "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
+        # experiments.append(ExperimentParameters(G=G, T=1, P=15, n_attractors=12))
+        # experiments.append(ExperimentParameters(G=G, T=2, P=15, n_attractors=14))
+        # experiments.append(ExperimentParameters(G=G, T=3, P=15, n_attractors=14))
 
-        for _ in range(5):
-            size = 35
-            G = graphs.Network(vertex_names=list(range(size)),
-                               edges=[(i, random.choice(list(range(i+1, size)))) for i in range(size)
-                                      if random.random() < 0.8 and i != size-1],
-                               vertex_functions=[random.choice([sympy.And, sympy.Nand, sympy.Or, sympy.Xor])
-                                                 for _ in range(size)])
-            input_nodes = 0
-            for v in G.vertices:
-                is_input = True
-                for e in G.edges:
-                    if e[1] == v:
-                        is_input = False
-                        break
-                if is_input:
-                    input_nodes += 1
-            attractor_number = 2**input_nodes
-            experiments.append(ExperimentParameters(G=G, T=1, P=3, n_attractors=min(3, attractor_number)))
-            experiments.append(ExperimentParameters(G=G, T=2, P=10, n_attractors=min(10, attractor_number)))
-            experiments.append(ExperimentParameters(G=G, T=10, P=3, n_attractors=min(3, attractor_number)))
+        # for _ in range(5):
+        #     size = 35
+        #     G = graphs.Network(vertex_names=list(range(size)),
+        #                        edges=[(i, random.choice(list(range(i+1, size)))) for i in range(size)
+        #                               if random.random() < 0.8 and i != size-1],
+        #                        vertex_functions=[random.choice([sympy.And, sympy.Nand, sympy.Or, sympy.Xor])
+        #                                          for _ in range(size)])
+        #     input_nodes = 0
+        #     for v in G.vertices:
+        #         is_input = True
+        #         for e in G.edges:
+        #             if e[1] == v:
+        #                 is_input = False
+        #                 break
+        #         if is_input:
+        #             input_nodes += 1
+        #     attractor_number = 2**input_nodes
+        #     experiments.append(ExperimentParameters(G=G, T=1, P=3, n_attractors=min(3, attractor_number)))
+        #     experiments.append(ExperimentParameters(G=G, T=2, P=10, n_attractors=min(10, attractor_number)))
+        #     experiments.append(ExperimentParameters(G=G, T=10, P=3, n_attractors=min(3, attractor_number)))
 
         # TODO: figure out how disjoint long attractors work together (multiplying doesn't account for offsets)
         # """test on basic semi-random networks: create connectivity components of acyclis networks and simple cycles"""

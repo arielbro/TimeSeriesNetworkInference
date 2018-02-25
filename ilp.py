@@ -137,7 +137,6 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None,
     T = 2**len(G.vertices) if not max_len else max_len
     P = 2**len(G.vertices) if not max_num else max_num
     n = len(G.vertices)
-    n_input_nodes = len([v for v in G.vertices if len(v.predecessors()) == 0])
 
     model = gurobipy.Model()
     a_matrix = numpy.matrix([[model.addVar(vtype=gurobipy.GRB.BINARY, name="a_{}_{}".format(p, t))
@@ -149,18 +148,19 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None,
     # print "Time taken for basic prep:{:.2f} seconds".format(time.time() - part_start)
     # part_start = time.time()
 
-    for p, t in itertools.product(range(P), range(T)):
+    for p, t in itertools.product(range(P), range(T + 1)):
         # assert activity var meaning (ACTIVITY_SWITCH, MONOTONE, IF_NON_ACTIVE)
         # for i in range(n):
         #     model.addConstr(a_matrix[p, t] >= v_matrix[i, p, t], name="activity_switch_{}_{}_{}".format(i, p, t))
 
-        model.addConstr((n - n_input_nodes) * a_matrix[p, t] >= sum(v_matrix[i, p, t] for i in range(n) if
-                                                                    len(G.vertices[i].predecessors()) != 0),
+        model.addConstr(n * a_matrix[p, t] >= sum(v_matrix[i, p, t] for i in range(n)),
                         name="activity_{}_{}".format(p, t))
-        model.addConstr(a_matrix[p, t + 1] >= a_matrix[p, t], name="monotone_{}_{}".format(p, t))
+        if t < T:
+            model.addConstr(a_matrix[p, t + 1] >= a_matrix[p, t], name="monotone_{}_{}".format(p, t))
         # model.update()
 
     for p in range(P):
+        # should be redundant now that we return a_matrix[p, T-1] as the optimization function.
         model.addConstr(a_matrix[p, T] <= a_matrix[p, T - 1], name="if_non_active_{}".format(p))
         if p != P - 1:
             model.addConstr(a_matrix[p, T] <= a_matrix[p + 1, T], name="active_order_{}".format(p))
@@ -171,17 +171,25 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None,
     for i in range(n):
         # assert stable
         in_degree = len(G.vertices[i].predecessors())
-        if in_degree == 0:  # stable, might have a predefined value. Don't use the extra time variables.
-            if G.vertices[i].function is None:
-                for p, t in itertools.product(range(P), range(1, T + 1)):
-                    # TODO: figure out how to remove variables
-                    # model.addConstr(v_matrix[i, p, t] == v_matrix[i, p, 0])
-                    v_matrix[i, p, t] = v_matrix[i, p, 0]
-            else:
-                assert G.vertices[i].function in [False, True]
-                # TODO: can actually delete node from graph, and modify successors' functions. Should I?
-                for p, t in itertools.product(range(P), range(T + 1)):
-                    v_matrix[i, p, t] = int(G.vertices[i].function)
+        if in_degree == 0:
+            for p, t in itertools.product(range(P), range(T+1)):
+                if G.vertices[i].function is None:
+                    desired_val = v_matrix[i, p, t]
+                else:
+                    assert G.vertices[i].function in [False, True]
+                    desired_val = int(G.vertices[i].function)
+                    last_activity = a_matrix[p, t-1] if t > 0 else 0
+                    # set initial state, for first active state
+                    model.addConstr(v_matrix[i, p, t] <= desired_val + 1 - a_matrix[p, t] + last_activity,
+                                    name="stable_constant_<=_{}_{}_{}".format(i, p, t))
+                    model.addConstr(v_matrix[i, p, t] >= desired_val + a_matrix[p, t] - last_activity - 1,
+                                    name="stable_constant_>=_{}_{}_{}".format(i, p, t))
+                if t < T:
+                    # if a[p,t+1] and a[p,t] then v_matrix[i,p,t+1]=v_matrix[i,p,t]
+                    model.addConstr(v_matrix[i, p, t+1] <= desired_val + 2 - a_matrix[p, t + 1] - a_matrix[p, t],
+                                    name="stable_<=_{}_{}_{}".format(i, p, t))
+                    model.addConstr(v_matrix[i, p, t+1] >= desired_val + a_matrix[p, t + 1] + a_matrix[p, t] - 2,
+                                    name="stable_>=_{}_{}_{}".format(i, p, t))
     state_keys = [[unique_state_keys([v_matrix[i, p, t] for i in range(n)]) for t in range(T+1)]
                   for p in range(P)]
     predecessors_vars = numpy.array([[[[v_matrix[vertex.index, p, t] for vertex in G.vertices[i].predecessors()]
@@ -262,39 +270,28 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None,
     # part_start = time.time()
 
     # CYCLIC
-    for p, t in itertools.product(range(P), range(T)):
-        # (~a[p, t - 1] & a[p, t]) >> EQ(p, p, t, T), assumes monotonicity of a_matrix.
-        smaller_ind = create_state_keys_comparison_var(model=model,
-                                                       first_state_keys=state_keys[p][t],
-                                                       second_state_keys=state_keys[p][T],
-                                                       include_equality=True,
-                                                       upper_bound=2**unique_key_slicing_size,
-                                                       name_prefix="cyclic<_{}_{}".format(p, t).
-                                                       format(p))
+    for i, p, t in itertools.product(range(n), range(P), range(T)):
+        # (~a[p, t - 1] & a[p, t]) >> EQ(p, p, t, T)
         last_activity = a_matrix[p, t - 1] if t > 0 else 0
-        # model.addConstr(smaller_ind + larger_ind >= 1 - last_activity + a_matrix[p, t],
-        #                 name="cyclic_{}_{}".format(p, t))
-        # model.addConstr(smaller_ind + larger_ind >= 2*(- last_activity + a_matrix[p, t]),
-        #                 name="cyclic_{}_{}".format(p, t))
-        # TODO: a. understand why doing in one constraint is so slow.
-        model.addConstr(smaller_ind >= - last_activity + a_matrix[p, t],
-                        name="cyclic_{}_{}".format(p, t))  # other direction enforced in UNIQUE part.
-        # model.addConstr(larger_ind >= - last_activity + a_matrix[p, t],
-        #                 name="cyclic_{}_{}".format(p, t))
+        model.addConstr(a_matrix[p, t] - last_activity - 1 + v_matrix[i, p, t] <= v_matrix[i, p, T],
+                        name="cyclic_<=_{}_{}_{}".format(i, p, t))
+        model.addConstr(-a_matrix[p, t] + last_activity + 1 + v_matrix[i, p, t] >= v_matrix[i, p, T],
+                        name="cyclic_>=_{}_{}_{}".format(i, p, t))
+
     # model.update()
 
     # print "Time taken for cyclic constraints preparation:{:.2f} seconds".format(time.time() - part_start)
     # part_start = time.time()
 
     # SIMPLE
-    for t, p in itertools.product(range(1, T), range(P)):
+    for t, p in itertools.product(range(T-1), range(P)):
         # (a[p, t] & a[p, t-1]) >> ~EQ(p, p, t, T) (assumes a_matrix monotone)
-        strictly_larger_ind = create_state_keys_comparison_var(model=model, first_state_keys=state_keys[p][T],
+        strictly_larger_ind = create_state_keys_comparison_var(model=model, first_state_keys=state_keys[p][T-1],
                                                                second_state_keys=state_keys[p][t],
                                                                include_equality=False,
                                                                upper_bound=2**unique_key_slicing_size,
                                                                name_prefix="simple>_{}_{}".format(p, t))
-        model.addConstr(strictly_larger_ind - a_matrix[p, t-1] >= 0,
+        model.addConstr(strictly_larger_ind >= a_matrix[p, t],
                         name="simple_{}_{}".format(p, t))
     # model.update()
 
@@ -307,35 +304,26 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None,
     # constraint the final states of attractors to be monotone decreasing amongst.
     # Also requires the k active attractors to be the first ones. SHOULD TODO: verify
     # result in only one optimal solution.
-    for p in range(P):
-        for t in range(T):
-            larger_ind = create_state_keys_comparison_var(model=model, first_state_keys=state_keys[p][T],
-                                                          second_state_keys=state_keys[p][t],
-                                                          include_equality=True,
-                                                          upper_bound=2**unique_key_slicing_size,
-                                                          name_prefix="key_order_in_attractor_{}_{}".format(p, t))
-            # works for inactive states attractors/time points too!
-            model.addConstr(larger_ind >= 1, name="key_order_in_attractor_{}_{}".format(p, t))
-
-        if p != P - 1:  # as long as keys are uniques, this forces uniqueness if p and p + 1 are both active
-            strictly_larger_ind = create_state_keys_comparison_var(model=model,
-                                                                   first_state_keys=state_keys[p + 1][T],
-                                                                   second_state_keys=state_keys[p][T],
-                                                                   include_equality=False,
-                                                                   upper_bound=2**unique_key_slicing_size,
-                                                                   name_prefix="key_order_between_attractors_{}".
-                                                                   format(p))
-            print "state keys for p={}".format(p)
-            print strictly_larger_ind.VarName
-            for key in state_keys[p+1][T]:
-                print key
-            print "\n"
-            for key in state_keys[p][T]:
-                print key
-            print "\n\n"
-            model.addConstr(strictly_larger_ind - a_matrix[p, T] >= 0,  # need only a[p, T] because they're monotone
-                            name="key_order_between_attractors_{}".format(p))
-            # model.update()
+    for p in range(P-1):
+        # as long as keys are uniques, this forces uniqueness if p and p + 1 are both active
+        strictly_larger_ind = create_state_keys_comparison_var(model=model,
+                                                               first_state_keys=state_keys[p + 1][T-1],
+                                                               second_state_keys=state_keys[p][T-1],
+                                                               include_equality=False,
+                                                               upper_bound=2**unique_key_slicing_size,
+                                                               name_prefix="key_order_between_attractors_{}".
+                                                               format(p))
+        # print "state keys for p={}".format(p)
+        # print strictly_larger_ind.VarName
+        # for key in state_keys[p+1][T]:
+        #     print key
+        # print "\n"
+        # for key in state_keys[p][T]:
+        #     print key
+        # print "\n\n"
+        model.addConstr(strictly_larger_ind >= a_matrix[p, T-1],  # need only a[p, T] because they're monotone
+                        name="key_order_between_attractors_{}".format(p))
+        # model.update()
 
     # Constraint the number of active attractors using 2**#input_nodes, P as lower and upper bounds.
     # lower bound can only be used if the maximal theoretical attractor length is allowed.
@@ -347,7 +335,7 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None,
     # print_model_constraints(model)
     # print model
     print "Time taken for model preparation:{:.2f} seconds".format(time.time() - total_start)
-    return model, [a_matrix[p, T] for p in range(P)]
+    return model, [a_matrix[p, T-1] for p in range(P)]
 
 
 def get_expr_coos(expr, var_indices):
