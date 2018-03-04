@@ -4,133 +4,132 @@ import graphs
 import sympy
 from collections import namedtuple
 import random
-from attractors import find_num_attractors_onestage
+from attractors import find_num_attractors_onestage, vertex_impact_scores
 from utility import binary_necklaces
 
-ExperimentParameters = namedtuple("ExperimentParameters", "G T P n_attractors")
-
+AttractorExperimentParameters = namedtuple("AttractorExperimentParameters", "G T P n_attractors")
+VertexImpactExperimentParameters = namedtuple("VertexImpactExperimentParameters", "G T P impacts")
 
 class TestAttractors(TestCase):
     def test_find_num_attractors_onestage(self):
         experiments = []
-        tests_dict = dict()  # keys are tuples of graph, T, P
 
         """test on known toy models"""
         G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
                            vertex_functions=[sympy.Nand])
-        experiments.append(ExperimentParameters(G=G, T=1, P=1, n_attractors=0))
-        experiments.append(ExperimentParameters(G=G, T=2, P=3, n_attractors=1))
+        experiments.append(AttractorExperimentParameters(G=G, T=1, P=1, n_attractors=0))
+        experiments.append(AttractorExperimentParameters(G=G, T=2, P=3, n_attractors=1))
 
         G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
                            vertex_functions=[logic.SymmetricThresholdFunction(signs=[-1], threshold=1)])
-        experiments.append(ExperimentParameters(G=G, T=1, P=1, n_attractors=0))
-        experiments.append(ExperimentParameters(G=G, T=2, P=3, n_attractors=1))
+        experiments.append(AttractorExperimentParameters(G=G, T=1, P=1, n_attractors=0))
+        experiments.append(AttractorExperimentParameters(G=G, T=2, P=3, n_attractors=1))
 
         G = graphs.Network(vertex_names=["A"], edges=[],
                            vertex_functions=[None])
-        experiments.append(ExperimentParameters(G=G, T=1, P=3, n_attractors=2))
-        experiments.append(ExperimentParameters(G=G, T=2, P=3, n_attractors=2))
+        experiments.append(AttractorExperimentParameters(G=G, T=1, P=3, n_attractors=2))
+        experiments.append(AttractorExperimentParameters(G=G, T=2, P=3, n_attractors=2))
 
         G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "A")],
                            vertex_functions=[logic.SymmetricThresholdFunction(signs=[1], threshold=1),
                                              None])
-        experiments.append(ExperimentParameters(G=G, T=1, P=5, n_attractors=4))
-        experiments.append(ExperimentParameters(G=G, T=2, P=5, n_attractors=4))
+        experiments.append(AttractorExperimentParameters(G=G, T=1, P=5, n_attractors=4))
+        experiments.append(AttractorExperimentParameters(G=G, T=2, P=5, n_attractors=4))
 
         G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "A")],
                            vertex_functions=[logic.SymmetricThresholdFunction(signs=[-1], threshold=1),
                                              None])
-        experiments.append(ExperimentParameters(G=G, T=1, P=1, n_attractors=0))
-        experiments.append(ExperimentParameters(G=G, T=2, P=3, n_attractors=2))
+        experiments.append(AttractorExperimentParameters(G=G, T=1, P=1, n_attractors=0))
+        experiments.append(AttractorExperimentParameters(G=G, T=2, P=3, n_attractors=2))
 
         G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
                            vertex_functions=[sympy.And])
-        experiments.append(ExperimentParameters(G=G, T=1, P=2, n_attractors=2))
-        experiments.append(ExperimentParameters(G=G, T=3, P=1, n_attractors=1))
+        experiments.append(AttractorExperimentParameters(G=G, T=1, P=2, n_attractors=2))
+        experiments.append(AttractorExperimentParameters(G=G, T=3, P=1, n_attractors=1))
 
         G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
                            vertex_functions=[None])
-        experiments.append(ExperimentParameters(G=G, T=2, P=3, n_attractors=2))
-        experiments.append(ExperimentParameters(G=G, T=1, P=3, n_attractors=2))
+        experiments.append(AttractorExperimentParameters(G=G, T=2, P=3, n_attractors=2))
+        experiments.append(AttractorExperimentParameters(G=G, T=1, P=3, n_attractors=2))
 
         G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "A")],
                            vertex_functions=[None, None])
-        experiments.append(ExperimentParameters(G=G, T=2, P=5, n_attractors=4))
-        experiments.append(ExperimentParameters(G=G, T=1, P=6, n_attractors=4))
+        experiments.append(AttractorExperimentParameters(G=G, T=2, P=5, n_attractors=4))
+        experiments.append(AttractorExperimentParameters(G=G, T=1, P=6, n_attractors=4))
 
         G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "A")],
                            vertex_functions=[None, True])
-        experiments.append(ExperimentParameters(G=G, T=2, P=5, n_attractors=2))
-        experiments.append(ExperimentParameters(G=G, T=1, P=6, n_attractors=2))
+        experiments.append(AttractorExperimentParameters(G=G, T=2, P=5, n_attractors=2))
+        experiments.append(AttractorExperimentParameters(G=G, T=1, P=6, n_attractors=2))
 
         G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
                            vertex_functions=[sympy.Nand, sympy.And])
-        experiments.append(ExperimentParameters(G=G, T=2, P=3, n_attractors=0))
-        experiments.append(ExperimentParameters(G=G, T=4, P=2, n_attractors=1))
-        experiments.append(ExperimentParameters(G=G, T=4, P=1, n_attractors=1))
+        experiments.append(AttractorExperimentParameters(G=G, T=2, P=3, n_attractors=0))
+        experiments.append(AttractorExperimentParameters(G=G, T=4, P=2, n_attractors=1))
+        experiments.append(AttractorExperimentParameters(G=G, T=4, P=1, n_attractors=1))
 
         G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
                            vertex_functions=[sympy.Nand, sympy.Nand])
-        experiments.append(ExperimentParameters(G=G, T=1, P=3, n_attractors=2))
-        experiments.append(ExperimentParameters(G=G, T=2, P=3, n_attractors=3))
-        experiments.append(ExperimentParameters(G=G, T=15, P=15, n_attractors=3))
+        experiments.append(AttractorExperimentParameters(G=G, T=1, P=3, n_attractors=2))
+        experiments.append(AttractorExperimentParameters(G=G, T=2, P=3, n_attractors=3))
+        experiments.append(AttractorExperimentParameters(G=G, T=15, P=15, n_attractors=3))
 
         G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
                            vertex_functions=[lambda x: True, lambda x: False])
-        experiments.append(ExperimentParameters(G=G, T=4, P=2, n_attractors=1))
-        experiments.append(ExperimentParameters(G=G, T=1, P=2, n_attractors=1))
+        experiments.append(AttractorExperimentParameters(G=G, T=4, P=2, n_attractors=1))
+        experiments.append(AttractorExperimentParameters(G=G, T=1, P=2, n_attractors=1))
 
         G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
                            vertex_functions=[None, sympy.And])
-        experiments.append(ExperimentParameters(G=G, T=2, P=4, n_attractors=3))
-        experiments.append(ExperimentParameters(G=G, T=1, P=4, n_attractors=2))
+        experiments.append(AttractorExperimentParameters(G=G, T=2, P=4, n_attractors=3))
+        experiments.append(AttractorExperimentParameters(G=G, T=1, P=4, n_attractors=2))
 
         G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
                            vertex_functions=[None, lambda _: True])
-        experiments.append(ExperimentParameters(G=G, T=2, P=3, n_attractors=1))
-        experiments.append(ExperimentParameters(G=G, T=4, P=2, n_attractors=1))
+        experiments.append(AttractorExperimentParameters(G=G, T=2, P=3, n_attractors=1))
+        experiments.append(AttractorExperimentParameters(G=G, T=4, P=2, n_attractors=1))
 
         G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
                            vertex_functions=[None, None])
-        experiments.append(ExperimentParameters(G=G, T=2, P=6, n_attractors=3))
-        experiments.append(ExperimentParameters(G=G, T=1, P=6, n_attractors=2))
+        experiments.append(AttractorExperimentParameters(G=G, T=2, P=6, n_attractors=3))
+        experiments.append(AttractorExperimentParameters(G=G, T=1, P=6, n_attractors=2))
 
         G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "A"), ("C", "A")],
                            vertex_functions=[logic.SymmetricThresholdFunction.from_function(sympy.Nand, 2),
                                              logic.SymmetricThresholdFunction.from_function(sympy.Nand, 1),
                                              logic.SymmetricThresholdFunction.from_function(sympy.Nand, 0)])
-        experiments.append(ExperimentParameters(G=G, T=1, P=3, n_attractors=3))
-        experiments.append(ExperimentParameters(G=G, T=1, P=4, n_attractors=3))
-        experiments.append(ExperimentParameters(G=G, T=2, P=3, n_attractors=3))
-        experiments.append(ExperimentParameters(G=G, T=2, P=4, n_attractors=4))
-        experiments.append(ExperimentParameters(G=G, T=3, P=4, n_attractors=4))
+        experiments.append(AttractorExperimentParameters(G=G, T=1, P=3, n_attractors=3))
+        experiments.append(AttractorExperimentParameters(G=G, T=1, P=4, n_attractors=3))
+        experiments.append(AttractorExperimentParameters(G=G, T=2, P=3, n_attractors=3))
+        experiments.append(AttractorExperimentParameters(G=G, T=2, P=4, n_attractors=4))
+        experiments.append(AttractorExperimentParameters(G=G, T=3, P=4, n_attractors=4))
 
         G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "A"), ("C", "A")],
                            vertex_functions=[logic.SymmetricThresholdFunction.from_function(sympy.Nand, 2),
                                              logic.SymmetricThresholdFunction.from_function(sympy.Nand, 1),
                                              False])
-        experiments.append(ExperimentParameters(G=G, T=3, P=3, n_attractors=1))
+        experiments.append(AttractorExperimentParameters(G=G, T=3, P=3, n_attractors=1))
 
 
         G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
                            vertex_functions=[sympy.Nand]*3)
-        experiments.append(ExperimentParameters(G=G, T=6, P=2, n_attractors=2))
-        experiments.append(ExperimentParameters(G=G, T=10, P=10, n_attractors=2))
-        experiments.append(ExperimentParameters(G=G, T=5, P=10, n_attractors=1))
+        experiments.append(AttractorExperimentParameters(G=G, T=6, P=2, n_attractors=2))
+        experiments.append(AttractorExperimentParameters(G=G, T=10, P=10, n_attractors=2))
+        experiments.append(AttractorExperimentParameters(G=G, T=5, P=10, n_attractors=1))
 
         # acyclic, should have 2**#input_nodes attractors of length 1
         G = graphs.Network(vertex_names=["v1", "v2", "v3", "v4", "v5", "v6"],
                            edges=[("v1", "v4"), ("v2", "v4"), ("v1", "v5"), ("v4", "v6")],
                            vertex_functions=[lambda *args: sympy.Nand(*args)]*6)
-        experiments.append(ExperimentParameters(G=G, T=1, P=10, n_attractors=8))
-        experiments.append(ExperimentParameters(G=G, T=6, P=10, n_attractors=8))
+        experiments.append(AttractorExperimentParameters(G=G, T=1, P=10, n_attractors=8))
+        experiments.append(AttractorExperimentParameters(G=G, T=6, P=10, n_attractors=8))
 
         G = graphs.Network(vertex_names=["A1", "B1", "B2", "C1", "C2"],
                            edges=[("A1", "A1"), ("B1", "B2"), ("B2", "B1"), ("C1", "C2"), ("C2", "C1")],
                            vertex_functions=[sympy.And]*5)
-        experiments.append(ExperimentParameters(G=G, T=1, P=10, n_attractors=8))
-        experiments.append(ExperimentParameters(G=G, T=2, P=18, n_attractors=18))
-        experiments.append(ExperimentParameters(G=G, T=3, P=40, n_attractors=20))  # offsets!
+        experiments.append(AttractorExperimentParameters(G=G, T=1, P=10, n_attractors=8))
+        experiments.append(AttractorExperimentParameters(G=G, T=2, P=18, n_attractors=18))
+        experiments.append(AttractorExperimentParameters(G=G, T=3, P=40, n_attractors=20))  # offsets!
 
         # a failed random graph added as a constant test
         # G = graphs.Network(
@@ -257,3 +256,72 @@ class TestAttractors(TestCase):
         #         print e
         #         print experiment.G
         #         raise e
+
+    def test_vertex_impact_scores(self):
+        # TODO: also test the resulting models (assure they have the correct number of attractors)
+        experiments = []
+
+        G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+                           vertex_functions=[sympy.Nand])
+        experiments.append(VertexImpactExperimentParameters(G=G, T=3, P=3, impacts=[2]))
+
+        G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+                           vertex_functions=[sympy.Nand])
+        experiments.append(VertexImpactExperimentParameters(G=G, T=1, P=3, impacts=[2]))
+
+        G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+                           vertex_functions=[sympy.Nand])
+        experiments.append(VertexImpactExperimentParameters(G=G, T=1, P=1, impacts=[1]))
+
+        G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+                           vertex_functions=[sympy.And])
+        experiments.append(VertexImpactExperimentParameters(G=G, T=3, P=3, impacts=[2]))
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "A")],
+                           vertex_functions=[sympy.And, None])
+        experiments.append(VertexImpactExperimentParameters(G=G, T=3, P=5, impacts=[4, 4]))
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "A")],
+                           vertex_functions=[sympy.Nand, None])
+        experiments.append(VertexImpactExperimentParameters(G=G, T=3, P=5, impacts=[4, 2]))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand, sympy.Nand, sympy.Nand])
+        experiments.append(VertexImpactExperimentParameters(G=G, T=7, P=5, impacts=[4, 4, 4]))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand, sympy.Nand, sympy.Nand])
+        experiments.append(VertexImpactExperimentParameters(G=G, T=3, P=5, impacts=[4, 4, 4]))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand, sympy.Nand, sympy.Nand])
+        experiments.append(VertexImpactExperimentParameters(G=G, T=2, P=5, impacts=[2, 2, 2]))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand, sympy.Nand, sympy.Nand])
+        experiments.append(VertexImpactExperimentParameters(G=G, T=1, P=5, impacts=[2, 2, 2]))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "A"), ("C", "A")],
+                           vertex_functions=[sympy.And, sympy.And, None])
+        experiments.append(VertexImpactExperimentParameters(G=G, T=2, P=5, impacts=[6, 4, 4]))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "A"), ("C", "A")],
+                           vertex_functions=[sympy.And, sympy.And, None])
+        experiments.append(VertexImpactExperimentParameters(G=G, T=1, P=5, impacts=[4, 3, 3]))
+
+        print "number of experiments (with keys)={}".format(len(experiments))
+        for i, experiment in enumerate(experiments):
+            print "experiment #{}".format(i)
+            print "n={}, T={}, P={}, expected_impacts={}".format(len(experiment.G.vertices),
+                                                                      experiment.T, experiment.P,
+                                                                      experiment.impacts)
+            # continue
+            impacts, _ = vertex_impact_scores(G=experiment.G, attractor_length_threshold=experiment.T,
+                                              attractor_num_threshold=experiment.P,
+                                              model_type_restriction=graphs.FunctionTypeRestriction.NONE)
+            try:
+                self.assertEqual(impacts, experiment.impacts)
+            except AssertionError as e:
+                print e
+                print experiment.G
+                raise e

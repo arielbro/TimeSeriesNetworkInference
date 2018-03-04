@@ -101,10 +101,10 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         model.computeIIS()
         model.write("./model_iis.ilp")
     else:
-        print "# attractors = {}".format(model.ObjVal)
+        # print "# attractors = {}".format(model.ObjVal)
         if model.ObjVal != int(round(model.ObjVal)):
             print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
-        print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
+        # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
         ilp.print_attractors(model)
         ilp.print_model_values(model)
         # model.printStats()
@@ -153,7 +153,7 @@ def find_min_attractors_model(G, max_len=None, min_attractors=None):
         else:
             if model.ObjVal != int(round(model.ObjVal)):
                 print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
-            print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
+            # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
             for i in range(model.SolCount):
                 model.setParam(gurobipy.GRB.Param.SolutionNumber, i)
                 function_model = []
@@ -212,7 +212,7 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
             model.params.LogToConsole = 0
         start_time = time.time()
         model.optimize()
-        print "Time taken for ILP solve: {:.2f} (T={}, P={})".format(time.time() - start_time, T, P)
+        # print "Time taken for ILP solve: {:.2f} (T={}, P={})".format(time.time() - start_time, T, P)
         if model.Status != gurobipy.GRB.OPTIMAL:
             print "warning, model not solved to optimality."
             print "writing IIS data to model_iis.ilp"
@@ -227,12 +227,12 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
                 P *= 2
                 continue
             else:
-                if found_attractors != P - 1:
-                    print "found {} attractors so far".format(found_attractors)
+                # if found_attractors != P - 1:
+                    # print "found {} attractors so far".format(found_attractors)
                 if T >= attractor_length_threshold:
                     break
                 T *= 2
-    print "Found maximal model with {} attractors".format(found_attractors)
+    # print "Found maximal model with {} attractors".format(found_attractors)
     function_vars = [var for var in model.getVars() if "f_" in var.VarName
                      or "signs" in var.VarName or "threshold" in var.VarName]
     # print G
@@ -261,7 +261,8 @@ def vertex_impact_scores(G, model_type_restriction=graphs.FunctionTypeRestrictio
     vertex_scores = []
     vertex_models = []
     for i, v in enumerate(G.vertices):
-        # TODO: handle input nodes.
+        # TODO: handle input nodes as a special case.
+        # TODO: consider calculating relative impact (ratio between n_attractors with or without the pertubation)
         last_func = v.function
         v.function = None
 

@@ -334,7 +334,7 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None,
 
     # print_model_constraints(model)
     # print model
-    print "Time taken for model preparation:{:.2f} seconds".format(time.time() - total_start)
+    # print "Time taken for model preparation:{:.2f} seconds".format(time.time() - total_start)
     return model, [a_matrix[p, T-1] for p in range(P)]
 
 

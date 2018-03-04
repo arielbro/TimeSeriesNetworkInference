@@ -147,7 +147,7 @@ class Network:
         G.randomize_functions(function_type_restriction=function_type_restriction)
         return G
 
-    def export_to_cnet(self, path):
+    def export_to_cnet(self, path, verbose=False):
         """
         Given a network G, export G's structure (including the boolean model)
         to a cnet file, as described in BNS's user manual -
