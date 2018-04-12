@@ -250,6 +250,27 @@ class Network:
         print "time taken for graph import: {:.2f}".format(time.time() - start)
         return G
 
+    def contract_vertex(self, vertex):
+        """
+        Assumes the vertex has no self loop, and currently assumes it has no successors.
+        Removes all records for its existance
+        :param vertex: A vertex (assumed to be contained in self.vertices) with no self loop or successors
+        :return:
+        """
+        # Removes a vertex from the graph, and update its predecessors and successors.
+        # Before that, if the vertex is an output node, the precomputed_successors field of its predecessors is reset.
+        # All edges touching it are either removed (if an output vertex), or replaced in the following way -
+        # if (u, vertex) and (vertex, v) are both in self.edges, an edge (u, v) is created.
+
+        assert vertex in self.vertices
+        # assert (vertex, vertex) not in self.edges
+        assert vertex not in (u for (u, v) in self.edges)
+        for u in vertex.predecessors():
+            u.precomputed_successors = None
+        self.edges = [(u, v) for (u, v) in self.edges if v is not vertex]
+        self.vertices.remove(vertex)
+        return
+
 
 class Vertex:
     def __init__(self, graph, name, func, index=None):
@@ -258,14 +279,23 @@ class Vertex:
         self.function = func
         self.index = index if index is not None else self.graph.vertices.index(self)
         self.precomputed_predecessors = None
+        self.precomputed_successors = None
 
     def predecessors(self):
         if not self.precomputed_predecessors:
-            # search using names (asserted to be unique during init) to avoid cyrcular dependencies predecessors <> key
+            # search using names (asserted to be unique during init) to avoid circular dependencies predecessors <> key
             name_based_edges = [(u.name, v.name) for (u, v) in self.graph.edges]
             predecessors = [u for u in self.graph.vertices if (u.name, self.name) in name_based_edges]
             self.precomputed_predecessors = predecessors
         return self.precomputed_predecessors
+
+    def successors(self):
+        if not self.precomputed_successors:
+            # search using names (asserted to be unique during init) to avoid circular dependencies predecessors <> key
+            name_based_edges = [(u.name, v.name) for (u, v) in self.graph.edges]
+            successors = [v for v in self.graph.vertices if (self.name, v.name) in name_based_edges]
+            self.precomputed_successors = successors
+        return self.precomputed_successors
 
     def __key(self):
         return self.name, self.function
