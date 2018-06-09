@@ -10,6 +10,7 @@ from graphs import FunctionTypeRestriction
 unique_key_slicing_size = 10  # TODO: find elegant reformatting for this
 # TODO: find good upper bound again, why didn't 29 work on MAPK_large2?
 # http://files.gurobi.com/Numerics.pdf a good resource on numerical issues, high values cause them.
+simplify_general_boolean = True # TODO: reformat as parameter, test both options (and benchmark times)
 
 
 def recursive_logic_to_var(formula, model, formulas_to_variables):
@@ -129,6 +130,133 @@ def create_state_keys_comparison_var(model, first_state_keys, second_state_keys,
     return last_var
 
 
+def add_truth_table_consistency_constraints(G, model, i, p, t, predecessors_vars,
+                                            a_matrix, v_matrix, find_model_f_vars):
+    """
+    Adds consistency constraints to a model, as in Roded's paper.
+    :param G:
+    :param model:
+    :param i:
+    :param P:
+    :param T:
+    :param predecessors_vars:
+    :param a_matrix:
+    :param v_matrix:
+    :param find_model:
+    :return:
+    """
+    in_degree = len(G.vertices[i].predecessors())
+    for var_comb_index, var_combination in enumerate(itertools.product((False, True), repeat=in_degree)):
+        if find_model_f_vars:
+            desired_val = find_model_f_vars[var_comb_index]
+        else:
+            desired_val = 1 if G.vertices[i].function(*var_combination) else 0  # == because sympy
+        # this expression is |in_degree| iff their states agrees with var_combination
+        indicator_expression = sum(v if state else 1 - v for (v, state) in
+                                   zip(predecessors_vars[i, p, t], var_combination))
+        # a[p, t] & (indicator_expression = in_degree) => v[i,p,t+1] = f(var_combination).
+        # For x&y => a=b, require a <= b + (2 -x -b), a >= b - (2 -x -y)
+        model.addConstr(v_matrix[i, p, t + 1] >= desired_val -
+                        (in_degree + 1 - indicator_expression - a_matrix[p, t]),
+                        name="consistent_>=_{}_{}_{}".format(i, p, t))
+        model.addConstr(v_matrix[i, p, t + 1] <= desired_val +
+                        (in_degree + 1 - indicator_expression - a_matrix[p, t]),
+                        name="consistent_<=_{}_{}_{}".format(i, p, t))
+
+
+def build_logic_function_vars(formula, model, name_prefix, symbols_to_variables_dict):
+    """
+    Builds an indicator for a boolean function recursively.
+    :param boolean_function:
+    :param model:
+    :param formula_to_variables_dict: maps the formula symbols to model variables
+    :return:
+    """
+    # TODO: support more operation types
+    if isinstance(formula, sympy.symbol.Symbol):
+        return symbols_to_variables_dict[formula]
+    elif isinstance(formula, sympy.And):
+        argument_vars = [build_logic_function_vars(argument, model, name_prefix + "_And_args_{}",
+                                                   symbols_to_variables_dict)
+                                                   for (i, argument) in enumerate(formula.args)]
+        andVar = model.addVar(vtype=gurobipy.GRB.BINARY,
+                              name="{}_And".format(name_prefix))
+        for (i, argument_var) in enumerate(argument_vars):
+            model.addConstr(andVar <= argument_var, name="{}_And_res_<=_{}".format(name_prefix, i))
+        model.addConstr(andVar >= sum(argument_vars) - (len(argument_vars) - 1),
+                        name="{}_And_res_>=".format(name_prefix, i))
+        return andVar
+    elif isinstance(formula, sympy.Or):
+        argument_vars = [build_logic_function_vars(argument, model, name_prefix + "_Or_args_{}",
+                                                   symbols_to_variables_dict)
+                                                   for (i, argument) in enumerate(formula.args)]
+        orVar = model.addVar(vtype=gurobipy.GRB.BINARY,
+                              name="{}_Or".format(name_prefix))
+        for (i, argument_var) in enumerate(argument_vars):
+            model.addConstr(orVar >= argument_var, name="{}_Or_res_>=_{}".format(name_prefix, i))
+        model.addConstr(orVar <= sum(argument_vars),
+                        name="{}_And_res_<=".format(name_prefix, i))
+        return orVar
+    elif isinstance(formula, sympy.Not):
+        try:
+            return 1 - symbols_to_variables_dict[formula.args[0]]
+        except Exception as e:
+            raise e
+    elif formula in [sympy.true, sympy.false]:
+        return 1 if formula is sympy.true else 0
+    else:
+        raise NotImplementedError
+
+
+def add_simplified_consistency_constraints(G, model, i, p, t, predecessors_vars,
+                                               a_matrix, v_matrix):
+    """
+    Adds consistency constraints to the model by transforming each vertex' logic function to an indicator variable,
+    and enforcing its value to be equal to the next state's value.
+    :param G:
+    :param model:
+    :param i:
+    :param P:
+    :param T:
+    :param predecessors_vars:
+    :param a_matrix:
+    :param v_matrix:
+    :param find_model:
+    :return:
+    """
+    # TODO: maybe give P, T and iterate here, so we simplify once (if it's a bottleneck)
+
+    func_expression, symbols_to_variables_dict = None, None
+    cur_func = G.vertices[i].function
+    if cur_func is None:
+        raise AssertionError("Nodes with unset functions shouldn't be handled here")
+    if isinstance(cur_func, sympy.FunctionClass):
+        # instantiate the function expression
+        arg_symbols = [sympy.symbols("x_{}".format(j)) for j in range(len(predecessors_vars[i, p, t]))]
+        func_expression = cur_func(*arg_symbols)
+    elif isinstance(cur_func, logic.BooleanSymbolicFunc):
+        func_expression = cur_func.formula
+        arg_symbols = cur_func.input_vars
+    else:
+        # try a constant function
+        try:
+            if cur_func(None) in [True, False, sympy.true, sympy.false]:
+                func_expression = sympy.true if cur_func(None) else sympy.false
+                arg_symbols = [None] * len(G.vertices[i].predecessors())
+            else:
+                raise ValueError("Unkown type of function - " + str(type(cur_func)))
+        except TypeError:
+            raise ValueError("Unkown type of function (non-constant lambda functions aren't allowed)")
+    simplified_formula = sympy.simplify(func_expression)
+    symbols_to_variables_dict = dict(zip(arg_symbols, predecessors_vars[i, p, t]))
+    func_var = build_logic_function_vars(simplified_formula, model, "Consistency_{}_".format(i),
+                                         symbols_to_variables_dict)
+    model.addConstr(v_matrix[i, p, t + 1] >= func_var + a_matrix[p, t] - 1,
+                    name="consistent_>=_{}_{}_{}".format(i, p, t))
+    model.addConstr(v_matrix[i, p, t + 1] <= func_var - a_matrix[p, t] + 1,
+                    name="consistent_<=_{}_{}_{}".format(i, p, t))
+
+
 # noinspection PyArgumentList
 def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None,
                                   model_type_restriction=FunctionTypeRestriction.NONE):
@@ -202,25 +330,21 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None,
             if (find_model and model_type_restriction == FunctionTypeRestriction.NONE) \
                 or (not find_model and not isinstance(G.vertices[i].function,
                                                       logic.SymmetricThresholdFunction)):
-                for var_comb_index, var_combination in enumerate(itertools.product((False, True), repeat=in_degree)):
-                    if find_model:
-                        desired_val = model.addVar(vtype=gurobipy.GRB.BINARY,
-                                                   name="f_{}_{}".format(i, var_comb_index))
+                if find_model:
+                    find_model_f_vars = []
+                    for var_comb_index, var_combination in enumerate(
+                            itertools.product((False, True), repeat=len(G.vertices[i].predecessors()))):
+                        find_model_f_vars.append(model.addVar(vtype=gurobipy.GRB.BINARY, name="f_{}_{}".format(i, var_comb_index)))
                         model.update()
+                else:
+                    find_model_f_vars = None
+                for p, t in itertools.product(range(P), range(T)):
+                    if simplify_general_boolean and not find_model:
+                        add_simplified_consistency_constraints(G, model, i, p, t, predecessors_vars,
+                                                               a_matrix, v_matrix)
                     else:
-                        desired_val = 1 if G.vertices[i].function(*var_combination) else 0  # == because sympy
-                    for p, t in itertools.product(range(P), range(T)):
-                        # this expression is |in_degree| iff their states agrees with var_combination
-                        indicator_expression = sum(v if state else 1 - v for (v, state) in
-                                                   zip(predecessors_vars[i, p, t], var_combination))
-                        # a[p, t] & (indicator_expression = in_degree) => v[i,p,t+1] = f(var_combination).
-                        # For x&y => a=b, require a <= b + (2 -x -b), a >= b - (2 -x -y)
-                        model.addConstr(v_matrix[i, p, t + 1] >= desired_val -
-                                        (in_degree + 1 - indicator_expression - a_matrix[p, t]),
-                                        name="consistent_>=_{}_{}_{}".format(i, p, t))
-                        model.addConstr(v_matrix[i, p, t + 1] <= desired_val +
-                                        (in_degree + 1 - indicator_expression - a_matrix[p, t]),
-                                        name="consistent_<=_{}_{}_{}".format(i, p, t))
+                        add_truth_table_consistency_constraints(G, model, i, p, t, predecessors_vars,
+                                                                a_matrix, v_matrix, find_model_f_vars)
             else:  # symmetric threshold / logic gate
                 if find_model:
                     signs = []

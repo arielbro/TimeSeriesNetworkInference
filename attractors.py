@@ -106,8 +106,10 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
             print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
         # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
         ilp.print_attractors(model)
-        ilp.print_model_values(model)
+        # ilp.print_model_values(model)
+        # ilp.print_model_constraints(model)
         # model.printStats()
+        print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
         return int(round(model.objVal))
         # ilp.print_model_values(model, model_vars=model_vars)
     # for constr in model.getConstrs():
@@ -266,6 +268,7 @@ def vertex_impact_scores(G, model_type_restriction=graphs.FunctionTypeRestrictio
         last_func = v.function
         v.function = None
 
+        # TODO: decide on that or onestage variant
         score, function_var_values = find_max_attractor_model(G, model_type_restriction=model_type_restriction,
                                  attractor_length_threshold=attractor_length_threshold,
                                  attractor_num_threshold=attractor_num_threshold, clean_up=True)
