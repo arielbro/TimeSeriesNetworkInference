@@ -13,6 +13,12 @@ def estimate_size(n, m, T, P):
 # G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
 #                    vertex_functions=[sympy.Nand])
 
+# G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+#                    vertex_functions=[sympy.And])
+
+# G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+#                    vertex_functions=[lambda _: True])
+
 # G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
 #                    vertex_functions=[sympy.Nand, sympy.And])
 
@@ -21,7 +27,7 @@ def estimate_size(n, m, T, P):
 #
 # G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
 #                    vertex_functions=[lambda x: True, lambda x: False])
-#
+
 # G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "A"), ("C", "A")],
 #                    vertex_functions=[sympy.Nand]*3)
 #
@@ -40,10 +46,10 @@ def estimate_size(n, m, T, P):
 #                    vertex_functions=[lambda y, z: z, lambda x, z: sympy.logic.Not(x),
 #                                      lambda x, y: sympy.logic.Or(sympy.logic.Not(x),  y)])
 #
-# # acyclic, should have 2**#input_nodes attractors of length 1
+# acyclic, should have 2**#input_nodes attractors of length 1
 # G = graphs.Network(vertex_names=["v1", "v2", "v3", "v4", "v5", "v6"],
 #                    edges=[("v1", "v4"), ("v2", "v4"), ("v1", "v5"), ("v4","v6")],
-#                    vertex_functions=[lambda *args: sympy.Nand(*args)]*6)
+#                    vertex_functions=[sympy.Nand]*6)
 #
 # G.randomize_functions(restrict_signed_symmetric_threshold=True)
 #
@@ -98,8 +104,8 @@ def estimate_size(n, m, T, P):
 #                                         n_walks=300, max_walk_len=300,
 #                                         path="C:/Users/Ariel/Downloads/graph_sampling_only_simple_gates.csv")
 
-G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
-               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
+# G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+#                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
 # print G
 # print len(G.vertices)
 # input_nodes = [u for u in G.vertices if len(u.predecessors()) == 0]
@@ -122,19 +128,24 @@ G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ari
 # attractors.find_num_attractors_onestage(G, use_sat=False, max_len=1, max_num=30,
 #                                         verbose=True)
 # attractors.find_min_attractors_model(G, max_len=12, min_attractors=2)
+#
+# G = graphs.Network(
+#     vertex_names=['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16',
+#                   '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30', '31',
+#                   '32', '33', '34'],
+#     edges=[('1', '2'), ('2', '16'), ('3', '17'), ('5', '15'), ('6', '29'), ('7', '28'), ('8', '22'),
+#            ('9', '28'), ('10', '18'), ('11', '15'), ('12', '24'), ('13', '14'), ('15', '18'), ('16', '26'),
+#            ('17', '27'), ('18', '20'), ('19', '23'), ('20', '27'), ('23', '26'), ('24', '29'), ('25', '33'),
+#            ('26', '30'), ('27', '32'), ('28', '32'), ('30', '32'), ('31', '34'), ('32', '33'), ('33', '34')],
+#     vertex_functions=[None, None, sympy.Nand, None, None, None, None, None, None, None, None, None, None, None,
+#                       sympy.Or, sympy.Nand,
+#                       sympy.Nand, sympy.Nand, sympy.Nand, None, sympy.Xor, None, sympy.And, sympy.Nand,
+#                       sympy.Xor, None, sympy.And, sympy.Nand, sympy.And, sympy.Xor, sympy.Or, None, sympy.Or,
+#                       sympy.And, sympy.And])
 
-G = graphs.Network(
-    vertex_names=['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16',
-                  '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30', '31',
-                  '32', '33', '34'],
-    edges=[('1', '2'), ('2', '16'), ('3', '17'), ('5', '15'), ('6', '29'), ('7', '28'), ('8', '22'),
-           ('9', '28'), ('10', '18'), ('11', '15'), ('12', '24'), ('13', '14'), ('15', '18'), ('16', '26'),
-           ('17', '27'), ('18', '20'), ('19', '23'), ('20', '27'), ('23', '26'), ('24', '29'), ('25', '33'),
-           ('26', '30'), ('27', '32'), ('28', '32'), ('30', '32'), ('31', '34'), ('32', '33'), ('33', '34')],
-    vertex_functions=[None, None, sympy.Nand, None, None, None, None, None, None, None, None, None, None, None,
-                      sympy.Or, sympy.Nand,
-                      sympy.Nand, sympy.Nand, sympy.Nand, None, sympy.Xor, None, sympy.And, sympy.Nand,
-                      sympy.Xor, None, sympy.And, sympy.Nand, sympy.And, sympy.Xor, sympy.Or, None, sympy.Or,
-                      sympy.And, sympy.And])
-attractors.find_num_attractors_onestage(G=G, max_len=1, max_num=10)
+G = graphs.Network.generate_random(15, indegree_bounds=[1, 5])
+
+
+n_attractors = attractors.find_num_attractors_onestage(G=G, max_len=13, max_num=11, verbose=True, sample_mip_start=True,
+                                                       simplify_general_boolean=True)
 pass

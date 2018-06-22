@@ -11,6 +11,9 @@ import gurobipy
 import stochastic
 import subprocess
 
+attractor_sampling_num_walks = 50
+attractor_sampling_walk_length = 15  # TODO: refactor into method parameters
+
 
 def find_num_attractors_multistage(G, use_ilp):
     T = 1
@@ -52,7 +55,8 @@ def find_num_attractors_multistage(G, use_ilp):
     print "#attractors:{}".format(P)
 
 
-def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, verbose=False, require_result=None):
+def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, verbose=False,
+                                 sample_mip_start=False, simplify_general_boolean=False):
     T = 2 ** len(G.vertices) if not max_len else max_len
     P = 2 ** len(G.vertices) if not max_num else max_num
     start_time = time.time()
@@ -71,16 +75,34 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         model, formulas_to_variables = ilp.logic_to_ilp(ATTRACTORS)
         active_ilp_vars = [formulas_to_variables[active_logic_var] for active_logic_var in active_logic_vars]
     else:
-        model, active_ilp_vars = ilp.direct_graph_to_ilp_with_keys(G, T, P)
+        model, active_ilp_vars, v_matrix = ilp.direct_graph_to_ilp_with_keys(G, T, P, simplify_general_boolean=simplify_general_boolean)
+        if sample_mip_start:
+            #TODO: implement for graphs with non-fixed vertex functions. Maybe include multiple re-rolls of functions
+            #TODO: to find the most attractors.
+            nonfixed = False
+            for vertex in G.vertices:
+                if vertex.function is None and len(vertex.predecessors()) > 0:
+                    nonfixed = True
+                    print "Attractor sampling for non-fixed functions currently unsupported. Skipping."
+                    break
+            if not nonfixed:
+                sample_start = time.time()
+                # simulate graph to obtain some attractors, then feed them as MIP start to the model.
+                attractor_basin_tuples = stochastic.estimate_attractors(G, n_walks=attractor_sampling_num_walks,
+                                                                        max_walk_len=attractor_sampling_walk_length)
+                num_raw_attractors = len(attractor_basin_tuples)
+                attractors = [attractor for (attractor, _) in attractor_basin_tuples if len(attractor) <= T]
+                print "sampled {} suitable attractors (and {} total)".format(len(attractors), num_raw_attractors)
+                print "time taken for attractor sampling: {:.2f} seconds".format(time.time() - sample_start)
+                if len(attractors) >= P:
+                    return P
+                ilp.set_mip_start(model, v_matrix, active_ilp_vars, attractors)
+
     model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
     model.setParam(gurobipy.GRB.Param.NumericFocus, 3)
     # model.setParam(gurobipy.GRB.Param.OptimalityTol, 1e-6) # gurobi warns against using those for numerical issues
     # model.setParam(gurobipy.GRB.Param.IntFeasTol, 1e-9)
     # model.setParam(gurobipy.GRB.Param.MIPGapAbs, 0.1)
-    # TODO: find out why without it I got non-optimal solution values (that I could manually improve without violations)
-    if require_result is not None:
-        model.addConstr(sum(active_ilp_vars) == require_result, name="optimality_constraint")
-        model.update()
     if not verbose:
         model.params.LogToConsole = 0
 
@@ -93,6 +115,9 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     # for var in model.getVars():
     #     var.Start = 0
     model.optimize()
+    model.update()
+    # model.write("./model_mip_start.mst") # that just write sthe final solution as a MIP start...
+
     # ilp.print_opt_solution(model)
     # print model
     if model.Status != gurobipy.GRB.OPTIMAL:
@@ -105,13 +130,12 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         if model.ObjVal != int(round(model.ObjVal)):
             print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
         # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
-        ilp.print_attractors(model)
+        # ilp.print_attractors(model)
         # ilp.print_model_values(model)
         # ilp.print_model_constraints(model)
         # model.printStats()
         print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
         return int(round(model.objVal))
-        # ilp.print_model_values(model, model_vars=model_vars)
     # for constr in model.getConstrs():
     #     print constr
     # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
@@ -131,9 +155,8 @@ def find_min_attractors_model(G, max_len=None, min_attractors=None):
         print "P={}, T={}".format(P, T)
         iteration += 1
         start_time = time.time()
-        model, activity_variables = ilp.direct_graph_to_ilp_with_keys(G, max_len=T, max_num=P, find_full_model=True,
-                                                                      model_type_restriction=
-                                                                      graphs.FunctionTypeRestriction.NONE)
+        model, activity_variables, _ = ilp.direct_graph_to_ilp_with_keys(G, max_len=T, max_num=P, find_full_model=True,
+                                                                            model_type_restriction=False)
         model.params.LogToConsole = 0
         model.setObjective(sum(activity_variables))
         model.addConstr(sum(activity_variables) == P)
@@ -204,11 +227,13 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
     T = 1
     while True:
         if use_state_keys:
-            model, active_ilp_vars = ilp.direct_graph_to_ilp_with_keys(G, T, P,
-                                                                       model_type_restriction=model_type_restriction)
+            model, active_ilp_vars, _ = ilp.direct_graph_to_ilp_with_keys(G, T, P,
+                                                                       model_type_restriction=model_type_restriction,
+                                                                       simplify_general_boolean=False)
         else:
-            model, active_ilp_vars = ilp.direct_graph_to_ilp_classic(G, T, P,
-                                                                     model_type_restriction=model_type_restriction)
+            model, active_ilp_vars, _ = ilp.direct_graph_to_ilp_classic(G, T, P,
+                                                                     model_type_restriction=model_type_restriction,
+                                                                     simplify_general_boolean=False)
         model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
         if not verbose:
             model.params.LogToConsole = 0
@@ -219,7 +244,7 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
             print "warning, model not solved to optimality."
             print "writing IIS data to model_iis.ilp"
             model.computeIIS()
-            model.write("./model_iis.ilp")
+            model.write("model_iis.ilp")
             return None
         else:
             found_attractors = int(round(model.ObjVal))
@@ -277,6 +302,7 @@ def vertex_impact_scores(G, model_type_restriction=graphs.FunctionTypeRestrictio
         print "cur score={}".format(vertex_scores[-1])
         v.function = last_func
     return vertex_scores, vertex_models
+
 
 def stochastic_attractor_estimation(G, n_walks, max_walk_len=None):
     if not max_walk_len:

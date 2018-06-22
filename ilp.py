@@ -6,11 +6,11 @@ import logic
 import time
 import math
 from graphs import FunctionTypeRestriction
+from gurobipy import GRB
 
-unique_key_slicing_size = 10  # TODO: find elegant reformatting for this
+unique_key_slicing_size = 15  # TODO: find elegant reformatting for this
 # TODO: find good upper bound again, why didn't 29 work on MAPK_large2?
 # http://files.gurobi.com/Numerics.pdf a good resource on numerical issues, high values cause them.
-simplify_general_boolean = True # TODO: reformat as parameter, test both options (and benchmark times)
 
 
 def recursive_logic_to_var(formula, model, formulas_to_variables):
@@ -83,7 +83,8 @@ def unique_state_keys(ordered_state_variables):
     # TODO: see if possible to use larger slices.
     slice_size = unique_key_slicing_size
     # according to gurobi documentation (https://www.gurobi.com/documentation/7.5/refman/variables.html#subsubsection:IntVars),
-    # int values are restrained to +-20 billion, or 2**30.9. I choose 2**29 as a very conservative bound.
+    # int values are restrained to +-20 billion, or 2**30.9. In practice, choosing anything close (e.g. 2**28)
+    # still results in errors.
     n_parts = int(math.floor(len(ordered_state_variables)/float(slice_size)))
     residue = len(ordered_state_variables) % slice_size
     parts = []
@@ -176,26 +177,26 @@ def build_logic_function_vars(formula, model, name_prefix, symbols_to_variables_
     if isinstance(formula, sympy.symbol.Symbol):
         return symbols_to_variables_dict[formula]
     elif isinstance(formula, sympy.And):
-        argument_vars = [build_logic_function_vars(argument, model, name_prefix + "_And_args_{}",
+        argument_vars = [build_logic_function_vars(argument, model, "{}_And_args_{}".format(name_prefix, i),
                                                    symbols_to_variables_dict)
                                                    for (i, argument) in enumerate(formula.args)]
         andVar = model.addVar(vtype=gurobipy.GRB.BINARY,
                               name="{}_And".format(name_prefix))
         for (i, argument_var) in enumerate(argument_vars):
-            model.addConstr(andVar <= argument_var, name="{}_And_res_<=_{}".format(name_prefix, i))
+            model.addConstr(andVar <= argument_var, name="{}_And_con_<=_{}".format(name_prefix, i))
         model.addConstr(andVar >= sum(argument_vars) - (len(argument_vars) - 1),
-                        name="{}_And_res_>=".format(name_prefix, i))
+                        name="{}_And_con_>=_{}".format(name_prefix, i))
         return andVar
     elif isinstance(formula, sympy.Or):
-        argument_vars = [build_logic_function_vars(argument, model, name_prefix + "_Or_args_{}",
+        argument_vars = [build_logic_function_vars(argument, model, "{}_Or_args_{}".format(name_prefix, i),
                                                    symbols_to_variables_dict)
                                                    for (i, argument) in enumerate(formula.args)]
         orVar = model.addVar(vtype=gurobipy.GRB.BINARY,
                               name="{}_Or".format(name_prefix))
         for (i, argument_var) in enumerate(argument_vars):
-            model.addConstr(orVar >= argument_var, name="{}_Or_res_>=_{}".format(name_prefix, i))
+            model.addConstr(orVar >= argument_var, name="{}_Or_con_>=_{}".format(name_prefix, i))
         model.addConstr(orVar <= sum(argument_vars),
-                        name="{}_And_res_<=".format(name_prefix, i))
+                        name="{}_And_res_<=_{}".format(name_prefix, i))
         return orVar
     elif isinstance(formula, sympy.Not):
         try:
@@ -249,7 +250,7 @@ def add_simplified_consistency_constraints(G, model, i, p, t, predecessors_vars,
             raise ValueError("Unkown type of function (non-constant lambda functions aren't allowed)")
     simplified_formula = sympy.simplify(func_expression)
     symbols_to_variables_dict = dict(zip(arg_symbols, predecessors_vars[i, p, t]))
-    func_var = build_logic_function_vars(simplified_formula, model, "Consistency_{}_".format(i),
+    func_var = build_logic_function_vars(simplified_formula, model, "Consistency_{}_{}_{}".format(i, p, t),
                                          symbols_to_variables_dict)
     model.addConstr(v_matrix[i, p, t + 1] >= func_var + a_matrix[p, t] - 1,
                     name="consistent_>=_{}_{}_{}".format(i, p, t))
@@ -259,7 +260,7 @@ def add_simplified_consistency_constraints(G, model, i, p, t, predecessors_vars,
 
 # noinspection PyArgumentList
 def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None,
-                                  model_type_restriction=FunctionTypeRestriction.NONE):
+                                  model_type_restriction=FunctionTypeRestriction.NONE, simplify_general_boolean=False):
     total_start = time.time()
     part_start = time.time()
     T = 2**len(G.vertices) if not max_len else max_len
@@ -425,9 +426,9 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None,
     # UNIQUE
     # To reduce symmetry, using the order defined by a unique state id function,
     # constraint each attractor to have its final state be the largest one, and
-    # constraint the final states of attractors to be monotone decreasing amongst.
-    # Also requires the k active attractors to be the first ones. SHOULD TODO: verify
-    # result in only one optimal solution.
+    # constraint the final states of attractors to be monotone increasing amongst.
+    # Also requires the k active attractors to be the last ones. TODO: verify
+    # SHOULD result in only one optimal solution.
     for p in range(P-1):
         # as long as keys are uniques, this forces uniqueness if p and p + 1 are both active
         strictly_larger_ind = create_state_keys_comparison_var(model=model,
@@ -459,7 +460,71 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None,
     # print_model_constraints(model)
     # print model
     # print "Time taken for model preparation:{:.2f} seconds".format(time.time() - total_start)
-    return model, [a_matrix[p, T-1] for p in range(P)]
+    return model, [a_matrix[p, T-1] for p in range(P)], v_matrix
+
+
+def set_mip_start(model, v_matrix, final_states_a_vars, attractors):
+    """
+    Given a model with its variable matrix and a set of pre-computed attractors, sets a MIP start
+    to the model with those attractors as the first ones, and all others shut off.
+    :param model:
+    :param v_matrix: v_matrix[i, p, t] is activity of node i in attractor p at time t.
+    :param attractors: A (non-consumable) iterable of attractors, each an iterable of states.
+    Attractors are assumed to be bounded in length by the same bound in the model, and be less than the
+    number of possible model attractors.
+    :return:
+    """
+    n = v_matrix.shape[0]
+    P = v_matrix.shape[1]
+    T = v_matrix.shape[2] - 1
+    order_key_func = lambda node_states: sum(node * 2**i for (i, node) in enumerate(node_states))
+
+    # Rotate the attractors to meet the order used in the ILP - last state should be largest.
+    ordered_attractors = list()
+    assert len(attractors) <= P
+    for p in range(len(attractors)):
+        length = len(attractors[p])
+        assert length <= T
+        largest_ind = max(range(length), key=lambda t: order_key_func(attractors[p][t]))
+        ordered_attractors.append([attractors[p][(t + largest_ind + 1) % length] for t in range(length)])
+
+    # Sort the attractor list in increasing order.
+    ordered_attractors.sort(key=lambda attractor: order_key_func(attractor[-1]), reverse=False)
+
+    # set model values to undefined before setting the defined ones (redundant?)
+    for var in model.getVars():
+        var.start = GRB.UNDEFINED
+
+    # Assign attractors to last columns of v_matrix.
+    for p in range(P):
+        sim_p = p - (P - len(ordered_attractors))
+
+        if sim_p < 0:
+            for i, t in itertools.product(range(n), range(T + 1)):
+                v_matrix[i, p, t].start = 0
+            final_states_a_vars[p].start = 0
+        else:
+            length = len(ordered_attractors[sim_p])
+            for i, t in itertools.product(range(n), range(T - length)):
+                v_matrix[i, p, t].start = 0
+            for i, t in itertools.product(range(n), range(T - length, T)):
+                sim_t = t - (T - length)
+                v_matrix[i, p, t].start = ordered_attractors[sim_p][sim_t][i]
+            for i in range(n):
+                v_matrix[i, p, T].start = ordered_attractors[sim_p][0][i]
+            final_states_a_vars[p].start = 1
+    model.Params.StartNodeLimit = 2000000000 # maximal possible value
+    # model.Params.Heuristics = 0 # TODO: remove after I have the ignoring mip start issue solved.
+    model.update()
+    # v_string = ""
+    # for p in range(P):
+    #     v_string += "p={}\n".format(p)
+    #     for t in range(T + 1):
+    #         for i in range(n):
+    #             v_string += str(v_matrix[i, p, t].start) + ", "
+    #         v_string += "\t t={}\n".format(t)
+    # print v_string
+    return None
 
 
 def get_expr_coos(expr, var_indices):

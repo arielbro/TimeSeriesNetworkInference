@@ -108,8 +108,8 @@ class TestAttractors(TestCase):
         G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "A"), ("C", "A")],
                            vertex_functions=[logic.SymmetricThresholdFunction.from_function(sympy.Nand, 2),
                                              logic.SymmetricThresholdFunction.from_function(sympy.Nand, 1),
-                                             False])
-        experiments.append(AttractorExperimentParameters(G=G, T=3, P=3, n_attractors=1))
+                                             None])
+        experiments.append(AttractorExperimentParameters(G=G, T=3, P=3, n_attractors=3))
         # 38, 39, 40
         G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
                            vertex_functions=[sympy.Nand]*3)
@@ -233,7 +233,9 @@ class TestAttractors(TestCase):
                                                                    experiment.T, experiment.P, experiment.n_attractors)
             # continue
             n_attractors = find_num_attractors_onestage(G=experiment.G, max_len=experiment.T, max_num=experiment.P,
-                                                        use_sat=False, verbose=False)#, require_result=experiment.n_attractors)
+                                                        use_sat=False, verbose=False,
+                                                        sample_mip_start=True,
+                                                        simplify_general_boolean=True)#, require_result=experiment.n_attractors)
             try:
                 self.assertEqual(n_attractors, experiment.n_attractors)
             except AssertionError as e:

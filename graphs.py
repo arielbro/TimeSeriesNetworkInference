@@ -133,6 +133,7 @@ class Network:
         union_functions = [v.function for v in sorted_a_vertices] + [v.function for v in sorted_b_vertices]
         return Network(vertex_names=union_vertex_names, edges=union_edges, vertex_functions=union_functions)
 
+    # TODO: generate scale-free graphs
     @staticmethod
     def generate_random(n_vertices, indegree_bounds=(1, 5), function_type_restriction=FunctionTypeRestriction.NONE):
         vertices = list(range(n_vertices))

@@ -34,7 +34,7 @@ def next_network_state(G, current_state):
         else:
             bool_res.append(cur_value)
     for b in bool_res:
-        assert isinstance(b, bool) or b is sympy.true or b is sympy.false
+        assert isinstance(b, bool) or b is sympy.true or b is sympy.false or b in [0, 1]
     binary_res = tuple(0 if not b else 1 for b in bool_res)
     return binary_res
 
