@@ -272,6 +272,19 @@ class Network:
         self.vertices.remove(vertex)
         return
 
+    def convert_inputs_to_loops(self):
+        """
+        For each input node, adds a self loop from it to itself, with the id function, so Dubrova will be able to
+        run on it. Note that this will break any ILP where the node functions are allowed to be variables.
+        :return:
+        """
+        # TODO: somehow enforce checking of this when variable functions are used in ILP
+        for v in self.vertices:
+            if len(v.predecessors()) == 0:
+                v.precomputed_predecessors = None
+                self.edges.append((v, v))
+                v.function = sympy.And
+
 
 class Vertex:
     def __init__(self, graph, name, func, index=None):

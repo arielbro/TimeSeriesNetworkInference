@@ -372,16 +372,9 @@ def find_num_attractors_dubrova(G, dubrova_dir_path):
     """
     temp_network_path = "./temp_network.cnet"
     graphs.Network.export_to_cnet(G, temp_network_path)
-    try:
-        return_code = subprocess.call(args=[os.path.join(dubrova_dir_path, "bns"), temp_network_path])
-        if return_code >= 0:
-            raise Exception("Got an erroneous return code while calling Dubrova - {}".format(return_code))
-        else:
-            pass
-    except Exception as e:
-        raise e
-    finally:
-        os.remove(temp_network_path)
+    output = subprocess.check_output(args=[os.path.join(dubrova_dir_path, "bns"), temp_network_path],
+                                     stderr=subprocess.STDOUT)
+    print output
 
 
 # TODO: think about asynchronous model?
