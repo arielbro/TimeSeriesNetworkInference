@@ -11,9 +11,6 @@ import gurobipy
 import stochastic
 import subprocess
 
-attractor_sampling_num_walks = 50
-attractor_sampling_walk_length = 15  # TODO: refactor into method parameters
-
 
 def find_num_attractors_multistage(G, use_ilp):
     T = 1
@@ -56,7 +53,7 @@ def find_num_attractors_multistage(G, use_ilp):
 
 
 def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, verbose=False,
-                                 sample_mip_start=False, simplify_general_boolean=False):
+                                 sample_mip_start_bounds=None, simplify_general_boolean=False):
     T = 2 ** len(G.vertices) if not max_len else max_len
     P = 2 ** len(G.vertices) if not max_num else max_num
     start_time = time.time()
@@ -76,7 +73,9 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         active_ilp_vars = [formulas_to_variables[active_logic_var] for active_logic_var in active_logic_vars]
     else:
         model, active_ilp_vars, v_matrix = ilp.direct_graph_to_ilp_with_keys(G, T, P, simplify_general_boolean=simplify_general_boolean)
-        if sample_mip_start:
+        if sample_mip_start_bounds is not None:
+            attractor_sampling_num_walks = sample_mip_start_bounds[0]
+            attractor_sampling_walk_length = sample_mip_start_bounds[1]
             #TODO: implement for graphs with non-fixed vertex functions. Maybe include multiple re-rolls of functions
             #TODO: to find the most attractors.
             nonfixed = False
@@ -363,19 +362,32 @@ def write_random_fixed_graph_estimations_sampling(G, n_iter, function_type_restr
         writer.writerows(res)
 
 
-def find_num_attractors_dubrova(G, dubrova_dir_path):
+def find_num_attractors_dubrova(G, dubrova_dir_path, return_max_length=False):
     """
     Export G, call dubrova's algorithm on it, and parse number of attractors from results.
     :param G:
     :param dubrova_dir_path:
     :return: n_attractors
     """
+    # TODO: write tests.
     temp_network_path = "./temp_network.cnet"
     graphs.Network.export_to_cnet(G, temp_network_path)
-    output = subprocess.check_output(args=[os.path.join(dubrova_dir_path, "bns"), temp_network_path],
-                                     stderr=subprocess.STDOUT)
-    print output
-
+    env = os.environ.copy()
+    env['PATH'] += ";C:/cygwin/bin"  # TODO: less hardcoding (it somehow didn't have the right PATH)
+    process = subprocess.Popen(args=[os.path.join(dubrova_dir_path, "bns.exe"), temp_network_path],
+                               stderr=subprocess.STDOUT, stdout=subprocess.PIPE, env=env)
+    out, _ = process.communicate()
+    if process.returncode != 0:
+        raise RuntimeError("Error while running Dubrova - code={}, message={}".
+                           format(process.returncode, out))
+    os.remove(temp_network_path)
+    # Dubrova's output format has a total of attractors on the one before last line.
+    # Attractor lengths are last word of lines starting with "Attractor"
+    num_attractors = int(out.split("\n")[-2].split(" ")[-1])
+    if return_max_length:
+        max_length = max(int(line.split(" ")[-1]) for line in out.split("\n")[:-2] if line.startswith("Attractor"))
+        return num_attractors, max_length
+    return num_attractors
 
 # TODO: think about asynchronous model?
 # TODO: problem size analysis.
