@@ -1,3 +1,4 @@
+import logic
 import itertools
 import random
 import re
@@ -79,7 +80,8 @@ class Network:
             n = len(v.predecessors())
             if function_type_restriction == FunctionTypeRestriction.NONE:
                 boolean_outputs = [random.choice([False, True]) for _ in range(2 ** n)]
-                v.function = BooleanSymbolicFunc(boolean_outputs)
+                input_names = [u.name for u in v.predecessors()]
+                v.function = BooleanSymbolicFunc(input_names=input_names, boolean_outputs=boolean_outputs)
             else:
                 if n == 0:
                     # either no function, or an AND and add node as its own predecessor, to assert stability.
@@ -100,8 +102,8 @@ class Network:
         if isinstance(vertex_states, str):
             vertex_states = [c for c in vertex_states]
         for v, v_state in zip(self.vertices, vertex_states):
-            assert isinstance(v_state, bool) or v_state in [0, 1, "0", "1"]
-            v_states.append(True if v_state in [True, 1, "1"] else False)
+            assert isinstance(v_state, bool) or v_state in [0, 1, "0", "1", sympy.false, sympy.true]
+            v_states.append(True if v_state in [True, 1, "1", sympy.true] else False)
         v_next_states = []
         for v_index, v in enumerate(self.vertices):
             input_values = [v_states[u.index] for u in v.predecessors()]
@@ -244,7 +246,8 @@ class Network:
                         truth_table_dict[tuple(input_combination)] = output
                 ordered_bool_outputs = [truth_table_dict[tuple(input_value)] for input_value in
                                         itertools.product([False, True], repeat=v_n_args)]
-                func = BooleanSymbolicFunc(ordered_bool_outputs)
+                input_names = [names[arg] for arg in v_args]
+                func = BooleanSymbolicFunc(input_names=input_names, boolean_outputs=ordered_bool_outputs)
                 bool_funcs.append(func)
         assert len(bool_funcs) == n
         G = Network(vertex_names=names, edges=edges, vertex_functions=bool_funcs)
@@ -285,6 +288,63 @@ class Network:
                 self.edges.append((v, v))
                 v.function = sympy.And
 
+    def copy(self):
+        """
+        returns a copy of self, assuming functions are immutable.
+        :return:
+        """
+        return Network(vertex_names=[v.name for v in self.vertices], edges=[(u.name, v.name) for (u, v) in self.edges],
+                       vertex_functions=[v.function for v in self.vertices])
+
+    def __mul__(self, other):
+        """
+        Computes a composition of self's functions with other's functions.
+        For each vertex, transforms its function to be taking values from its predecessors' predessesors.
+        Only defined if the graphs share nodes.
+        :param other:
+        :return:
+        """
+        vertex_names = []
+        edges = []
+        functions = []
+        source_functions = {v.name: v.function for v in self.vertices}
+        any_converted = False
+        for v in self.vertices:
+            if not isinstance(v.function, logic.BooleanSymbolicFunc):
+                if not isinstance(v.function, sympy.FunctionClass):
+                    raise NotImplementedError("Multiplication of graphs with generic functions not yet implemented")
+                predecessors_names = [u.name for u in v.predecessors()]
+                source_functions[v.name] = logic.BooleanSymbolicFunc.from_sympy_func(v.function, predecessors_names)
+                any_converted = True
+        if any_converted:
+            print "warning - graph with generic function types passed to __mul__, converting to BooleanSymbolicFunc"
+
+        for v in self.vertices:
+            vertex_names.append(v.name)
+            predecessors_funcs = [source_functions[u.name] for u in v.predecessors()]
+            functions.append(source_functions[v.name].compose(input_funcs=predecessors_funcs, simplify=True))
+            new_predecessors = sorted([x.name for x in functions[-1].formula.free_symbols])
+            edges.extend([(u_name, v.name) for u_name in new_predecessors])
+        return Network(vertex_names, edges, functions)
+
+    def __pow__(self, power, modulo=None):
+        """
+        Exponential by squaring, using the preivously defined __mul__ operation.
+        :param power:
+        :param modulo:
+        :return:
+        """
+        if modulo is not None:
+            raise NotImplementedError("can't modulo a graph")
+        if power == 1:
+            return self.copy()
+        if power == 2:
+            return self * self
+        if power % 2 == 0:
+            return (self * self) ** (power / 2)
+        else:
+            return self * ((self * self) ** ((power - 1) /2))
+
 
 class Vertex:
     def __init__(self, graph, name, func, index=None):
@@ -295,11 +355,14 @@ class Vertex:
         self.precomputed_predecessors = None
         self.precomputed_successors = None
 
+
+
     def predecessors(self):
         if not self.precomputed_predecessors:
             # search using names (asserted to be unique during init) to avoid circular dependencies predecessors <> key
             name_based_edges = [(u.name, v.name) for (u, v) in self.graph.edges]
-            predecessors = [u for u in self.graph.vertices if (u.name, self.name) in name_based_edges]
+            predecessors = sorted([u for u in self.graph.vertices if (u.name, self.name) in name_based_edges],
+                                  key=lambda vertex: vertex.name)
             self.precomputed_predecessors = predecessors
         return self.precomputed_predecessors
 

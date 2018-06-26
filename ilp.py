@@ -131,38 +131,33 @@ def create_state_keys_comparison_var(model, first_state_keys, second_state_keys,
     return last_var
 
 
-def add_truth_table_consistency_constraints(G, model, i, p, t, predecessors_vars,
-                                            a_matrix, v_matrix, find_model_f_vars):
+def add_truth_table_consistency_constraints(model, v_func, v_next_state_var, predecessors_cur_vars,
+                                           name_prefix, activity_variable=None, find_model_f_vars=None):
     """
     Adds consistency constraints to a model, as in Roded's paper.
     :param G:
     :param model:
-    :param i:
-    :param P:
-    :param T:
-    :param predecessors_vars:
-    :param a_matrix:
-    :param v_matrix:
     :param find_model:
     :return:
     """
-    in_degree = len(G.vertices[i].predecessors())
+    in_degree = len(predecessors_cur_vars)
     for var_comb_index, var_combination in enumerate(itertools.product((False, True), repeat=in_degree)):
-        if find_model_f_vars:
+        if find_model_f_vars is not None:
             desired_val = find_model_f_vars[var_comb_index]
         else:
-            desired_val = 1 if G.vertices[i].function(*var_combination) else 0  # == because sympy
+            desired_val = 1 if v_func(*var_combination) else 0  # == because sympy
         # this expression is |in_degree| iff their states agrees with var_combination
         indicator_expression = sum(v if state else 1 - v for (v, state) in
-                                   zip(predecessors_vars[i, p, t], var_combination))
+                                   zip(predecessors_cur_vars, var_combination))
         # a[p, t] & (indicator_expression = in_degree) => v[i,p,t+1] = f(var_combination).
         # For x&y => a=b, require a <= b + (2 -x -b), a >= b - (2 -x -y)
-        model.addConstr(v_matrix[i, p, t + 1] >= desired_val -
-                        (in_degree + 1 - indicator_expression - a_matrix[p, t]),
-                        name="consistent_>=_{}_{}_{}".format(i, p, t))
-        model.addConstr(v_matrix[i, p, t + 1] <= desired_val +
-                        (in_degree + 1 - indicator_expression - a_matrix[p, t]),
-                        name="consistent_<=_{}_{}_{}".format(i, p, t))
+        activity_expression = activity_variable - 1 if activity_variable is not None else 0
+        model.addConstr(v_next_state_var >= desired_val -
+                        (in_degree - indicator_expression - activity_expression),
+                        name="{}_>=_{}".format(name_prefix, var_comb_index))
+        model.addConstr(v_next_state_var <= desired_val +
+                        (in_degree - indicator_expression - activity_expression),
+                        name="{}_<=_{}".format(name_prefix, var_comb_index))
 
 
 def build_logic_function_vars(formula, model, name_prefix, symbols_to_variables_dict):
@@ -209,58 +204,54 @@ def build_logic_function_vars(formula, model, name_prefix, symbols_to_variables_
         raise NotImplementedError
 
 
-def add_simplified_consistency_constraints(G, model, i, p, t, predecessors_vars,
-                                               a_matrix, v_matrix):
+def add_simplified_consistency_constraints(model, v_func, v_next_state_var, predecessors_cur_vars,
+                                           name_prefix, activity_variable=None):
     """
-    Adds consistency constraints to the model by transforming each vertex' logic function to an indicator variable,
+    Adds consistency constraints to the model by transforming a vertex' logic function to an indicator variable,
     and enforcing its value to be equal to the next state's value.
     :param G:
     :param model:
-    :param i:
-    :param P:
-    :param T:
-    :param predecessors_vars:
-    :param a_matrix:
-    :param v_matrix:
-    :param find_model:
+    :param v_next_state_var:
+    :param v_cur_var:
+    :param predecessors_cur_vars:
     :return:
     """
-    # TODO: maybe give P, T and iterate here, so we simplify once (if it's a bottleneck)
-
-    func_expression, symbols_to_variables_dict = None, None
-    cur_func = G.vertices[i].function
-    if cur_func is None:
+    if v_func is None:
         raise AssertionError("Nodes with unset functions shouldn't be handled here")
-    if isinstance(cur_func, sympy.FunctionClass):
+    if isinstance(v_func, sympy.FunctionClass):  # TODO: convert to SymbolicBooleanFunction?
         # instantiate the function expression
-        arg_symbols = [sympy.symbols("x_{}".format(j)) for j in range(len(predecessors_vars[i, p, t]))]
-        func_expression = cur_func(*arg_symbols)
-    elif isinstance(cur_func, logic.BooleanSymbolicFunc):
-        func_expression = cur_func.formula
-        arg_symbols = cur_func.input_vars
+        arg_symbols = [sympy.symbols("x_{}".format(j)) for j in range(len(predecessors_cur_vars))]
+        func_expression = v_func(*arg_symbols)
+    elif isinstance(v_func, logic.BooleanSymbolicFunc):
+        func_expression = v_func.formula
+        arg_symbols = v_func.input_vars
     else:
         # try a constant function
         try:
-            if cur_func(None) in [True, False, sympy.true, sympy.false]:
-                func_expression = sympy.true if cur_func(None) else sympy.false
-                arg_symbols = [None] * len(G.vertices[i].predecessors())
+            if v_func(None) in [True, False, sympy.true, sympy.false]:
+                func_expression = sympy.true if v_func(None) else sympy.false
+                arg_symbols = [None] * len(predecessors_cur_vars)
             else:
-                raise ValueError("Unkown type of function - " + str(type(cur_func)))
+                raise ValueError("Unkown type of function - " + str(type(v_func)))
         except TypeError:
             raise ValueError("Unkown type of function (non-constant lambda functions aren't allowed)")
     simplified_formula = sympy.simplify(func_expression)
-    symbols_to_variables_dict = dict(zip(arg_symbols, predecessors_vars[i, p, t]))
-    func_var = build_logic_function_vars(simplified_formula, model, "Consistency_{}_{}_{}".format(i, p, t),
+    symbols_to_variables_dict = dict(zip(arg_symbols, predecessors_cur_vars))
+    func_var = build_logic_function_vars(simplified_formula, model, name_prefix,
                                          symbols_to_variables_dict)
-    model.addConstr(v_matrix[i, p, t + 1] >= func_var + a_matrix[p, t] - 1,
-                    name="consistent_>=_{}_{}_{}".format(i, p, t))
-    model.addConstr(v_matrix[i, p, t + 1] <= func_var - a_matrix[p, t] + 1,
-                    name="consistent_<=_{}_{}_{}".format(i, p, t))
+    if activity_variable is None:
+        model.addConstr(v_next_state_var == func_var)
+    else:
+        activity_part = activity_variable - 1 if activity_variable is not None else 0
+        model.addConstr(v_next_state_var >= func_var + activity_part,
+                        name="{}_>=".format(name_prefix))
+        model.addConstr(v_next_state_var <= func_var - activity_part,
+                        name="{}_<=".format(activity_part))
 
 
 # noinspection PyArgumentList
-def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None,
-                                  model_type_restriction=FunctionTypeRestriction.NONE, simplify_general_boolean=False):
+def attractors_ilp_with_keys(G, max_len=None, max_num=None,
+                             model_type_restriction=FunctionTypeRestriction.NONE, simplify_general_boolean=False):
     total_start = time.time()
     part_start = time.time()
     T = 2**len(G.vertices) if not max_len else max_len
@@ -341,11 +332,16 @@ def direct_graph_to_ilp_with_keys(G, max_len=None, max_num=None,
                     find_model_f_vars = None
                 for p, t in itertools.product(range(P), range(T)):
                     if simplify_general_boolean and not find_model:
-                        add_simplified_consistency_constraints(G, model, i, p, t, predecessors_vars,
-                                                               a_matrix, v_matrix)
+                        add_simplified_consistency_constraints(model, G.vertices[i].function, v_matrix[i, p, t + 1],
+                                                               predecessors_vars[i, p, t],
+                                                               "consistency_{}_{}_{}".format(i, p, t),
+                                                               activity_variable=a_matrix[p, t])
                     else:
-                        add_truth_table_consistency_constraints(G, model, i, p, t, predecessors_vars,
-                                                                a_matrix, v_matrix, find_model_f_vars)
+                        add_truth_table_consistency_constraints(model, G.vertices[i].function, v_matrix[i, p, t + 1],
+                                                               predecessors_vars[i, p, t],
+                                                               "consistency_{}_{}_{}".format(i, p, t),
+                                                               activity_variable=a_matrix[p, t],
+                                                               find_model_f_vars=find_model_f_vars)
             else:  # symmetric threshold / logic gate
                 if find_model:
                     signs = []
@@ -611,3 +607,27 @@ def print_opt_solution(model):
     for pair in name_val_pairs:
         val_str += "{} = {}\n".format(pair[0], int(pair[1]))
     print val_str
+
+
+def steady_state_ilp(G, simplify_general_boolean=False):
+    model = gurobipy.Model()
+    v_dict = dict()
+    for v in G.vertices:
+        if len(v.predecessors()) == 0 and v.function is not None:
+            v_dict[v] = int(bool(v.function))
+        else:
+            v_dict[v] = model.addVar(vtype=gurobipy.GRB.BINARY, name=v.name)
+    model.update()
+
+    for i, v in enumerate(G.vertices):
+        if len(v.predecessors()) == 0 or isinstance(v_dict[v], int):
+            continue
+        func = v.function
+        predecessor_vars = [v_dict[u] for u in v.predecessors()]
+        if simplify_general_boolean:
+            add_simplified_consistency_constraints(model, v.function, v_dict[v], predecessor_vars,
+                                                   "consistency_{}".format(v.name))
+        else:  # TODO: support find model and other stuff
+            add_truth_table_consistency_constraints(model, v.function, v_dict[v], predecessor_vars,
+                                                    "consistency_{}".format(v.name))
+    return model, v_dict

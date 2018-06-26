@@ -4,7 +4,7 @@ import graphs
 import sympy
 from collections import namedtuple
 import random
-from attractors import find_num_attractors_onestage, vertex_impact_scores
+from attractors import find_num_attractors_onestage, vertex_impact_scores, find_num_steady_states
 from utility import binary_necklaces
 
 AttractorExperimentParameters = namedtuple("AttractorExperimentParameters", "G T P n_attractors")
@@ -232,10 +232,12 @@ class TestAttractors(TestCase):
             print "n={}, T={}, P={}, expected_n_attractors={}".format(len(experiment.G.vertices),
                                                                    experiment.T, experiment.P, experiment.n_attractors)
             # continue
+            use_mip_start = bool(random.randint(0, 1))
+            simplify = bool(random.randint(0, 1))
             n_attractors = find_num_attractors_onestage(G=experiment.G, max_len=experiment.T, max_num=experiment.P,
                                                         use_sat=False, verbose=False,
-                                                        sample_mip_start=True,
-                                                        simplify_general_boolean=True)#, require_result=experiment.n_attractors)
+                                                        sample_mip_start_bounds=(3, 3) if use_mip_start else None,
+                                                        simplify_general_boolean=simplify)
             try:
                 self.assertEqual(n_attractors, experiment.n_attractors)
             except AssertionError as e:
@@ -329,3 +331,63 @@ class TestAttractors(TestCase):
                 print e
                 print experiment.G
                 raise e
+
+
+    def test_find_num_steady_states(self):
+        """test on known toy models"""
+        # 0, 1
+        G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+                           vertex_functions=[sympy.Nand])
+        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=False), 0)
+        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=True), 0)
+
+        G = graphs.Network(vertex_names=["A"], edges=[],
+                           vertex_functions=[None])
+        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=False), 2)
+        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=True), 2)
+
+        G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+                           vertex_functions=[sympy.And])
+        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=False), 2)
+        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=True), 2)
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
+                           vertex_functions=[sympy.Nand, sympy.And])
+        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=False), 0)
+        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=True), 0)
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
+                           vertex_functions=[sympy.Nand, sympy.Nand])
+        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=False), 2)
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
+                           vertex_functions=[lambda x: True, lambda x: False])
+        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=False), 1)
+        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=True), 1)
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand]*3)
+        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=False), 0)
+
+        G = graphs.Network(vertex_names=["A", "B", "C", "D"], edges=[("A", "B"), ("B", "C"), ("C", "D"), ("D", "A")],
+                           vertex_functions=[sympy.Nand]*4)
+        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=False), 2)
+
+        # acyclic, should have 2**#input_nodes attractors of length 1
+        G = graphs.Network(vertex_names=["v1", "v2", "v3", "v4", "v5", "v6"],
+                           edges=[("v1", "v4"), ("v2", "v4"), ("v1", "v5"), ("v4", "v6")],
+                           vertex_functions=[sympy.Nand]*6)
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand]*3)
+        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=False), 8)
+
+        G = graphs.Network(vertex_names=["A1", "B1", "B2", "C1", "C2"],
+                           edges=[("A1", "A1"), ("B1", "B2"), ("B2", "B1"), ("C1", "C2"), ("C2", "C1")],
+                           vertex_functions=[sympy.And]*5)
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand]*3)
+        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=False), 8)
+
+        G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
+        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=False), 12)

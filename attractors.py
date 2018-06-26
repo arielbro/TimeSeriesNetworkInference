@@ -72,7 +72,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         model, formulas_to_variables = ilp.logic_to_ilp(ATTRACTORS)
         active_ilp_vars = [formulas_to_variables[active_logic_var] for active_logic_var in active_logic_vars]
     else:
-        model, active_ilp_vars, v_matrix = ilp.direct_graph_to_ilp_with_keys(G, T, P, simplify_general_boolean=simplify_general_boolean)
+        model, active_ilp_vars, v_matrix = ilp.attractors_ilp_with_keys(G, T, P, simplify_general_boolean=simplify_general_boolean)
         if sample_mip_start_bounds is not None:
             attractor_sampling_num_walks = sample_mip_start_bounds[0]
             attractor_sampling_walk_length = sample_mip_start_bounds[1]
@@ -154,8 +154,8 @@ def find_min_attractors_model(G, max_len=None, min_attractors=None):
         print "P={}, T={}".format(P, T)
         iteration += 1
         start_time = time.time()
-        model, activity_variables, _ = ilp.direct_graph_to_ilp_with_keys(G, max_len=T, max_num=P, find_full_model=True,
-                                                                            model_type_restriction=False)
+        model, activity_variables, _ = ilp.attractors_ilp_with_keys(G, max_len=T, max_num=P, find_full_model=True,
+                                                                    model_type_restriction=False)
         model.params.LogToConsole = 0
         model.setObjective(sum(activity_variables))
         model.addConstr(sum(activity_variables) == P)
@@ -226,9 +226,9 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
     T = 1
     while True:
         if use_state_keys:
-            model, active_ilp_vars, _ = ilp.direct_graph_to_ilp_with_keys(G, T, P,
-                                                                       model_type_restriction=model_type_restriction,
-                                                                       simplify_general_boolean=False)
+            model, active_ilp_vars, _ = ilp.attractors_ilp_with_keys(G, T, P,
+                                                                     model_type_restriction=model_type_restriction,
+                                                                     simplify_general_boolean=False)
         else:
             model, active_ilp_vars, _ = ilp.direct_graph_to_ilp_classic(G, T, P,
                                                                      model_type_restriction=model_type_restriction,
@@ -389,7 +389,54 @@ def find_num_attractors_dubrova(G, dubrova_dir_path, return_max_length=False):
         return num_attractors, max_length
     return num_attractors
 
-# TODO: think about asynchronous model?
+
+def find_num_steady_states(G, verbose=False, simplify_general_boolean=False):
+    model, v_vars_dict = ilp.steady_state_ilp(G, simplify_general_boolean)
+    if not verbose:
+        model.params.LogToConsole = 0
+    model.params.PoolSolutions = 2000000000
+    model.params.PoolSearchMode = 2
+    # print model
+    # model_vars = model.getVars()
+    # ilp.print_model_constraints(model)
+    start = time.time()
+    model.optimize()
+    model.update()
+
+    # ilp.print_opt_solution(model)
+    # print model
+    if model.Status != gurobipy.GRB.OPTIMAL:
+        # print "warning, model not solved to optimality."
+        # print "writing IIS data to model_iis.ilp"
+        # model.computeIIS()
+        # model.write("./model_iis.ilp")
+        print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start)
+        return 0
+    else:
+        # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
+        # ilp.print_model_values(model)
+        # ilp.print_model_constraints(model)
+        # model.printStats()
+        n_steady_states = model.SolCount
+        steady_states = []
+        for sol in range(model.SolCount):
+            model.setParam(gurobipy.GRB.Param.SolutionNumber, sol)
+            steady_state = []
+            for v in G.vertices:
+                if isinstance(v_vars_dict[v], int):
+                    steady_state.append(v_vars_dict[v])
+                else:
+                    steady_state.append(int(v_vars_dict[v].Xn))
+            steady_states.append(steady_state)
+        print "steady states:"
+        for ss in steady_states:
+            print reduce(lambda x, y: str(x) + ", " + str(y), ss)
+        print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start)
+        return n_steady_states
+
+
+
+            # TODO: think about asynchronous model?
 # TODO: problem size analysis.
 # TODO: measure and plot running time versus P, T and |V|
 # TODO: think/discuss implementing monotone symmetric functions in ILP without the long boolean logic version.

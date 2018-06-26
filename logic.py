@@ -6,11 +6,18 @@ from utility import list_repr
 
 
 class BooleanSymbolicFunc:
-    def __init__(self, boolean_outputs):
-        self.truth_table_outputs = boolean_outputs
+    def __init__(self, input_names=None, boolean_outputs=None, formula=None):
+        if formula is not None:
+            self.formula = formula
+            self.input_vars = sorted(formula.free_symbols, key=lambda var: var.name)
+            return
+
+        if len(input_names) != math.frexp(len(boolean_outputs))[1] - 1:
+            raise ValueError("non-matching length for variable names list and boolean outputs list")
+        # self.truth_table_outputs = boolean_outputs
         # assumes boolean_outputs is a power of 2
-        n_inputs = math.frexp(len(boolean_outputs))[1] - 1
-        boolean_inputs = [sympy.symbols("x_{}".format(i)) for i in range(n_inputs)]
+        n_inputs = len(input_names)
+        boolean_inputs = [sympy.symbols(name) for name in input_names]
         self.input_vars = boolean_inputs
         if n_inputs == 0:
             assert len(boolean_outputs) == 1
@@ -36,6 +43,12 @@ class BooleanSymbolicFunc:
     def __eq__(self, other):
         if other is None:
             return False
+        if isinstance(other, bool) or isinstance(other, sympy.boolalg.BooleanTrue) or \
+           isinstance(other, sympy.boolalg.BooleanFalse) or (isinstance(other, int) and other in [0, 1]):
+            if len(self.input_vars) == 0:
+                return bool(self.formula) == bool(other)
+            else:
+                return False
         try:
             for input_comb in itertools.product([False, True], repeat=len(self.input_vars)):
                 if self(*input_comb) != other(*input_comb):
@@ -52,6 +65,42 @@ class BooleanSymbolicFunc:
 
     def __ne__(self, other):
         return not self == other
+
+    def __nonzero__(self):
+        if not isinstance(self.formula, bool) and not isinstance(self.formula, int) and \
+           not isinstance(self.formula, (sympy.boolalg.BooleanTrue, sympy.boolalg.BooleanFalse)):
+            raise ValueError("Cannot convert non constant BooleanSymbolicFunction to bool")
+        if isinstance(self.formula, (sympy.boolalg.BooleanTrue, sympy.boolalg.BooleanFalse)):
+            return self.formula == True
+        return bool(self.formula)
+
+    def compose(self, input_funcs, simplify=True):
+        """
+        Composes symbolic boolean functions. Assumes input_funcs are ordered in the order of self.input_vars.
+        After composition, returns the new function, with its inputs ordered by name.
+        :param input_funcs:
+        :param simplify:
+        :return:
+        """
+        assert len(input_funcs) == len(self.input_vars)
+        for f in input_funcs:
+            if not isinstance(f, BooleanSymbolicFunc):
+                raise NotImplementedError(
+                    "Can't compose a symbolic boolean function with a function of type {}".format(f.type))
+        replacement_dict = dict(zip(self.input_vars, [f.formula for f in input_funcs]))
+        try:
+            new_exp = self.formula.subs(replacement_dict, simultaneous=True)
+        except Exception as e:
+            pass
+        if simplify:
+            new_exp = sympy.simplify(new_exp)
+        return BooleanSymbolicFunc(formula=new_exp)
+
+    @staticmethod
+    def from_sympy_func(sympy_func, variable_names):
+        symbols = sympy.symbols(variable_names)
+        expr = sympy_func(*symbols)
+        return BooleanSymbolicFunc(formula=expr)
 
 
 class SymmetricThresholdFunction:

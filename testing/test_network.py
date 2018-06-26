@@ -4,7 +4,6 @@ import random
 import sympy
 
 
-# noinspection PyPep8Naming
 class TestNetwork(TestCase):
 
     def test_cnet_export_and_import(self):
@@ -16,6 +15,9 @@ class TestNetwork(TestCase):
             G.export_to_cnet("./temp_test_network.cnet")
             G_tag = Network.parse_cnet("./temp_test_network.cnet")
             self.assertEqual(G, G_tag)
+
+        Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+                           "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
 
     def test_union(self):
         # check toy examples
@@ -35,3 +37,46 @@ class TestNetwork(TestCase):
         self.assertEqual(G_sum, sum_true)
         self.assertNotEqual(G_sum, sum_false_1)
         self.assertNotEqual(G_sum, sum_false_2)
+
+    def test_pow_mult(self):
+        # manual with toy examples
+        G = Network(vertex_names=["a", "b"], edges=[("a", "a"), ("a", "b"), ("b", "a")],
+                    vertex_functions=[sympy.And, sympy.And])
+        G_squared = G * G
+        # 00 -> 00 -> 00
+        self.assertEqual(G_squared.next_state([False, False], return_as_string=False), [False, False])
+        # 01 -> 00 -> 00
+        self.assertEqual(G_squared.next_state([False, True], return_as_string=False), [False, False])
+        # 10 -> 01 -> 00
+        self.assertEqual(G_squared.next_state([True, False], return_as_string=False), [False, False])
+        # 11 -> 11 -> 11
+        self.assertEqual(G_squared.next_state([True, True], return_as_string=False), [True, True])
+
+        G = Network(vertex_names=["a", "b"], edges=[("a", "a"), ("a", "b"), ("b", "a")],
+                    vertex_functions=[sympy.Nand, sympy.And])
+        G_squared = G * G
+        # 00 -> 10 -> 11
+        self.assertEqual(G_squared.next_state([False, False], return_as_string=False), [True, True])
+        # 01 -> 10 -> 11
+        self.assertEqual(G_squared.next_state([False, True], return_as_string=False), [True, True])
+        # 10 -> 11 -> 01
+        self.assertEqual(G_squared.next_state([True, False], return_as_string=False), [False, True])
+        # 11 -> 01 -> 10
+        self.assertEqual(G_squared.next_state([True, True]), [True, False])
+
+        # random testing
+        test_graphs = [Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+                            "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")] +\
+                            [Network.generate_random(n_vertices=random.randint(1,10), indegree_bounds=(0, 5))
+                                for _ in range(5)]
+        for G in test_graphs:
+            G_squared = G ** 2
+            G_cubed = G ** 3
+            for i in range(20):
+                starting_state = [bool(random.randint(0, 1)) for _ in range(len(G.vertices))]
+                true_double_step = G.next_state(G.next_state(starting_state, return_as_string=False),
+                                                return_as_string=False)
+                true_triple_step = G.next_state(G.next_state(G.next_state(starting_state, return_as_string=False),
+                                                return_as_string=False), return_as_string=False)
+                self.assertEqual(G_squared.next_state(starting_state, return_as_string=False), true_double_step)
+                self.assertEqual(G_cubed.next_state(starting_state, return_as_string=False), true_triple_step)

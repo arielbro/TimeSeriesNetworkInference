@@ -143,9 +143,11 @@ def estimate_size(n, m, T, P):
 #                       sympy.Xor, None, sympy.And, sympy.Nand, sympy.And, sympy.Xor, sympy.Or, None, sympy.Or,
 #                       sympy.And, sympy.And])
 
-G = graphs.Network.generate_random(15, indegree_bounds=[1, 5])
+# G = graphs.Network.generate_random(15, indegree_bounds=[1, 5])
 
 
-n_attractors = attractors.find_num_attractors_onestage(G=G, max_len=13, max_num=11, verbose=True, sample_mip_start=True,
-                                                       simplify_general_boolean=True)
-pass
+# n_attractors = attractors.find_num_attractors_onestage(G=G, max_len=13, max_num=11, verbose=True, sample_mip_start=True,
+#                                                        simplify_general_boolean=True)
+
+G = graphs.Network.generate_random(50, indegree_bounds=[1, 5])
+attractors.find_num_steady_states(G, verbose=True, simplify_general_boolean=True)
