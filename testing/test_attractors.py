@@ -10,6 +10,7 @@ from utility import binary_necklaces
 AttractorExperimentParameters = namedtuple("AttractorExperimentParameters", "G T P n_attractors")
 VertexImpactExperimentParameters = namedtuple("VertexImpactExperimentParameters", "G T P impacts")
 
+
 class TestAttractors(TestCase):
     def test_find_num_attractors_onestage(self):
         experiments = []
@@ -234,10 +235,13 @@ class TestAttractors(TestCase):
             # continue
             use_mip_start = bool(random.randint(0, 1))
             simplify = bool(random.randint(0, 1))
+            key_slice_size = random.randint(1, 15)
+            print "key_slice_size={}".format(key_slice_size)
             n_attractors = find_num_attractors_onestage(G=experiment.G, max_len=experiment.T, max_num=experiment.P,
                                                         use_sat=False, verbose=False,
                                                         sample_mip_start_bounds=(3, 3) if use_mip_start else None,
-                                                        simplify_general_boolean=simplify)
+                                                        simplify_general_boolean=simplify,
+                                                        key_slice_size=key_slice_size)
             try:
                 self.assertEqual(n_attractors, experiment.n_attractors)
             except AssertionError as e:
@@ -377,8 +381,6 @@ class TestAttractors(TestCase):
         G = graphs.Network(vertex_names=["v1", "v2", "v3", "v4", "v5", "v6"],
                            edges=[("v1", "v4"), ("v2", "v4"), ("v1", "v5"), ("v4", "v6")],
                            vertex_functions=[sympy.Nand]*6)
-        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
-                           vertex_functions=[sympy.Nand]*3)
         self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=False), 8)
 
         G = graphs.Network(vertex_names=["A1", "B1", "B2", "C1", "C2"],
@@ -386,7 +388,7 @@ class TestAttractors(TestCase):
                            vertex_functions=[sympy.And]*5)
         G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
                            vertex_functions=[sympy.Nand]*3)
-        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=False), 8)
+        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=False), 0)
 
         G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")

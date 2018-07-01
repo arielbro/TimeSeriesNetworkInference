@@ -12,6 +12,13 @@ import stochastic
 import subprocess
 
 
+timeout_seconds = 60 * 20  # TODO: refactor somewhere?
+
+
+class TimeoutError(Exception):
+    pass
+
+
 def find_num_attractors_multistage(G, use_ilp):
     T = 1
     P = 1
@@ -53,7 +60,8 @@ def find_num_attractors_multistage(G, use_ilp):
 
 
 def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, verbose=False,
-                                 sample_mip_start_bounds=None, simplify_general_boolean=False):
+                                 sample_mip_start_bounds=None, simplify_general_boolean=False,
+                                 key_slice_size=15):
     T = 2 ** len(G.vertices) if not max_len else max_len
     P = 2 ** len(G.vertices) if not max_num else max_num
     start_time = time.time()
@@ -72,7 +80,8 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         model, formulas_to_variables = ilp.logic_to_ilp(ATTRACTORS)
         active_ilp_vars = [formulas_to_variables[active_logic_var] for active_logic_var in active_logic_vars]
     else:
-        model, active_ilp_vars, v_matrix = ilp.attractors_ilp_with_keys(G, T, P, simplify_general_boolean=simplify_general_boolean)
+        model, active_ilp_vars, v_matrix = ilp.attractors_ilp_with_keys(G, T, P, simplify_general_boolean=simplify_general_boolean,
+                                                                        slice_size=key_slice_size)
         if sample_mip_start_bounds is not None:
             attractor_sampling_num_walks = sample_mip_start_bounds[0]
             attractor_sampling_walk_length = sample_mip_start_bounds[1]
@@ -113,6 +122,9 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     # ilp.print_model_constraints(model)
     # for var in model.getVars():
     #     var.Start = 0
+
+    model.setParam('TimeLimit', timeout_seconds)
+
     model.optimize()
     model.update()
     # model.write("./model_mip_start.mst") # that just write sthe final solution as a MIP start...
@@ -124,6 +136,10 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         print "writing IIS data to model_iis.ilp"
         model.computeIIS()
         model.write("./model_iis.ilp")
+        if model.Stats == gurobipy.GRB.TIME_LIMIT:
+            raise TimeoutError("Gurobi failed with time_out")
+        else:
+            raise RuntimeError("Gurobi failed to reach optimal solution")
     else:
         # print "# attractors = {}".format(model.ObjVal)
         if model.ObjVal != int(round(model.ObjVal)):
@@ -143,7 +159,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
 
 
-def find_min_attractors_model(G, max_len=None, min_attractors=None):
+def find_min_attractors_model(G, max_len=None, min_attractors=None, key_slice_size=15):
     T = max_len if max_len is not None else 2**len(G.vertices)
     iteration = 1
     p_to_models = dict()
@@ -155,7 +171,8 @@ def find_min_attractors_model(G, max_len=None, min_attractors=None):
         iteration += 1
         start_time = time.time()
         model, activity_variables, _ = ilp.attractors_ilp_with_keys(G, max_len=T, max_num=P, find_full_model=True,
-                                                                    model_type_restriction=False)
+                                                                    model_type_restriction=False,
+                                                                    slice_size=key_slice_size)
         model.params.LogToConsole = 0
         model.setObjective(sum(activity_variables))
         model.addConstr(sum(activity_variables) == P)
@@ -205,7 +222,7 @@ def find_min_attractors_model(G, max_len=None, min_attractors=None):
 
 def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.FunctionTypeRestriction.NONE,
                              attractor_length_threshold=None, attractor_num_threshold=None,
-                             use_state_keys=True, clean_up=False):
+                             use_state_keys=True, clean_up=False, key_slice_size=15):
     """
     Finds a model with maximum attractors for a given graph and function restrictions.
     Performed a modified binary search on sizes of attractors, and a regular one on number of attractors.
@@ -228,11 +245,13 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
         if use_state_keys:
             model, active_ilp_vars, _ = ilp.attractors_ilp_with_keys(G, T, P,
                                                                      model_type_restriction=model_type_restriction,
-                                                                     simplify_general_boolean=False)
+                                                                     simplify_general_boolean=False,
+                                                                     slice_size=key_slice_size)
         else:
             model, active_ilp_vars, _ = ilp.direct_graph_to_ilp_classic(G, T, P,
                                                                      model_type_restriction=model_type_restriction,
-                                                                     simplify_general_boolean=False)
+                                                                     simplify_general_boolean=False,
+                                                                    slice_size=key_slice_size)
         model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
         if not verbose:
             model.params.LogToConsole = 0

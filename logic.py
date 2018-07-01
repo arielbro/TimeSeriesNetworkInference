@@ -88,10 +88,7 @@ class BooleanSymbolicFunc:
                 raise NotImplementedError(
                     "Can't compose a symbolic boolean function with a function of type {}".format(f.type))
         replacement_dict = dict(zip(self.input_vars, [f.formula for f in input_funcs]))
-        try:
-            new_exp = self.formula.subs(replacement_dict, simultaneous=True)
-        except Exception as e:
-            pass
+        new_exp = self.formula.subs(replacement_dict, simultaneous=True)
         if simplify:
             new_exp = sympy.simplify(new_exp)
         return BooleanSymbolicFunc(formula=new_exp)

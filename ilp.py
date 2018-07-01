@@ -8,7 +8,6 @@ import math
 from graphs import FunctionTypeRestriction
 from gurobipy import GRB
 
-unique_key_slicing_size = 15  # TODO: find elegant reformatting for this
 # TODO: find good upper bound again, why didn't 29 work on MAPK_large2?
 # http://files.gurobi.com/Numerics.pdf a good resource on numerical issues, high values cause them.
 
@@ -73,7 +72,7 @@ def logic_to_ilp(formula):
     return model, formulas_to_variables
 
 
-def unique_state_keys(ordered_state_variables):
+def unique_state_keys(ordered_state_variables, slice_size):
     """
     Assign a unique numbering to a state, by summing 2**i over active vertices.
     Split the value among several variables, if needed, to fit in 32bit ints with room for mathematical operations.
@@ -81,7 +80,6 @@ def unique_state_keys(ordered_state_variables):
     :return: A key, a tuple of integers, identifying this state uniquely among all other states.
     """
     # TODO: see if possible to use larger slices.
-    slice_size = unique_key_slicing_size
     # according to gurobi documentation (https://www.gurobi.com/documentation/7.5/refman/variables.html#subsubsection:IntVars),
     # int values are restrained to +-20 billion, or 2**30.9. In practice, choosing anything close (e.g. 2**28)
     # still results in errors.
@@ -118,14 +116,14 @@ def create_state_keys_comparison_var(model, first_state_keys, second_state_keys,
     # multiply by denominator to avoid float inaccuracies
     assert len(first_state_keys) == len(second_state_keys)
     last_var = 0 if not include_equality else 1
-    M = upper_bound
+    M = upper_bound # M - 1 is actuall largest value
     for i in range(len(first_state_keys)):
         a = first_state_keys[-i - 1]
         b = second_state_keys[-i - 1]
         z = model.addVar(vtype=gurobipy.GRB.BINARY, name="{}_{}_indicator".format(name_prefix, i))
         model.update()
-        model.addConstr((M + 1)*z >= a - b + last_var, name="{}_{}_>=constraint".format(name_prefix, i))
-        model.addConstr((M + 1)*z <= a - b + last_var + M, name="{}_{}_<=constraint".format(name_prefix, i))
+        model.addConstr(M * z >= a - b + last_var, name="{}_{}_>=constraint".format(name_prefix, i))
+        model.addConstr(M * z <= a - b + last_var + (M - 1), name="{}_{}_<=constraint".format(name_prefix, i))
         last_var = z
         # print "a_{}={}, b_{}={}, M={}, M+1={}".format(len(first_state_keys) - i-1, a, len(first_state_keys) -i-1, b, M, M+1)
     return last_var
@@ -251,7 +249,8 @@ def add_simplified_consistency_constraints(model, v_func, v_next_state_var, pred
 
 # noinspection PyArgumentList
 def attractors_ilp_with_keys(G, max_len=None, max_num=None,
-                             model_type_restriction=FunctionTypeRestriction.NONE, simplify_general_boolean=False):
+                             model_type_restriction=FunctionTypeRestriction.NONE, simplify_general_boolean=False,
+                             slice_size=15):
     total_start = time.time()
     part_start = time.time()
     T = 2**len(G.vertices) if not max_len else max_len
@@ -310,7 +309,7 @@ def attractors_ilp_with_keys(G, max_len=None, max_num=None,
                                     name="stable_<=_{}_{}_{}".format(i, p, t))
                     model.addConstr(v_matrix[i, p, t+1] >= desired_val + a_matrix[p, t + 1] + a_matrix[p, t] - 2,
                                     name="stable_>=_{}_{}_{}".format(i, p, t))
-    state_keys = [[unique_state_keys([v_matrix[i, p, t] for i in range(n)]) for t in range(T+1)]
+    state_keys = [[unique_state_keys([v_matrix[i, p, t] for i in range(n)], slice_size=slice_size) for t in range(T+1)]
                   for p in range(P)]
     predecessors_vars = numpy.array([[[[v_matrix[vertex.index, p, t] for vertex in G.vertices[i].predecessors()]
                                      for t in range(T+1)] for p in range(P)] for i in range(n)])
@@ -410,7 +409,7 @@ def attractors_ilp_with_keys(G, max_len=None, max_num=None,
         strictly_larger_ind = create_state_keys_comparison_var(model=model, first_state_keys=state_keys[p][T-1],
                                                                second_state_keys=state_keys[p][t],
                                                                include_equality=False,
-                                                               upper_bound=2**unique_key_slicing_size,
+                                                               upper_bound=2**slice_size,
                                                                name_prefix="simple>_{}_{}".format(p, t))
         model.addConstr(strictly_larger_ind >= a_matrix[p, t],
                         name="simple_{}_{}".format(p, t))
@@ -431,7 +430,7 @@ def attractors_ilp_with_keys(G, max_len=None, max_num=None,
                                                                first_state_keys=state_keys[p + 1][T-1],
                                                                second_state_keys=state_keys[p][T-1],
                                                                include_equality=False,
-                                                               upper_bound=2**unique_key_slicing_size,
+                                                               upper_bound=2**slice_size,
                                                                name_prefix="key_order_between_attractors_{}".
                                                                format(p))
         # print "state keys for p={}".format(p)
