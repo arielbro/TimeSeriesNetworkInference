@@ -583,6 +583,39 @@ def print_attractors(model):
             print reduce(lambda a, b: "{}{}".format(a, b), [int(round(v_variables[i][p][t].X)) for i in range(n)])
 
 
+def print_attractors_enumeration(model):
+    """
+    Prints the attractors of a model after it has been optimized, when
+    each solution corresponds to one attractor.
+    :param model:
+    :return:
+    """
+    n_attracotrs = model.SolCount
+    v_name_parts = [var.VarName.split("_")[1:] for var in model.getVars() if "v_" in var.VarName]
+    max_i = 0
+    max_t = 0
+    for name_part_list in v_name_parts:
+        assert len(name_part_list) == 3
+        i, p, t = name_part_list
+        max_i = max(max_i, int(i))
+        max_t = max(max_t, int(t))
+    T = max_t
+    P = 1
+    n = max_i + 1
+    a_variables = [[model.getVarByName("a_{}_{}".format(p, t)) for t in range(T+1)] for p in range(P)]
+    v_variables = [[[model.getVarByName("v_{}_{}_{}".format(i, p, t)) for t in range(T)] for p in range(P)]
+                   for i in range(n)]
+    for p in range(n_attracotrs):
+        model.setParam(gurobipy.GRB.Param.SolutionNumber, p)
+        length = len([None for t in range(T) if int(round(a_variables[0][t].Xn)) == 1])
+        print "Attractor #{}, length {}".format(p + 1, length)
+        # TODO: support for original graph names?
+        # print reduce(lambda a, b: "{}\t{}".format(a, b), ["v_{}".format(i) for i in range(n)])
+        for t in range(T - length, T):
+            # noinspection PyTypeChecker
+            print reduce(lambda a, b: "{}{}".format(a, b), [int(round(v_variables[i][0][t].Xn)) for i in range(n)])
+
+
 def print_model_constraints(model):
     quadruples = list(get_matrix_coos(model))
     constr_attrs = [(constr.Sense, constr.RHS) for constr in model.getConstrs()]

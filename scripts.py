@@ -150,4 +150,7 @@ def estimate_size(n, m, T, P):
 #                                                        simplify_general_boolean=True)
 
 G = graphs.Network.generate_random(50, indegree_bounds=[1, 5])
-attractors.find_num_steady_states(G, verbose=True, simplify_general_boolean=True)
+# attractors.find_num_steady_states(G, verbose=True, simplify_general_boolean=True)
+
+attractors.find_num_attractors_onestage_enumeration(G, max_len=10, verbose=True, simplify_general_boolean=True,
+                                                    key_slice_size=10)

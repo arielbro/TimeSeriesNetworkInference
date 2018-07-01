@@ -133,13 +133,15 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     # print model
     if model.Status != gurobipy.GRB.OPTIMAL:
         print "warning, model not solved to optimality."
-        print "writing IIS data to model_iis.ilp"
-        model.computeIIS()
-        model.write("./model_iis.ilp")
-        if model.Stats == gurobipy.GRB.TIME_LIMIT:
+        if model.Status == gurobipy.GRB.INFEASIBLE:
+            print "writing IIS data to model_iis.ilp"
+            model.computeIIS()
+            model.write("./model_iis.ilp")
+            raise RuntimeError("Gurobi failed to reach optimal solution")
+        elif model.Status == gurobipy.GRB.TIME_LIMIT:
             raise TimeoutError("Gurobi failed with time_out")
         else:
-            raise RuntimeError("Gurobi failed to reach optimal solution")
+            raise ValueError("Gurobi failed, status code - {}".format(model.Status))
     else:
         # print "# attractors = {}".format(model.ObjVal)
         if model.ObjVal != int(round(model.ObjVal)):
@@ -157,6 +159,73 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     #        if re.match("a_[0-9]*_[0-9]*", v.varName)]  # abs(v.obj) > 1e-6
     # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
     #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
+
+
+def find_num_attractors_onestage_enumeration(G, max_len=None, verbose=False, simplify_general_boolean=False,
+                                             key_slice_size=15):
+    T = 2 ** len(G.vertices) if not max_len else max_len
+    start_time = time.time()
+
+    model, active_ilp_vars, v_matrix = ilp.attractors_ilp_with_keys(G, T, 1,
+                                                                    simplify_general_boolean=simplify_general_boolean,
+                                                                    slice_size=key_slice_size)
+    model.addConstr(sum(active_ilp_vars) == 1)
+    model.params.PoolSolutions = 2000000000
+    model.params.PoolSearchMode = 2
+    model.setParam(gurobipy.GRB.Param.NumericFocus, 3)
+    # model.setParam(gurobipy.GRB.Param.OptimalityTol, 1e-6) # gurobi warns against using those for numerical issues
+    # model.setParam(gurobipy.GRB.Param.IntFeasTol, 1e-9)
+    # model.setParam(gurobipy.GRB.Param.MIPGapAbs, 0.1)
+    if not verbose:
+        model.params.LogToConsole = 0
+
+    # model.tune()  # try automatic parameter tuning
+    # model.getTuneResult(0)  # take best tuning parameters
+    # model.write('tune v-{} P-{} T-{}.prm'.format(len(G.vertices), P, T))
+    # print model
+    # model_vars = model.getVars()
+    # ilp.print_model_constraints(model)
+    # for var in model.getVars():
+    #     var.Start = 0
+
+    model.setParam('TimeLimit', timeout_seconds)
+
+    model.optimize()
+    model.update()
+    # model.write("./model_mip_start.mst") # that just write sthe final solution as a MIP start...
+
+    # ilp.print_opt_solution(model)
+    # print model
+    if model.Status != gurobipy.GRB.OPTIMAL:
+        print "warning, model not solved to optimality."
+        print "writing IIS data to model_iis.ilp"
+        model.computeIIS()
+        model.write("./model_iis.ilp")
+        if model.Status == gurobipy.GRB.TIME_LIMIT:
+            raise TimeoutError("Gurobi failed with time_out")
+        elif model.Status == gurobipy.GRB.INFEASIBLE:
+            return 0
+        else:
+            raise RuntimeError("Gurobi failed to reach optimal solution")
+    else:
+        # print "# attractors = {}".format(model.ObjVal)
+        if model.ObjVal != int(round(model.ObjVal)):
+            print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
+        # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
+        ilp.print_attractors_enumeration(model)
+        # ilp.print_model_values(model)
+        # ilp.print_model_constraints(model)
+        # model.printStats()
+        print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
+        return model.SolCount
+
+    # for constr in model.getConstrs():
+    #     print constr
+    # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
+    #        if re.match("a_[0-9]*_[0-9]*", v.varName)]  # abs(v.obj) > 1e-6
+    # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
+    #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
+
 
 
 def find_min_attractors_model(G, max_len=None, min_attractors=None, key_slice_size=15):
