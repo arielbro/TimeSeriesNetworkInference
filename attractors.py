@@ -12,7 +12,7 @@ import stochastic
 import subprocess
 
 
-timeout_seconds = 60 * 20  # TODO: refactor somewhere?
+timeout_seconds = 60 * 5  # TODO: refactor somewhere?
 
 
 class TimeoutError(Exception):
@@ -107,7 +107,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
                 ilp.set_mip_start(model, v_matrix, active_ilp_vars, attractors)
 
     model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
-    model.setParam(gurobipy.GRB.Param.NumericFocus, 3)
+    # model.setParam(gurobipy.GRB.Param.NumericFocus, 3)
     # model.setParam(gurobipy.GRB.Param.OptimalityTol, 1e-6) # gurobi warns against using those for numerical issues
     # model.setParam(gurobipy.GRB.Param.IntFeasTol, 1e-9)
     # model.setParam(gurobipy.GRB.Param.MIPGapAbs, 0.1)
@@ -134,9 +134,9 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     if model.Status != gurobipy.GRB.OPTIMAL:
         print "warning, model not solved to optimality."
         if model.Status == gurobipy.GRB.INFEASIBLE:
-            print "writing IIS data to model_iis.ilp"
-            model.computeIIS()
-            model.write("./model_iis.ilp")
+            # print "writing IIS data to model_iis.ilp"
+            # model.computeIIS()
+            # model.write("./model_iis.ilp")
             raise RuntimeError("Gurobi failed to reach optimal solution")
         elif model.Status == gurobipy.GRB.TIME_LIMIT:
             raise TimeoutError("Gurobi failed with time_out")
@@ -172,7 +172,7 @@ def find_num_attractors_onestage_enumeration(G, max_len=None, verbose=False, sim
     model.addConstr(sum(active_ilp_vars) == 1)
     model.params.PoolSolutions = 2000000000
     model.params.PoolSearchMode = 2
-    model.setParam(gurobipy.GRB.Param.NumericFocus, 3)
+    # model.setParam(gurobipy.GRB.Param.NumericFocus, 3)
     # model.setParam(gurobipy.GRB.Param.OptimalityTol, 1e-6) # gurobi warns against using those for numerical issues
     # model.setParam(gurobipy.GRB.Param.IntFeasTol, 1e-9)
     # model.setParam(gurobipy.GRB.Param.MIPGapAbs, 0.1)
@@ -197,10 +197,6 @@ def find_num_attractors_onestage_enumeration(G, max_len=None, verbose=False, sim
     # ilp.print_opt_solution(model)
     # print model
     if model.Status != gurobipy.GRB.OPTIMAL:
-        print "warning, model not solved to optimality."
-        print "writing IIS data to model_iis.ilp"
-        model.computeIIS()
-        model.write("./model_iis.ilp")
         if model.Status == gurobipy.GRB.TIME_LIMIT:
             raise TimeoutError("Gurobi failed with time_out")
         elif model.Status == gurobipy.GRB.INFEASIBLE:
@@ -212,7 +208,7 @@ def find_num_attractors_onestage_enumeration(G, max_len=None, verbose=False, sim
         if model.ObjVal != int(round(model.ObjVal)):
             print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
         # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
-        ilp.print_attractors_enumeration(model)
+        # ilp.print_attractors_enumeration(model)
         # ilp.print_model_values(model)
         # ilp.print_model_constraints(model)
         # model.printStats()
