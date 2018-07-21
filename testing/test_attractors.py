@@ -233,13 +233,15 @@ class TestAttractors(TestCase):
             print "n={}, T={}, P={}, expected_n_attractors={}".format(len(experiment.G.vertices),
                                                                    experiment.T, experiment.P, experiment.n_attractors)
             # continue
-            use_mip_start = bool(random.randint(0, 1))
+            use_sampling = bool(random.randint(0, 1))
+            use_sampling_for_mip_start = bool(random.randint(0, 1))
             simplify = bool(random.randint(0, 1))
             key_slice_size = random.randint(1, 15)
             print "key_slice_size={}".format(key_slice_size)
             n_attractors = find_num_attractors_onestage(G=experiment.G, max_len=experiment.T, max_num=experiment.P,
                                                         use_sat=False, verbose=False,
-                                                        sample_mip_start_bounds=(3, 3) if use_mip_start else None,
+                                                        sampling_bounds=(3, 3) if use_sampling else None,
+                                                        use_sampling_for_mip_start=use_sampling_for_mip_start,
                                                         simplify_general_boolean=simplify,
                                                         key_slice_size=key_slice_size)
             try:

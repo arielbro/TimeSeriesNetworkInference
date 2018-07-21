@@ -101,7 +101,7 @@ def create_state_keys_comparison_var(model, first_state_keys, second_state_keys,
     """
     Registers and returns a new binary variable, equaling 1 iff first_state_keys > second_state_keys,
     where the order is a lexicographic order (both inputs are tuples of ints, MSB to LSB).
-    NOTE: creates len(first_state_keys) - 1 auxiliary variables. Assumes numbers are bounded by 2**30
+    NOTE: creates len(first_state_keys) - 1 auxiliary variables. Assumes numbers are bounded by upper_bound
     :param first_state_keys:
     :param second_state_keys:
     :param include_equality: boolean, if true then the indicator gets 1 on equality of the two key sets.
@@ -116,7 +116,7 @@ def create_state_keys_comparison_var(model, first_state_keys, second_state_keys,
     # multiply by denominator to avoid float inaccuracies
     assert len(first_state_keys) == len(second_state_keys)
     last_var = 0 if not include_equality else 1
-    M = upper_bound # M - 1 is actuall largest value
+    M = upper_bound # M - 1 is actual largest value
     for i in range(len(first_state_keys)):
         a = first_state_keys[-i - 1]
         b = second_state_keys[-i - 1]
@@ -127,6 +127,116 @@ def create_state_keys_comparison_var(model, first_state_keys, second_state_keys,
         last_var = z
         # print "a_{}={}, b_{}={}, M={}, M+1={}".format(len(first_state_keys) - i-1, a, len(first_state_keys) -i-1, b, M, M+1)
     return last_var
+
+
+def add_uniqueness_constraints_from_sampled_attractors(model, model_state_keys, sampled_attractors, upper_bound,
+                                                       last_states_activity_vars, name_prefix):
+    """
+        Given a set of attractors (ordered sequence of ordered vertex state binary numbers), create constraints
+        forcing attractors in a solution to be different than th eones supplied.
+        Constraints are made based on the lexicographical order used in the model, so only one state in each sampled
+        attractor is compared to one state in each model attractor, and state keys slice size is used for comparisons.
+        NOTE: creates (slice_size - 1) * len(sampled_attractors) * P auxiliary variables.
+    """
+    P = len(last_states_activity_vars)
+    T = len(model_state_keys[0]) - 1
+    order_key_func = lambda node_states: sum(node * 2**i for (i, node) in enumerate(node_states))
+
+    # Record the largest state in each sampled attractor
+    largest_sampled_states = list()
+    for attractor in sampled_attractors:
+        largest_sampled_states.append(max(attractor, key=lambda state: order_key_func(state)))
+
+    # go over pairs of model attractors and sampled attractors and require non-equality.
+    slice_size = int(math.log(upper_bound, 2))
+    for p, sampled_p in itertools.product(list(range(P)), list(range(len(sampled_attractors)))):
+        sampled_state_keys = unique_state_keys(largest_sampled_states[sampled_p], slice_size)
+        larger_var = create_state_keys_comparison_var(model, sampled_state_keys, model_state_keys[p][T - 1],
+                                                      include_equality=False,
+                                                      upper_bound=upper_bound,
+                                                      name_prefix="{}_p_{}_sampled_{}_>".format(
+                                                          name_prefix, p, sampled_p))
+        smaller_var = create_state_keys_comparison_var(model, model_state_keys[p][T - 1], sampled_state_keys,
+                                                      include_equality=False,
+                                                      upper_bound=upper_bound,
+                                                      name_prefix="{}_p_{}_sampled_{}_<".format(
+                                                          name_prefix, p, sampled_p))
+
+        # a_p_(T-1) -> larger_var OR smaller_var
+        model.addConstr(last_states_activity_vars[p] <= larger_var + smaller_var, name="{}_p_{}_sampled_{}".format(
+            name_prefix, p, sampled_p))
+
+
+def add_model_invariant_uniqueness_constraints(
+            model, model_state_keys, attractors, upper_bound,
+            model_activity_vars):
+    """
+        Given a set of attractors (ordered sequence of ordered vertex state binary numbers), create constraints
+        forcing attractors in a solution to be different than th ones supplied.
+        Constraints are made based on the lexicographical order used in the model, so only one state in each sampled
+        attractor is compared to one state in each model attractor, and state keys slice size is used for comparisons.
+        NOTE: creates (slice_size - 1) * len(sampled_attractors) * T auxiliary variables.
+    """
+    P = len(model_activity_vars)
+    T = len(model_activity_vars[0]) - 1
+
+    def order_key_func(node_states): return sum(node * 2**i for (i, node) in enumerate(node_states))
+
+    # Rotate the supplied attractors to fit the desired order.
+    ordered_attractors = []
+    for attractor in attractors:
+        largest_state_index = max(range(len(attractor)), key=lambda i: order_key_func(attractor[i]))
+        ordered_attractors.append([attractor[(t + largest_state_index + 1) % len(attractor)]
+                                   for t in range(len(attractor))])
+
+    # go over pairs of model attractors and sampled attractors and require non-equality.
+    slice_size = int(math.log(upper_bound, 2))
+    for p, given_p in itertools.product(list(range(P)), list(range(len(attractors)))):
+        assert len(attractors[p]) <= T
+        # require that either attractor length or actual states be different from the given attractor.
+
+        # length difference (recall model has one redundant step)
+        model_attractor_len = sum(model_activity_vars[p]) - 1
+        attractor_len = len(attractors[given_p])
+        # In principle, we want an indicator z for (model_attractor_len != attractor_len).
+        # We'll split z to z_+ and z_-, and require only that z_+ ==> model_attractor_len > attractor_len
+        #                                               and z_- ==> model_attractor_len < attractor_len
+        # Then if inequality holds, (z- + z+) *can* be required to be 1, otherwise both are zero.
+        different_length_positive = model.addVar(vtype=gurobipy.GRB.BINARY,
+                                                  name="length_difference_{}_{}_>".format(p, given_p))
+        different_length_negative = model.addVar(vtype=gurobipy.GRB.BINARY,
+                                                  name="length_difference_{}_{}_<".format(p, given_p))
+        model.update()
+        # with x = (model_attractor_len - attractor_len) in range [-T, T], require (T+1)Z_+ <= x + T,
+        model.addConstr((T + 1) * different_length_positive <= (model_attractor_len - attractor_len) + T,
+                        name="length_difference_{}_{}_>")
+        model.addConstr((T + 1) * different_length_negative <= (attractor_len - model_attractor_len) + T,
+                        name="length_difference_{}_{}_<")
+
+        # Now add indicators for difference in corresponding states in each attractor. We want either those to be
+        # different, or the length (it is possible for length to differ but states not, because 0^n encodes a real state
+        # as well as a vacant state. However, if lengths are the same, there is only one representation and all states
+        # should match.
+
+        state_difference_indicators = []
+        for t in range(T): # no need to require difference for last state in model, since it is redundant.
+            num_slices = len(model_state_keys[p][t])
+            is_active = t >= T - len(attractors[given_p])
+            given_state_keys = unique_state_keys(attractors[given_p][t - (T - len(attractors[given_p]))],
+                                                 slice_size) if is_active else [0] * num_slices
+            larger_var = create_state_keys_comparison_var(model, given_state_keys, model_state_keys[p][t],
+                                                          include_equality=False,
+                                                          upper_bound=upper_bound,
+                                                          name_prefix="p_{}_given_p_{}_t_{}_>".format(p, given_p, t))
+            smaller_var = create_state_keys_comparison_var(model, model_state_keys[p][t], given_state_keys,
+                                                           include_equality=False,
+                                                           upper_bound=upper_bound,
+                                                           name_prefix="p_{}_given_p_{}_t_{}__<".format(p, given_p, t))
+            state_difference_indicators.extend([larger_var, smaller_var])
+
+        model.update()
+        model.addConstr(different_length_positive + different_length_negative + sum(state_difference_indicators) >= 1,
+                        name="p_{}_given_p_{}_difference_constraint".format(p, given_p))
 
 
 def add_truth_table_consistency_constraints(model, v_func, v_next_state_var, predecessors_cur_vars,
@@ -455,7 +565,103 @@ def attractors_ilp_with_keys(G, max_len=None, max_num=None,
     # print_model_constraints(model)
     # print model
     # print "Time taken for model preparation:{:.2f} seconds".format(time.time() - total_start)
-    return model, [a_matrix[p, T-1] for p in range(P)], v_matrix
+    return model, [a_matrix[p, T-1] for p in range(P)], v_matrix, state_keys
+
+
+def bitchange_attractor_ilp_with_keys(G, max_len=None, slice_size=15):
+    T = max_len
+    n = len(G.vertices)
+
+    model = gurobipy.Model()
+    a_list = [model.addVar(vtype=gurobipy.GRB.BINARY, name="a_{}".format(t)) for t in range(T+1)]
+    v_matrix = numpy.array([[model.addVar(vtype=gurobipy.GRB.BINARY, name="v_{}_{}".format(i, t))
+                              for t in range(T+1)] for i in range(n)])
+    model.update()
+
+    for t in range(T + 1):
+        # assert activity var meaning (ACTIVITY_SWITCH, MONOTONE, IF_NON_ACTIVE)
+
+        model.addConstr(n * a_list[t] >= sum(v_matrix[i, t] for i in range(n)),
+                        name="activity_{}".format(t))
+        if t < T:
+            model.addConstr(a_list[t + 1] >= a_list[t], name="monotone_{}".format(t))
+
+    model.addConstr(a_list[T] <= a_list[T - 1], name="if_non_active")
+    model.addConstr(a_list[T] == 1, name="must_be_active")
+
+    for i in range(n):
+        # assert stable
+        in_degree = len(G.vertices[i].predecessors())
+        if in_degree == 0:
+            for t in range(T+1):
+                if G.vertices[i].function is None:
+                    desired_val = v_matrix[i, t]
+                else:
+                    assert G.vertices[i].function in [False, True]
+                    desired_val = int(G.vertices[i].function)
+                    last_activity = a_list[t-1] if t > 0 else 0
+                    # set initial state, for first active state
+                    model.addConstr(v_matrix[i, t] <= desired_val + 1 - a_list[t] + last_activity,
+                                    name="stable_constant_<=_{}_{}".format(i, t))
+                    model.addConstr(v_matrix[i, t] >= desired_val + a_list[t] - last_activity - 1,
+                                    name="stable_constant_>=_{}_{}".format(i, t))
+                if t < T:
+                    # if a[p,t+1] and a[p,t] then v_matrix[i,p,t+1]=v_matrix[i,p,t]
+                    model.addConstr(v_matrix[i, t+1] <= desired_val + 2 - a_list[t + 1] - a_list[t],
+                                    name="stable_<=_{}_{}".format(i, t))
+                    model.addConstr(v_matrix[i, t+1] >= desired_val + a_list[t + 1] + a_list[t] - 2,
+                                    name="stable_>=_{}_{}".format(i, t))
+    state_keys = [unique_state_keys([v_matrix[i, t] for i in range(n)], slice_size=slice_size) for t in range(T+1)]
+    predecessors_vars = numpy.array([[[v_matrix[vertex.index, t] for vertex in G.vertices[i].predecessors()]
+                                     for t in range(T+1)] for i in range(n)])
+
+    all_functions_bitchange_vars = []
+
+    for i in range(n):
+        # assert consistent
+        in_degree = len(G.vertices[i].predecessors())
+        if in_degree != 0:
+            vertex_bitchange_vars = []
+            find_model_f_vars = []
+            for var_comb_index, var_combination in enumerate(
+                    itertools.product((False, True), repeat=len(G.vertices[i].predecessors()))):
+                bitchange_var = model.addVar(vtype=gurobipy.GRB.BINARY, name="f_{}_{}".format(i, var_comb_index))
+                model.update()
+                vertex_bitchange_vars.append(bitchange_var)
+                all_functions_bitchange_vars.append(bitchange_var)
+                find_model_f_vars.append(1 - bitchange_var if G.vertices[i].function(*var_combination) else bitchange_var)
+            for t in range(T):
+                add_truth_table_consistency_constraints(model, G.vertices[i].function, v_matrix[i, t + 1],
+                                                       predecessors_vars[i, t],
+                                                       "consistency_{}_{}".format(i, t),
+                                                       activity_variable=a_list[t],
+                                                       find_model_f_vars=find_model_f_vars)
+
+    # CYCLIC
+    for i, t in itertools.product(range(n), range(T)):
+        # (~a[t - 1] & a[t]) >> EQ(t, T)
+        last_activity = a_list[t - 1] if t > 0 else 0
+        model.addConstr(a_list[t] - last_activity - 1 + v_matrix[i, t] <= v_matrix[i, T],
+                        name="cyclic_<=_{}_{}".format(i, t))
+        model.addConstr(-a_list[t] + last_activity + 1 + v_matrix[i, t] >= v_matrix[i, T],
+                        name="cyclic_>=_{}_{}".format(i, t))
+
+    # SIMPLE
+    for t in range(T-1):
+        # (a[t] & a[t-1]) >> ~EQ(t, T) (assumes a_list monotone)
+        strictly_larger_ind = create_state_keys_comparison_var(model=model, first_state_keys=state_keys[T-1],
+                                                               second_state_keys=state_keys[t],
+                                                               include_equality=False,
+                                                               upper_bound=2**slice_size,
+                                                               name_prefix="simple>_{}".format(t))
+        model.addConstr(strictly_larger_ind >= a_list[t],
+                        name="simple_{}".format(t))
+
+    model.update()
+
+    # print_model_constraints(model)
+    # print model
+    return model, numpy.array([state_keys]), numpy.array([a_list]), all_functions_bitchange_vars
 
 
 def set_mip_start(model, v_matrix, final_states_a_vars, attractors):
@@ -614,6 +820,40 @@ def print_attractors_enumeration(model):
         for t in range(T - length, T):
             # noinspection PyTypeChecker
             print reduce(lambda a, b: "{}{}".format(a, b), [int(round(v_variables[i][0][t].Xn)) for i in range(n)])
+
+
+def get_model_attractors(model):
+    """
+    Returns the attractors of a model, after it has been optimized, when
+    each solution corresponds to one attractor.
+    :param model:
+    :return:
+    """
+    n_attracotrs = model.SolCount
+    v_name_parts = [var.VarName.split("_")[1:] for var in model.getVars() if "v_" in var.VarName]
+    max_i = 0
+    max_t = 0
+    for name_part_list in v_name_parts:
+        assert len(name_part_list) == 3
+        i, p, t = name_part_list
+        max_i = max(max_i, int(i))
+        max_t = max(max_t, int(t))
+    T = max_t
+    P = 1
+    n = max_i + 1
+    a_variables = [[model.getVarByName("a_{}_{}".format(p, t)) for t in range(T+1)] for p in range(P)]
+    v_variables = [[[model.getVarByName("v_{}_{}_{}".format(i, p, t)) for t in range(T)] for p in range(P)]
+                   for i in range(n)]
+    attractors = []
+    for p in range(n_attracotrs):
+        attractor = []
+        model.setParam(gurobipy.GRB.Param.SolutionNumber, p)
+        length = len([None for t in range(T) if int(round(a_variables[0][t].Xn)) == 1])
+        for t in range(T - length, T):
+            state = [int(round(v_variables[i][0][t].Xn)) for i in range(n)]
+            attractor.append(state)
+        attractors.append(attractor)
+    return attractors
 
 
 def print_model_constraints(model):

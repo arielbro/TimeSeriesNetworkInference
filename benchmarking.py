@@ -13,8 +13,8 @@ graph_pool = []
 #     G.convert_inputs_to_loops()
 #     graph_pool.append((G, model_name))
 
-for i in range(8000):
-    n = random.randint(1, 30)
+for i in range(10000):
+    n = random.randint(3, 15)
     G = graphs.Network.generate_random(n_vertices=n, indegree_bounds=(0, 4))
     G.convert_inputs_to_loops()
     name = "random"
@@ -30,44 +30,46 @@ for i in range(8000):
                                 slice_size=None, time=time.time() - start))
     print "n={}, P={}, T={}".format(len(G.vertices), num_attractors, max_length)
     print "running ILPs"
-    # take slice size 1 with 50% chance, otherwise uniform over 2-25
-    slice_size = random.randint(1, 25)
-    # for simplify, sample in itertools.product([False, True], repeat=2):
-    #     try:
-    #         start = time.time()
-    #         sample_params = (num_attractors, max_length + 2) if sample else None
-    #         found_attractors = attractors.find_num_attractors_onestage(G, max_len=max_length,
-    #                                                                    max_num=num_attractors + 1, verbose=True,
-    #                                                                    simplify_general_boolean=simplify,
-    #                                                                    sample_mip_start_bounds=sample_params,
-    #                                                                    key_slice_size=slice_size)
-    #         if found_attractors != num_attractors:
-    #             print "Warning - did not find the right amount of attractors in ILP"
-    #             timings.append(TimingResult(algorithm="ILP", graph_name=name, n=len(G.vertices), P=num_attractors,
-    #                                         T=max_length, simplify=simplify, sample=sample, slice_size=slice_size,
-    #                                         time='invalid'))
-    #         else:
-    #             timings.append(TimingResult(algorithm="ILP", graph_name=name, n=len(G.vertices), P=num_attractors,
-    #                                         T=max_length, simplify=simplify, sample=sample, slice_size=slice_size,
-    #                                         time=time.time() - start))
-    #     except attractors.TimeoutError:
-    #         print "warning, timeout encountered in ILP"
-    #         timings.append(TimingResult(algorithm="ILP", graph_name=name, n=len(G.vertices), P=num_attractors,
-    #                                     T=max_length, simplify=simplify, sample=sample, slice_size=slice_size,
-    #                                     time="inf"))
-    #     except ValueError:
-    #         print "warning, value error encountered in ILP"
-    #         timings.append(TimingResult(algorithm="ILP", graph_name=name, n=len(G.vertices), P=num_attractors,
-    #                                     T=max_length, simplify=simplify, sample=sample, slice_size=slice_size,
-    #                                     time="invalid"))
+    slice_size = random.randint(1, 15)
+    for simplify, sample in itertools.product([False, True], [False, "mip", "unique"]):
+        try:
+            start = time.time()
+            sample_params = (num_attractors, max_length + 2) if sample else None
+            mip_start = True if sample=="mip" else False
+            found_attractors = attractors.find_num_attractors_onestage(G, max_len=max_length,
+                                                                       max_num=num_attractors + 1, verbose=True,
+                                                                       simplify_general_boolean=simplify,
+                                                                       sampling_bounds=sample_params,
+                                                                       use_sampling_for_mip_start=mip_start,
+                                                                       key_slice_size=slice_size)
+            if found_attractors != num_attractors:
+                print "Warning - did not find the right amount of attractors in ILP"
+                timings.append(TimingResult(algorithm="ILP", graph_name=name, n=len(G.vertices), P=num_attractors,
+                                            T=max_length, simplify=simplify, sample=sample, slice_size=slice_size,
+                                            time='invalid'))
+            else:
+                timings.append(TimingResult(algorithm="ILP", graph_name=name, n=len(G.vertices), P=num_attractors,
+                                            T=max_length, simplify=simplify, sample=sample, slice_size=slice_size,
+                                            time=time.time() - start))
+        except attractors.TimeoutError:
+            print "warning, timeout encountered in ILP"
+            timings.append(TimingResult(algorithm="ILP", graph_name=name, n=len(G.vertices), P=num_attractors,
+                                        T=max_length, simplify=simplify, sample=sample, slice_size=slice_size,
+                                        time="inf"))
+        except ValueError:
+            print "warning, value error encountered in ILP"
+            timings.append(TimingResult(algorithm="ILP", graph_name=name, n=len(G.vertices), P=num_attractors,
+                                        T=max_length, simplify=simplify, sample=sample, slice_size=slice_size,
+                                        time="invalid"))
+    # enumeration
     for simplify in [False, True]:
         try:
             start = time.time()
-            found_attractors = attractors.find_num_attractors_onestage_enumeration(G, max_len=max_length, verbose=True,
-                                                                                   simplify_general_boolean=simplify,
-                                                                                   key_slice_size=slice_size)
-            if found_attractors != num_attractors:
-                print  "Warning - did not find the right amount of attractors in ILP"
+            found_attractors = attractors.find_attractors_onestage_enumeration(G, max_len=max_length, verbose=True,
+                                                                               simplify_general_boolean=simplify,
+                                                                               key_slice_size=slice_size)
+            if len(found_attractors) != num_attractors:
+                print "Warning - did not find the right amount of attractors in ILP"
                 timings.append(TimingResult(algorithm="ILP_enum", graph_name=name, n=len(G.vertices), P=num_attractors,
                                             T=max_length, simplify=simplify, sample=None, slice_size=slice_size,
                                             time='invalid'))
@@ -86,7 +88,6 @@ for i in range(8000):
             timings.append(TimingResult(algorithm="ILP_enum", graph_name=name, n=len(G.vertices), P=num_attractors,
                                         T=max_length, simplify=simplify, sample=None, slice_size=slice_size,
                                         time="invalid"))
-
 
     # save on each iteration, why not
     with open('temp_runtime_dict.csv', 'wb') as csv_file:

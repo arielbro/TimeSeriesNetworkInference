@@ -1,3 +1,4 @@
+import numpy
 import os
 import itertools
 import logic
@@ -12,7 +13,7 @@ import stochastic
 import subprocess
 
 
-timeout_seconds = 60 * 5  # TODO: refactor somewhere?
+timeout_seconds = 60 * 60  # TODO: refactor somewhere?
 
 
 class TimeoutError(Exception):
@@ -60,11 +61,39 @@ def find_num_attractors_multistage(G, use_ilp):
 
 
 def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, verbose=False,
-                                 sample_mip_start_bounds=None, simplify_general_boolean=False,
+                                 sampling_bounds=None, use_sampling_for_mip_start=True, simplify_general_boolean=False,
                                  key_slice_size=15):
+    # TODO: refactor to a method that returns actual attractors (like in the enumerate version).
     T = 2 ** len(G.vertices) if not max_len else max_len
     P = 2 ** len(G.vertices) if not max_num else max_num
+
     start_time = time.time()
+
+    if sampling_bounds is not None:
+        attractor_sampling_num_walks = sampling_bounds[0]
+        attractor_sampling_walk_length = sampling_bounds[1]
+        # TODO: implement for graphs with non-fixed vertex functions. Maybe include multiple re-rolls of functions
+        # TODO: to find the most attractors.
+        nonfixed = False
+        for vertex in G.vertices:
+            if vertex.function is None and len(vertex.predecessors()) > 0:
+                nonfixed = True
+                print "Attractor sampling for non-fixed functions currently unsupported. Skipping."
+                sampling_bounds = None
+                break
+        if not nonfixed:
+            sample_start = time.time()
+            # simulate graph to obtain some attractors, then feed them as MIP start to the model.
+            attractor_basin_tuples = stochastic.estimate_attractors(G, n_walks=attractor_sampling_num_walks,
+                                                                    max_walk_len=attractor_sampling_walk_length)
+            num_raw_attractors = len(attractor_basin_tuples)
+            attractors = [attractor for (attractor, _) in attractor_basin_tuples if len(attractor) <= T]
+            print "sampled {} suitable attractors (and {} total)".format(len(attractors), num_raw_attractors)
+            print "time taken for attractor sampling: {:.2f} seconds".format(time.time() - sample_start)
+            if len(attractors) >= P:
+                return P
+            if not use_sampling_for_mip_start:
+                P = P - len(attractors)
 
     if use_sat:
         ATTRACTORS, active_logic_vars = logic.get_attractors_formula(G, P, T)
@@ -80,31 +109,14 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         model, formulas_to_variables = ilp.logic_to_ilp(ATTRACTORS)
         active_ilp_vars = [formulas_to_variables[active_logic_var] for active_logic_var in active_logic_vars]
     else:
-        model, active_ilp_vars, v_matrix = ilp.attractors_ilp_with_keys(G, T, P, simplify_general_boolean=simplify_general_boolean,
+        model, active_ilp_vars, v_matrix, state_keys = ilp.attractors_ilp_with_keys(G, T, P, simplify_general_boolean=simplify_general_boolean,
                                                                         slice_size=key_slice_size)
-        if sample_mip_start_bounds is not None:
-            attractor_sampling_num_walks = sample_mip_start_bounds[0]
-            attractor_sampling_walk_length = sample_mip_start_bounds[1]
-            #TODO: implement for graphs with non-fixed vertex functions. Maybe include multiple re-rolls of functions
-            #TODO: to find the most attractors.
-            nonfixed = False
-            for vertex in G.vertices:
-                if vertex.function is None and len(vertex.predecessors()) > 0:
-                    nonfixed = True
-                    print "Attractor sampling for non-fixed functions currently unsupported. Skipping."
-                    break
-            if not nonfixed:
-                sample_start = time.time()
-                # simulate graph to obtain some attractors, then feed them as MIP start to the model.
-                attractor_basin_tuples = stochastic.estimate_attractors(G, n_walks=attractor_sampling_num_walks,
-                                                                        max_walk_len=attractor_sampling_walk_length)
-                num_raw_attractors = len(attractor_basin_tuples)
-                attractors = [attractor for (attractor, _) in attractor_basin_tuples if len(attractor) <= T]
-                print "sampled {} suitable attractors (and {} total)".format(len(attractors), num_raw_attractors)
-                print "time taken for attractor sampling: {:.2f} seconds".format(time.time() - sample_start)
-                if len(attractors) >= P:
-                    return P
+        if sampling_bounds is not None:
+            if use_sampling_for_mip_start:
                 ilp.set_mip_start(model, v_matrix, active_ilp_vars, attractors)
+            else:
+                ilp.add_uniqueness_constraints_from_sampled_attractors(model, state_keys, attractors, 2**key_slice_size,
+                                                                       active_ilp_vars, "sampling_non_equality")
 
     model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
     # model.setParam(gurobipy.GRB.Param.NumericFocus, 3)
@@ -152,7 +164,11 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         # ilp.print_model_constraints(model)
         # model.printStats()
         print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
-        return int(round(model.objVal))
+        if (sampling_bounds is None) or use_sampling_for_mip_start:
+            return int(round(model.objVal))
+        else:
+            return int(round(model.objVal)) + len(attractors)
+
     # for constr in model.getConstrs():
     #     print constr
     # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
@@ -161,12 +177,85 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
 
 
-def find_num_attractors_onestage_enumeration(G, max_len=None, verbose=False, simplify_general_boolean=False,
-                                             key_slice_size=15):
+def find_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_size=15):
+    start_time = time.time()
+
+    # first, find original model's attractors.
+    for v in G.vertices:
+        assert (v.function is not None) or len(v.predecessors()) == 0
+    attractors = find_attractors_onestage_enumeration(G=G, max_len=max_len, verbose=verbose,
+                                                      simplify_general_boolean=True, key_slice_size=key_slice_size)
+
+    model, state_keys, a_matrix, function_bitchange_vars = \
+        ilp.bitchange_attractor_ilp_with_keys(G, max_len=max_len, slice_size=key_slice_size)
+    ilp.add_model_invariant_uniqueness_constraints(model=model, model_state_keys=state_keys, attractors=attractors,
+                                                   upper_bound=2 ** key_slice_size, model_activity_vars=a_matrix)
+
+    model.addConstr(sum(function_bitchange_vars) >= 1) # So Gurobi doesn't work hard proving this.
+    model.update()
+    model.setObjective(sum(function_bitchange_vars), gurobipy.GRB.MINIMIZE)
+    # model.setParam(gurobipy.GRB.Param.NumericFocus, 3)
+    # model.setParam(gurobipy.GRB.Param.OptimalityTol, 1e-6) # gurobi warns against using those for numerical issues
+    # model.setParam(gurobipy.GRB.Param.IntFeasTol, 1e-9)
+    # model.setParam(gurobipy.GRB.Param.MIPGapAbs, 0.1)
+    if not verbose:
+        model.params.LogToConsole = 0
+
+    # model.tune()  # try automatic parameter tuning
+    # model.getTuneResult(0)  # take best tuning parameters
+    # model.write('tune v-{} P-{} T-{}.prm'.format(len(G.vertices), P, T))
+    # print model
+    # model_vars = model.getVars()
+    # ilp.print_model_constraints(model)
+    # for var in model.getVars():
+    #     var.Start = 0
+
+    model.setParam('TimeLimit', timeout_seconds)
+
+    model.optimize()
+    model.update()
+    # model.write("./model_mip_start.mst") # that just write sthe final solution as a MIP start...
+
+    # ilp.print_opt_solution(model)
+    # print model
+    if model.Status != gurobipy.GRB.OPTIMAL:
+        print "warning, model not solved to optimality."
+        if model.Status == gurobipy.GRB.INFEASIBLE:
+            # print "writing IIS data to model_iis.ilp"
+            # model.computeIIS()
+            # model.write("./model_iis.ilp")
+            return numpy.inf
+            # raise RuntimeError("Gurobi failed to reach optimal solution")
+        elif model.Status == gurobipy.GRB.TIME_LIMIT:
+            raise TimeoutError("Gurobi failed with time_out")
+        else:
+            raise ValueError("Gurobi failed, status code - {}".format(model.Status))
+    else:
+        # print "# attractors = {}".format(model.ObjVal)
+        if model.ObjVal != int(round(model.ObjVal)):
+            print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
+        # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
+        # ilp.print_attractors(model)
+        # ilp.print_model_values(model)
+        # ilp.print_model_constraints(model)
+        # model.printStats()
+        print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
+        return int(round(model.objVal))
+
+        # for constr in model.getConstrs():
+        #     print constr
+        # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
+        #        if re.match("a_[0-9]*_[0-9]*", v.varName)]  # abs(v.obj) > 1e-6
+        # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
+        #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
+
+
+def find_attractors_onestage_enumeration(G, max_len=None, verbose=False, simplify_general_boolean=False,
+                                         key_slice_size=15):
     T = 2 ** len(G.vertices) if not max_len else max_len
     start_time = time.time()
 
-    model, active_ilp_vars, v_matrix = ilp.attractors_ilp_with_keys(G, T, 1,
+    model, active_ilp_vars, v_matrix, _ = ilp.attractors_ilp_with_keys(G, T, 1,
                                                                     simplify_general_boolean=simplify_general_boolean,
                                                                     slice_size=key_slice_size)
     model.addConstr(sum(active_ilp_vars) == 1)
@@ -200,7 +289,7 @@ def find_num_attractors_onestage_enumeration(G, max_len=None, verbose=False, sim
         if model.Status == gurobipy.GRB.TIME_LIMIT:
             raise TimeoutError("Gurobi failed with time_out")
         elif model.Status == gurobipy.GRB.INFEASIBLE:
-            return 0
+            return []
         else:
             raise RuntimeError("Gurobi failed to reach optimal solution")
     else:
@@ -213,7 +302,8 @@ def find_num_attractors_onestage_enumeration(G, max_len=None, verbose=False, sim
         # ilp.print_model_constraints(model)
         # model.printStats()
         print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
-        return model.SolCount
+        print "number of attractors: {}".format(model.SolCount)
+        return ilp.get_model_attractors(model)
 
     # for constr in model.getConstrs():
     #     print constr
@@ -221,7 +311,6 @@ def find_num_attractors_onestage_enumeration(G, max_len=None, verbose=False, sim
     #        if re.match("a_[0-9]*_[0-9]*", v.varName)]  # abs(v.obj) > 1e-6
     # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
     #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
-
 
 
 def find_min_attractors_model(G, max_len=None, min_attractors=None, key_slice_size=15):
@@ -235,7 +324,7 @@ def find_min_attractors_model(G, max_len=None, min_attractors=None, key_slice_si
         print "P={}, T={}".format(P, T)
         iteration += 1
         start_time = time.time()
-        model, activity_variables, _ = ilp.attractors_ilp_with_keys(G, max_len=T, max_num=P, find_full_model=True,
+        model, activity_variables, _, _ = ilp.attractors_ilp_with_keys(G, max_len=T, max_num=P, find_full_model=True,
                                                                     model_type_restriction=False,
                                                                     slice_size=key_slice_size)
         model.params.LogToConsole = 0
@@ -308,7 +397,7 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
     T = 1
     while True:
         if use_state_keys:
-            model, active_ilp_vars, _ = ilp.attractors_ilp_with_keys(G, T, P,
+            model, active_ilp_vars, _, _ = ilp.attractors_ilp_with_keys(G, T, P,
                                                                      model_type_restriction=model_type_restriction,
                                                                      simplify_general_boolean=False,
                                                                      slice_size=key_slice_size)
@@ -494,7 +583,7 @@ def find_num_steady_states(G, verbose=False, simplify_general_boolean=False):
         # print "writing IIS data to model_iis.ilp"
         # model.computeIIS()
         # model.write("./model_iis.ilp")
-        print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start)
+        # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start)
         return 0
     else:
         # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
@@ -512,10 +601,10 @@ def find_num_steady_states(G, verbose=False, simplify_general_boolean=False):
                 else:
                     steady_state.append(int(v_vars_dict[v].Xn))
             steady_states.append(steady_state)
-        print "steady states:"
-        for ss in steady_states:
-            print reduce(lambda x, y: str(x) + ", " + str(y), ss)
-        print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start)
+        # print "steady states:"
+        # for ss in steady_states:
+        #     print reduce(lambda x, y: str(x) + ", " + str(y), ss)
+        # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start)
         return n_steady_states
 
 

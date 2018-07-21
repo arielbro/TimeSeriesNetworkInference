@@ -106,6 +106,17 @@ def estimate_size(n, m, T, P):
 
 # G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
 #                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
+# G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+#                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\arabidopsis.cnet.txt")
+# G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+#                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\EGFR_man_with_inputs_all_zero.cnet")
+G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large.cnet")
+# G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+#                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\thelper.cnet.txt")
+# G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+#                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\tcr.cnet")
+
 # print G
 # print len(G.vertices)
 # input_nodes = [u for u in G.vertices if len(u.predecessors()) == 0]
@@ -149,8 +160,10 @@ def estimate_size(n, m, T, P):
 # n_attractors = attractors.find_num_attractors_onestage(G=G, max_len=13, max_num=11, verbose=True, sample_mip_start=True,
 #                                                        simplify_general_boolean=True)
 
-G = graphs.Network.generate_random(50, indegree_bounds=[1, 5])
-# attractors.find_num_steady_states(G, verbose=True, simplify_general_boolean=True)
+# G = graphs.Network.generate_random(50, indegree_bounds=[1, 5])
+# # attractors.find_num_steady_states(G, verbose=True, simplify_general_boolean=True)
 
-attractors.find_num_attractors_onestage_enumeration(G, max_len=10, verbose=True, simplify_general_boolean=True,
-                                                    key_slice_size=10)
+# attractors.find_attractors_onestage_enumeration(G, max_len=10, verbose=True, simplify_general_boolean=True,
+#                                                 key_slice_size=10)
+
+print attractors.find_bitchange_for_new_attractor(G=G, max_len=10, verbose=True, key_slice_size=5)
