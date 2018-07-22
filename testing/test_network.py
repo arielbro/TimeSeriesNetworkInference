@@ -7,17 +7,25 @@ import sympy
 class TestNetwork(TestCase):
 
     def test_cnet_export_and_import(self):
-        n = random.randint(1, 20)
-        for restriction in [FunctionTypeRestriction.NONE, FunctionTypeRestriction.SYMMETRIC_THRESHOLD,
-                            FunctionTypeRestriction.SIMPLE_GATES]:
-            G = Network.generate_random(n_vertices=n, indegree_bounds=[1, 20],
-                                        function_type_restriction=restriction)
-            G.export_to_cnet("./temp_test_network.cnet")
-            G_tag = Network.parse_cnet("./temp_test_network.cnet")
-            self.assertEqual(G, G_tag)
+        for _ in range(30):
+            n = random.randint(1, 20)
+            for restriction in [FunctionTypeRestriction.NONE, FunctionTypeRestriction.SYMMETRIC_THRESHOLD,
+                                FunctionTypeRestriction.SIMPLE_GATES]:
+                if random.choice([False, True]):
+                    indegree_bounds = [0, 20]
+                    indegree_geometric_p = None
+                else:
+                    indegree_bounds = None
+                    indegree_geometric_p = 0.1
+                G = Network.generate_random(n_vertices=n, indegree_bounds=indegree_bounds,
+                                            function_type_restriction=restriction,
+                                            indegree_geometric_p=indegree_geometric_p)
+                G.export_to_cnet("./temp_test_network.cnet")
+                G_tag = Network.parse_cnet("./temp_test_network.cnet")
+                self.assertEqual(G, G_tag)
 
-        Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
-                           "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
+            Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+                               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
 
     def test_union(self):
         # check toy examples

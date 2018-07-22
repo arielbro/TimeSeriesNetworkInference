@@ -110,12 +110,12 @@ def estimate_size(n, m, T, P):
 #                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\arabidopsis.cnet.txt")
 # G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
 #                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\EGFR_man_with_inputs_all_zero.cnet")
-G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
-               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large.cnet")
+# G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+#                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large.cnet")
 # G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
 #                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\thelper.cnet.txt")
-# G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
-#                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\tcr.cnet")
+G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\tcr.cnet")
 
 # print G
 # print len(G.vertices)
@@ -166,4 +166,4 @@ G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ari
 # attractors.find_attractors_onestage_enumeration(G, max_len=10, verbose=True, simplify_general_boolean=True,
 #                                                 key_slice_size=10)
 
-print attractors.find_bitchange_for_new_attractor(G=G, max_len=10, verbose=True, key_slice_size=5)
+print attractors.find_bitchange_for_new_attractor(G=G, max_len=10, verbose=True, key_slice_size=5, use_dubrova=False)

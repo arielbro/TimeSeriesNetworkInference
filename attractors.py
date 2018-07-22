@@ -177,14 +177,20 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
 
 
-def find_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_size=15):
+def find_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_size=15, use_dubrova=False):
+    # TODO: add tests!
     start_time = time.time()
 
     # first, find original model's attractors.
     for v in G.vertices:
         assert (v.function is not None) or len(v.predecessors()) == 0
-    attractors = find_attractors_onestage_enumeration(G=G, max_len=max_len, verbose=verbose,
-                                                      simplify_general_boolean=True, key_slice_size=key_slice_size)
+    if use_dubrova:
+        attractors = find_attractors_dubrova(G=G, dubrova_dir_path="C:/Users/ariel/Downloads/Attractors - "
+                                                                   "for Ariel/Attractors - for Ariel/BNS_Dubrova_2011")
+        attractors = [att for att in attractors if len(att) <= max_len]
+    else:
+        attractors = find_attractors_onestage_enumeration(G=G, max_len=max_len, verbose=verbose,
+                                                          simplify_general_boolean=True, key_slice_size=key_slice_size)
 
     model, state_keys, a_matrix, function_bitchange_vars = \
         ilp.bitchange_attractor_ilp_with_keys(G, max_len=max_len, slice_size=key_slice_size)
@@ -248,6 +254,8 @@ def find_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_size=1
         #        if re.match("a_[0-9]*_[0-9]*", v.varName)]  # abs(v.obj) > 1e-6
         # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
         #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
+
+# def find_bitchange_probability_for_new_attractor(G):
 
 
 def find_attractors_onestage_enumeration(G, max_len=None, verbose=False, simplify_general_boolean=False,
@@ -535,32 +543,53 @@ def write_random_fixed_graph_estimations_sampling(G, n_iter, function_type_restr
         writer.writerows(res)
 
 
-def find_num_attractors_dubrova(G, dubrova_dir_path, return_max_length=False):
+def find_attractors_dubrova(G, dubrova_dir_path, mutate_input_nodes=False):
     """
-    Export G, call dubrova's algorithm on it, and parse number of attractors from results.
+    Export G, call dubrova's algorithm on it, and parse the attractors from results.
     :param G:
     :param dubrova_dir_path:
     :return: n_attractors
     """
     # TODO: write tests.
-    temp_network_path = "./temp_network.cnet"
-    graphs.Network.export_to_cnet(G, temp_network_path)
-    env = os.environ.copy()
-    env['PATH'] += ";C:/cygwin/bin"  # TODO: less hardcoding (it somehow didn't have the right PATH)
-    process = subprocess.Popen(args=[os.path.join(dubrova_dir_path, "bns.exe"), temp_network_path],
-                               stderr=subprocess.STDOUT, stdout=subprocess.PIPE, env=env)
-    out, _ = process.communicate()
-    if process.returncode != 0:
-        raise RuntimeError("Error while running Dubrova - code={}, message={}".
-                           format(process.returncode, out))
-    os.remove(temp_network_path)
-    # Dubrova's output format has a total of attractors on the one before last line.
-    # Attractor lengths are last word of lines starting with "Attractor"
-    num_attractors = int(out.split("\n")[-2].split(" ")[-1])
-    if return_max_length:
-        max_length = max(int(line.split(" ")[-1]) for line in out.split("\n")[:-2] if line.startswith("Attractor"))
-        return num_attractors, max_length
-    return num_attractors
+    G = G.copy()
+    input_nodes = [v for v in G.vertices if len(v.predecessors()) == 0] if mutate_input_nodes else []
+    attractors = []
+
+    for v in G.vertices:
+        if len(v.predecessors()) != 0 and v.function is None:
+            raise ValueError("Can't run dubrova with a non-fixed vertex function")
+
+    for input_combination in itertools.product([0,1], repeat=len(input_nodes)):
+
+        for i, input_node in enumerate(input_nodes):
+            input_node.function = bool(input_combination[i])
+
+        temp_network_path = "./temp_network.cnet"
+        graphs.Network.export_to_cnet(G, temp_network_path)
+        env = os.environ.copy()
+        env['PATH'] += ";C:/cygwin/bin"  # TODO: less hardcoding (it somehow didn't have the right PATH)
+        process = subprocess.Popen(args=[os.path.join(dubrova_dir_path, "bns.exe"), temp_network_path],
+                                   stderr=subprocess.STDOUT, stdout=subprocess.PIPE, env=env)
+        out, _ = process.communicate()
+        if process.returncode != 0:
+            raise RuntimeError("Error while running Dubrova - code={}, message={}".
+                               format(process.returncode, out))
+        os.remove(temp_network_path)
+        # Dubrova's output format has a total of attractors on the one before last line.
+        # Attractor lengths are last word of lines starting with "Attractor"
+        num_attractors = int(out.split("\n")[-2].split(" ")[-1])
+
+        cur_attractor = []
+        for line in out.split("\n"):
+            if line.startswith("0") or line.startswith("1"):
+                cur_attractor.append([int(c) for c in line])
+            elif len(cur_attractor) > 0:
+                attractors.append(cur_attractor)
+                cur_attractor = []
+
+        assert len(attractors) == num_attractors
+
+    return attractors
 
 
 def find_num_steady_states(G, verbose=False, simplify_general_boolean=False):

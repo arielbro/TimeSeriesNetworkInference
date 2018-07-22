@@ -3,6 +3,7 @@ import itertools
 import random
 import re
 import time
+import numpy as np
 from enum import Enum
 import sympy
 
@@ -75,10 +76,12 @@ class Network:
     def __ne__(self, other):
         return not self == other
 
-    def randomize_functions(self, function_type_restriction=FunctionTypeRestriction.NONE):
+    def randomize_functions(self, function_type_restriction=FunctionTypeRestriction.NONE, mutate_inputs=False):
         for v in self.vertices:
             n = len(v.predecessors())
-            if function_type_restriction == FunctionTypeRestriction.NONE:
+            if n == 0 and mutate_inputs:
+                v.function = random.choice([False, True])
+            elif function_type_restriction == FunctionTypeRestriction.NONE:
                 boolean_outputs = [random.choice([False, True]) for _ in range(2 ** n)]
                 input_names = [u.name for u in v.predecessors()]
                 v.function = BooleanSymbolicFunc(input_names=input_names, boolean_outputs=boolean_outputs)
@@ -137,11 +140,17 @@ class Network:
 
     # TODO: generate scale-free graphs
     @staticmethod
-    def generate_random(n_vertices, indegree_bounds=(1, 5), function_type_restriction=FunctionTypeRestriction.NONE):
+    def generate_random(n_vertices, indegree_bounds=(1, 5), function_type_restriction=FunctionTypeRestriction.NONE,
+                        indegree_geometric_p=None):
         vertices = list(range(n_vertices))
         edges = set()
         for v in vertices:
-            indegree = random.randint(indegree_bounds[0], min(indegree_bounds[1], n_vertices))
+            if indegree_bounds is not None:
+                indegree = random.randint(indegree_bounds[0], min(indegree_bounds[1], n_vertices))
+            elif indegree_geometric_p is not None:
+                indegree = min([np.random.geometric(indegree_geometric_p), len(vertices)])
+            else:
+                raise ValueError("either indegree_bounds or indegree_exponent need to be set")
             predecessors = random.sample(vertices, indegree)
             for u in predecessors:
                 edges.add((u, v))
@@ -173,12 +182,17 @@ class Network:
                 for u in v.predecessors():
                     cnet_file.write(" {}".format(u.index + 1))
                 cnet_file.write("\n")
-                for combination in itertools.product([False, True], repeat=len(v.predecessors())):
-                    comb_str = "".join(map(lambda t_val: "1" if t_val else "0", combination))
-                    out = v.function(*combination)
-                    assert (out == True) or (out == False)
-                    out = 1 if out else 0
-                    cnet_file.write("{} {}\n".format(comb_str, out))
+                if (len(v.predecessors()) == 0) and v.function is not None:
+                    is_true = v.function == True or (isinstance(v.function, type(lambda _:_)) and v.function() == True)
+                    out = 1 if is_true else 0
+                    cnet_file.write("{}\n".format(out))
+                else:
+                    for combination in itertools.product([False, True], repeat=len(v.predecessors())):
+                        comb_str = "".join(map(lambda t_val: "1" if t_val else "0", combination))
+                        out = v.function(*combination)
+                        assert (out == True) or (out == False)
+                        out = 1 if out else 0
+                        cnet_file.write("{} {}\n".format(comb_str, out))
                 cnet_file.write("\n")
             cnet_file.write("\n\n")
         print "time taken for graph export: {:.2f}".format(time.time() - start)
