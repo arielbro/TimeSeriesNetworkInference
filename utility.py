@@ -1,5 +1,42 @@
 import fractions
 import math
+import sympy
+
+
+def rotate(l, n):
+    return l[n:] + l[:n]
+
+
+class Attractor:
+    # TODO: Use a general class for attractors (everywhere)
+    def __init__(self, states):
+        # print states
+        largest_ind = max(range(len(states)), key=lambda t: order_key_func(states[t]))
+        self.states = tuple(states[(t + largest_ind + 1) % len(states)] for t in range(len(states)))
+
+    def __eq__(self, other):
+        """
+        Compares attractors invariant to rotation (by rotating both to have largest state last)
+        Note that the container types used for attractor states are important (e.g. [0,0,0] != (0,0,0))
+        :param self:
+        :param other:
+        :return:
+        """
+        if not isinstance(other, Attractor):
+            raise NotImplementedError("Can't compare an attractor to anything else")
+        if len(self.states) != len(other.states):
+            return False
+
+        return self.states == other.states
+
+    def __ne__(self, other):
+        return not self == other
+
+    def __hash__(self):
+        return tuple([tuple(s) for s in self.states]).__hash__()
+
+
+def order_key_func(node_states): return sum(node * 2 ** i for (i, node) in enumerate(node_states))
 
 
 def list_repr(elements):
@@ -66,3 +103,51 @@ def binary_necklaces(n):
         s += phi(n / divisor) * (2**divisor)
         # print "d={}, phi(n/d)={}, s={}".format(divisor, phi(n/divisor), s)
     return s / n
+
+
+def attractor_sets_equality(first_attractors, second_attractors):
+    """
+    Compares two containers of attractors, invariant to rotations.
+    For efficiency (hopefully), creates a set-like structure for comparisons.
+    :param self.statess:
+    :param other.statess:
+    :return:
+    """
+    if len(first_attractors) != len(second_attractors):
+        return False
+    first_attractors_set = set(Attractor(att) for att in first_attractors)
+    second_attractors_set = set(Attractor(att) for att in second_attractors)
+    return first_attractors_set == second_attractors_set
+
+
+def is_same_attractor(a1, a2):
+    """
+    :param a1: an attractor, represented as an ordered iterable of network states
+    :param a2: ""
+    :return: True iff the attractors have same states in same order, up to a shift.
+    """
+    if len(a1) != len(a2):
+        return False
+    a1 = tuple(tuple(1 if v_state else 0 for v_state in s) for s in a1)
+    a2 = tuple(tuple(1 if v_state else 0 for v_state in s) for s in a2)
+    for shift in range(len(a1)):
+        if a1 == rotate(a2, shift):
+            return True
+    return False
+
+
+def is_same_state(s1, s2):
+    """
+    :param s1: A network state, represented as an ordered iterable of values interpretable as boolean.
+    :param s2: ""
+    :return: True if s1 and s2 represent the same state
+    """
+    if len(s1) != len(s2):
+        return False
+    for v_state in s1:
+        assert v_state in [0, 1, False, True, sympy.false, sympy.true]
+    for v_state in s2:
+        assert v_state in [0, 1, False, True, sympy.false, sympy.true]
+    s1_standard = tuple(1 if v_state else 0 for v_state in s1)
+    s2_standard = tuple(1 if v_state else 0 for v_state in s2)
+    return s1_standard == s2_standard

@@ -1,3 +1,4 @@
+import utility
 import numpy
 import os
 import itertools
@@ -14,6 +15,7 @@ import subprocess
 
 
 timeout_seconds = 60 * 60  # TODO: refactor somewhere?
+dubrova_dir_path = "C:/Users/ariel/Downloads/Attractors - for Ariel/Attractors - for Ariel/BNS_Dubrova_2011"
 
 
 class TimeoutError(Exception):
@@ -89,6 +91,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
             num_raw_attractors = len(attractor_basin_tuples)
             attractors = [attractor for (attractor, _) in attractor_basin_tuples if len(attractor) <= T]
             print "sampled {} suitable attractors (and {} total)".format(len(attractors), num_raw_attractors)
+            # print attractors
             print "time taken for attractor sampling: {:.2f} seconds".format(time.time() - sample_start)
             if len(attractors) >= P:
                 return P
@@ -177,7 +180,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
 
 
-def find_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_size=15, use_dubrova=False):
+def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_size=15, use_dubrova=False):
     # TODO: add tests!
     start_time = time.time()
 
@@ -185,8 +188,7 @@ def find_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_size=1
     for v in G.vertices:
         assert (v.function is not None) or len(v.predecessors()) == 0
     if use_dubrova:
-        attractors = find_attractors_dubrova(G=G, dubrova_dir_path="C:/Users/ariel/Downloads/Attractors - "
-                                                                   "for Ariel/Attractors - for Ariel/BNS_Dubrova_2011")
+        attractors = find_attractors_dubrova(G=G, dubrova_dir_path=dubrova_dir_path)
         attractors = [att for att in attractors if len(att) <= max_len]
     else:
         attractors = find_attractors_onestage_enumeration(G=G, max_len=max_len, verbose=verbose,
@@ -255,7 +257,73 @@ def find_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_size=1
         # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
         #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
 
-# def find_bitchange_probability_for_new_attractor(G):
+
+def find_model_bitchange_probability_for_different_attractors(G, n_iter=100):
+    # TODO: implement for other types of functions? Implement less expensively?
+    # TODO: write tests
+    # TODO: implement individual vertex stability.
+    attractors = find_attractors_dubrova(G, dubrova_dir_path=dubrova_dir_path, mutate_input_nodes=True)
+
+    n_changes = 0
+
+    for i in range(n_iter):
+        if i and not i % 10:
+            print "iteration #{}".format(i)
+        copy = G.copy()
+        v = random.choice([vertex for vertex in copy.vertices if len(vertex.predecessors()) != 0])
+        truth_table_row = random.choice(list(itertools.product([False, True], repeat=len(v.predecessors()))))
+        current_value = v.function(*truth_table_row)
+
+        if isinstance(v.function, logic.BooleanSymbolicFunc):
+            v.function = logic.BooleanSymbolicFunc(formula=v.function.formula)  # don't mutate existing vertex's function
+            truth_table_row_expression = sympy.And(*[
+                var if val else sympy.Not(val) for val, var in zip(truth_table_row, v.function.input_vars)])
+            if current_value:
+                v.function.formula = sympy.And(v.function.formula, sympy.Not(truth_table_row_expression))
+            else:
+                v.function.formula = sympy.Or(v.function.formula, truth_table_row_expression)
+        elif isinstance(v.function, logic.SymmetricThresholdFunction):
+            raise NotImplementedError("can't do a bitchange for a SymmetricThresholdFunction")
+        elif callable(v.function):
+            old = v.function
+            v.function = lambda *state: not current_value if tuple(
+                True if p else False for p in state) == truth_table_row else old(*state)
+        else:
+            raise NotImplementedError("Can't do a bitchange for a non-function")
+
+        new_attractors = find_attractors_dubrova(copy, dubrova_dir_path, mutate_input_nodes=True)
+        if not utility.attractor_sets_equality(attractors, new_attractors):
+            n_changes += 1
+    return float(n_changes) / n_iter
+
+
+def find_state_bitchange_probability_for_different_attractors(G, n_iter=1000):
+    """
+    Stochastically estimate the probability for a bitchange in a network state to move the network
+    from a certain attractor to another attractor (or to the basin of another attractor).
+    :param G:
+    :param n_iter:
+    :return:
+    """
+    # TODO: add an option to distinguish input nodes from others
+    # TODO: implement individual attractor stability.
+    attractor_changes = 0
+    state_to_attractor_mapping = dict()
+    for i in range(n_iter):
+        # if i and not (i % 10):
+        #     print i
+        initial_state = stochastic.random_state(G)
+        original_attractor = stochastic.walk_to_attractor(G, initial_state, max_walk=None,
+                                                          state_to_attractor_mapping=state_to_attractor_mapping)
+        unaltered_state = random.choice(original_attractor)
+        perturbed_index = random.randint(0, len(unaltered_state) - 1)
+        perturbed_state = unaltered_state[:perturbed_index] + \
+            (1 - unaltered_state[perturbed_index], ) + unaltered_state[perturbed_index + 1:]
+        perturbed_attractor = stochastic.walk_to_attractor(G, perturbed_state, max_walk=None,
+                                                           state_to_attractor_mapping=state_to_attractor_mapping)
+        if not utility.is_same_attractor(original_attractor, perturbed_attractor):
+            attractor_changes += 1
+    return attractor_changes / float(n_iter)
 
 
 def find_attractors_onestage_enumeration(G, max_len=None, verbose=False, simplify_general_boolean=False,
@@ -582,12 +650,10 @@ def find_attractors_dubrova(G, dubrova_dir_path, mutate_input_nodes=False):
         cur_attractor = []
         for line in out.split("\n"):
             if line.startswith("0") or line.startswith("1"):
-                cur_attractor.append([int(c) for c in line])
+                cur_attractor.append([int(c) for c in line if c != " "])
             elif len(cur_attractor) > 0:
                 attractors.append(cur_attractor)
                 cur_attractor = []
-
-        assert len(attractors) == num_attractors
 
     return attractors
 

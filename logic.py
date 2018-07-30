@@ -7,9 +7,11 @@ from utility import list_repr
 
 class BooleanSymbolicFunc:
     def __init__(self, input_names=None, boolean_outputs=None, formula=None):
+        self.boolean_outputs = boolean_outputs  # for easy exporting of truth-tables
+
         if formula is not None:
             self.formula = formula
-            self.input_vars = sorted(formula.free_symbols, key=lambda var: var.name)
+            self.input_vars = sorted(formula.free_symbols, key=lambda x: x.name)
             return
 
         if len(input_names) != math.frexp(len(boolean_outputs))[1] - 1:
@@ -23,14 +25,18 @@ class BooleanSymbolicFunc:
             assert len(boolean_outputs) == 1
             self.formula = boolean_outputs[0]
             return
-        formula = sympy.false
-        for b_output, terms in zip(boolean_outputs, itertools.product(*[[~var, var] for var in boolean_inputs])):
-            if b_output:  # TODO: Karnaugh maps?
-                formula = formula | sympy.And(*terms)
-        self.formula = formula
+        # TODO: Karnaugh maps? Sympy simplification?
+        positive_row_clauses = [sympy.And(*terms) for b_output, terms in zip(
+            boolean_outputs, itertools.product(*[[~var, var] for var in boolean_inputs])) if b_output]
+        self.formula = sympy.Or(*positive_row_clauses)
+
+    def get_truth_table_outputs(self):
+        if self.boolean_outputs is not None:
+            return self.boolean_outputs
+        return [self(*row) for row in itertools.product([False, True], repeat=len(self.input_vars))]
 
     def __call__(self, *input_values):
-        if isinstance(self.formula, bool) or len(self.formula.free_symbols) == 0:
+        if isinstance(self.formula, bool) or (len(self.input_vars) == 0):
             return self.formula
         return self.formula.subs(zip(self.input_vars, input_values))
 

@@ -81,25 +81,27 @@ class Network:
             n = len(v.predecessors())
             if n == 0 and mutate_inputs:
                 v.function = random.choice([False, True])
+            elif n == 0:
+                v.function = None
             elif function_type_restriction == FunctionTypeRestriction.NONE:
                 boolean_outputs = [random.choice([False, True]) for _ in range(2 ** n)]
                 input_names = [u.name for u in v.predecessors()]
                 v.function = BooleanSymbolicFunc(input_names=input_names, boolean_outputs=boolean_outputs)
+            elif function_type_restriction == FunctionTypeRestriction.SYMMETRIC_THRESHOLD:
+                signs = [random.choice([False, True]) for _ in range(n)]
+                threshold = random.randint(1, n) if \
+                    function_type_restriction != FunctionTypeRestriction.SIMPLE_GATES else \
+                    random.choice([1, n])
+                v.function = SymmetricThresholdFunction(signs, threshold)
+            elif function_type_restriction == FunctionTypeRestriction.SIMPLE_GATES:
+                raise NotImplementedError("randomizing simple gates funntions not yet implemented")
             else:
-                if n == 0:
-                    # either no function, or an AND and add node as its own predecessor, to assert stability.
-                    v.function = None
-                else:
-                    signs = [random.choice([False, True]) for _ in range(n)]
-                    threshold = random.randint(1, n) if \
-                        function_type_restriction != FunctionTypeRestriction.SIMPLE_GATES else \
-                        random.choice([1, n])
-                    v.function = SymmetricThresholdFunction(signs, threshold)
+                raise ValueError("unknown function type restriction: {}".format(function_type_restriction))
 
     def __add__(self, other):
         return self.union(self, other)
 
-    def next_state(self, vertex_states, return_as_string=True):
+    def next_state(self, vertex_states, return_as_string=False):
         v_states = []
         assert len(vertex_states) == len(self.vertices)
         if isinstance(vertex_states, str):
@@ -121,7 +123,9 @@ class Network:
                 res += '1' if state in [True, sympy.true] else '0'
             return res
         else:
-            return v_next_states
+            for state in v_next_states:
+                assert state in [False, True, sympy.false, sympy.true, 0, 1]
+            return tuple(1 if s else 0 for s in v_next_states)
 
     @staticmethod
     def union(a, b):
@@ -182,20 +186,26 @@ class Network:
                 for u in v.predecessors():
                     cnet_file.write(" {}".format(u.index + 1))
                 cnet_file.write("\n")
+                if (len(v.predecessors()) != 0) and v.function is None:
+                    raise NotImplementedError("Can't export a graph with a non-fixed function.")
                 if (len(v.predecessors()) == 0) and v.function is not None:
                     is_true = v.function == True or (isinstance(v.function, type(lambda _:_)) and v.function() == True)
                     out = 1 if is_true else 0
                     cnet_file.write("{}\n".format(out))
-                else:
-                    for combination in itertools.product([False, True], repeat=len(v.predecessors())):
-                        comb_str = "".join(map(lambda t_val: "1" if t_val else "0", combination))
-                        out = v.function(*combination)
+                elif len(v.predecessors()) != 0:
+                    rows = list(itertools.product([False, True], repeat=len(v.predecessors())))
+                    if isinstance(v.function, BooleanSymbolicFunc):
+                        row_outputs = v.function.get_truth_table_outputs()
+                    else:
+                        row_outputs = [v.function(*row) for row in rows]
+                    for row, out in zip(rows, row_outputs):
+                        comb_str = "".join(map(lambda t_val: "1" if t_val else "0", row))
                         assert (out == True) or (out == False)
                         out = 1 if out else 0
                         cnet_file.write("{} {}\n".format(comb_str, out))
                 cnet_file.write("\n")
             cnet_file.write("\n\n")
-        print "time taken for graph export: {:.2f}".format(time.time() - start)
+        # print "time taken for graph export: {:.2f}".format(time.time() - start)
 
     @staticmethod
     def parse_cnet(path):
@@ -227,6 +237,8 @@ class Network:
                 assert set(indices) == set(range(1, n + 1))
                 names = [re.search(r"=[ \t]*([0-9a-zA-Z_\-\\ ]+)", line).group(1) for
                          line in section.split("\n")[1:]]
+                # names with spaces cause troubles when making sympy vars
+                names = [name.replace(" ", "_") for name in names]
                 continue
             if ".n" in section:
                 # boolean functions
@@ -369,8 +381,6 @@ class Vertex:
         self.precomputed_predecessors = None
         self.precomputed_successors = None
 
-
-
     def predecessors(self):
         if not self.precomputed_predecessors:
             # search using names (asserted to be unique during init) to avoid circular dependencies predecessors <> key
@@ -389,7 +399,13 @@ class Vertex:
         return self.precomputed_successors
 
     def __key(self):
-        return self.name, self.function
+        if self.function is None:
+            return self.name, None
+        if len(self.predecessors()) == 0 and callable(self.function):
+            return self.name, self.function()
+        outputs = tuple(self.function(*row) for row in itertools.product([False, True],
+                                                                         repeat=len(self.predecessors())))
+        return self.name, outputs
 
     def __eq__(self, other):
         if not isinstance(other, Vertex):

@@ -7,6 +7,7 @@ import time
 import math
 from graphs import FunctionTypeRestriction
 from gurobipy import GRB
+from utility import order_key_func
 
 # TODO: find good upper bound again, why didn't 29 work on MAPK_large2?
 # http://files.gurobi.com/Numerics.pdf a good resource on numerical issues, high values cause them.
@@ -140,7 +141,6 @@ def add_uniqueness_constraints_from_sampled_attractors(model, model_state_keys, 
     """
     P = len(last_states_activity_vars)
     T = len(model_state_keys[0]) - 1
-    order_key_func = lambda node_states: sum(node * 2**i for (i, node) in enumerate(node_states))
 
     # Record the largest state in each sampled attractor
     largest_sampled_states = list()
@@ -179,6 +179,7 @@ def add_model_invariant_uniqueness_constraints(
     """
     P = len(model_activity_vars)
     T = len(model_activity_vars[0]) - 1
+    n = len(attractors[0][0])
 
     def order_key_func(node_states): return sum(node * 2**i for (i, node) in enumerate(node_states))
 
@@ -219,11 +220,14 @@ def add_model_invariant_uniqueness_constraints(
         # should match.
 
         state_difference_indicators = []
-        for t in range(T): # no need to require difference for last state in model, since it is redundant.
+        for t in range(T):  # no need to require difference for last state in model, since it is redundant.
             num_slices = len(model_state_keys[p][t])
             is_active = t >= T - len(attractors[given_p])
-            given_state_keys = unique_state_keys(attractors[given_p][t - (T - len(attractors[given_p]))],
-                                                 slice_size) if is_active else [0] * num_slices
+            if is_active:
+                given_state_keys = unique_state_keys(attractors[given_p][t - (T - len(attractors[given_p]))],
+                                                     slice_size)
+            else:
+                given_state_keys = unique_state_keys([0] * n, slice_size)
             larger_var = create_state_keys_comparison_var(model, given_state_keys, model_state_keys[p][t],
                                                           include_equality=False,
                                                           upper_bound=upper_bound,

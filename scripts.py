@@ -114,8 +114,8 @@ def estimate_size(n, m, T, P):
 #                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large.cnet")
 # G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
 #                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\thelper.cnet.txt")
-G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
-               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\tcr.cnet")
+# G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+#                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\tcr.cnet")
 
 # print G
 # print len(G.vertices)
@@ -166,4 +166,13 @@ G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ari
 # attractors.find_attractors_onestage_enumeration(G, max_len=10, verbose=True, simplify_general_boolean=True,
 #                                                 key_slice_size=10)
 
-print attractors.find_bitchange_for_new_attractor(G=G, max_len=10, verbose=True, key_slice_size=5, use_dubrova=False)
+# print attractors.find_bitchange_for_new_attractor(G=G, max_len=10, verbose=True, key_slice_size=5, use_dubrova=False)
+
+# print attractors.find_model_bitchange_probability_for_different_attractors(G, n_iter=20)
+
+
+G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+                   vertex_functions=[logic.SymmetricThresholdFunction(signs=[-1], threshold=1)])
+print attractors.find_num_attractors_onestage(G, max_len=2, max_num=3, verbose=True, sampling_bounds=(10, 10),
+                                              use_sampling_for_mip_start=False, simplify_general_boolean=False,
+                                              key_slice_size=5)
