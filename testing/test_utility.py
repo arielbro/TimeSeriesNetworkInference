@@ -18,12 +18,14 @@ class TestUtility(TestCase):
 
             second_attractors = first_attractors
             self.assertTrue(utility.attractor_sets_equality(first_attractors, second_attractors))
-            second_attractors = first_attractors.copy()
+            second_attractors = tuple(s for s in first_attractors)
             random.shuffle(second_attractors)
             self.assertTrue(utility.attractor_sets_equality(first_attractors, second_attractors))
             second_attractors = first_attractors[:-1]
             self.assertFalse(utility.attractor_sets_equality(first_attractors, second_attractors))
             first_attractors = first_attractors[1:]
+            print first_attractors
+            print second_attractors
             self.assertFalse(utility.attractor_sets_equality(first_attractors, second_attractors))
 
     def test_is_same_attractor(self):

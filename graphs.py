@@ -183,7 +183,7 @@ class Network:
             for v in sorted(self.vertices, key=lambda vertex: vertex.index):
                 cnet_file.write("# {} = {}\n".format(v.index + 1, v.name))
                 cnet_file.write(".n {} {}".format(v.index + 1, len(v.predecessors())))
-                for u in v.predecessors():
+                for u in sorted(v.predecessors(), key=lambda vertex: vertex.index):
                     cnet_file.write(" {}".format(u.index + 1))
                 cnet_file.write("\n")
                 if (len(v.predecessors()) != 0) and v.function is None:
@@ -193,6 +193,7 @@ class Network:
                     out = 1 if is_true else 0
                     cnet_file.write("{}\n".format(out))
                 elif len(v.predecessors()) != 0:
+                    # Assumption - v.function inputs are ordered by index (not e.g. name).
                     rows = list(itertools.product([False, True], repeat=len(v.predecessors())))
                     if isinstance(v.function, BooleanSymbolicFunc):
                         row_outputs = v.function.get_truth_table_outputs()
@@ -265,7 +266,7 @@ class Network:
                 # input is stated in bits, with - representing wildcards (/dontcares)
                 for bool_rule_str in re.findall(r"[0-9\-]+[ \t]+[01]", section):
                     output = bool(int(bool_rule_str.split()[1]))
-                    ordered_input_bits = [bit for arg_index, bit in sorted(zip(v_args, bool_rule_str.split()[0]))]
+                    ordered_input_bits = [bit for arg_index, bit in zip(v_args, bool_rule_str.split()[0])]
                     input_value_lists = [[False, True] if bit == '-' else [bool(int(bit))]
                                          for bit in ordered_input_bits]
                     for input_combination in itertools.product(*input_value_lists):
@@ -277,7 +278,7 @@ class Network:
                 bool_funcs.append(func)
         assert len(bool_funcs) == n
         G = Network(vertex_names=names, edges=edges, vertex_functions=bool_funcs)
-        print "time taken for graph import: {:.2f}".format(time.time() - start)
+        print "time taken for graph import: {:.2f} seconds".format(time.time() - start)
         return G
 
     def contract_vertex(self, vertex):
@@ -386,7 +387,7 @@ class Vertex:
             # search using names (asserted to be unique during init) to avoid circular dependencies predecessors <> key
             name_based_edges = [(u.name, v.name) for (u, v) in self.graph.edges]
             predecessors = sorted([u for u in self.graph.vertices if (u.name, self.name) in name_based_edges],
-                                  key=lambda vertex: vertex.name)
+                                  key=lambda vertex: vertex.index)
             self.precomputed_predecessors = predecessors
         return self.precomputed_predecessors
 
@@ -398,11 +399,17 @@ class Vertex:
             self.precomputed_successors = successors
         return self.precomputed_successors
 
-    def __key(self):
+    def _key(self):
         if self.function is None:
             return self.name, None
-        if len(self.predecessors()) == 0 and callable(self.function):
-            return self.name, self.function()
+        if len(self.predecessors()) == 0:
+            if callable(self.function):
+                return self.name, self.function()
+            elif self.function in (False, True, sympy.false, sympy.true, 0 ,1):
+                return bool(self.function)
+            else:
+                raise ValueError("An input node should not have a non function, "
+                                 "non boolean and non None function field.")
         outputs = tuple(self.function(*row) for row in itertools.product([False, True],
                                                                          repeat=len(self.predecessors())))
         return self.name, outputs
@@ -410,11 +417,11 @@ class Vertex:
     def __eq__(self, other):
         if not isinstance(other, Vertex):
             return False
-        return self.__key() == other.__key()
+        return self._key() == other._key()
 
     def __hash__(self):
         try:
-            return hash(self.__key())
+            return hash(self._key())
         except Exception as e:
             raise e
 

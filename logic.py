@@ -6,7 +6,7 @@ from utility import list_repr
 
 
 class BooleanSymbolicFunc:
-    def __init__(self, input_names=None, boolean_outputs=None, formula=None):
+    def __init__(self, input_names=None, boolean_outputs=None, formula=None, simplify_boolean_outputs=True):
         self.boolean_outputs = boolean_outputs  # for easy exporting of truth-tables
 
         if formula is not None:
@@ -29,6 +29,8 @@ class BooleanSymbolicFunc:
         positive_row_clauses = [sympy.And(*terms) for b_output, terms in zip(
             boolean_outputs, itertools.product(*[[~var, var] for var in boolean_inputs])) if b_output]
         self.formula = sympy.Or(*positive_row_clauses)
+        if simplify_boolean_outputs:
+            self.formula = sympy.simplify(self.formula)
 
     def get_truth_table_outputs(self):
         if self.boolean_outputs is not None:

@@ -170,9 +170,29 @@ def estimate_size(n, m, T, P):
 
 # print attractors.find_model_bitchange_probability_for_different_attractors(G, n_iter=20)
 
+#
+# G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+#                    vertex_functions=[logic.SymmetricThresholdFunction(signs=[-1], threshold=1)])
+# print attractors.find_num_attractors_onestage(G, max_len=2, max_num=3, verbose=True, sampling_bounds=(10, 10),
+#                                               use_sampling_for_mip_start=False, simplify_general_boolean=False,
+#                                               key_slice_size=5)
+#
 
-G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
-                   vertex_functions=[logic.SymmetricThresholdFunction(signs=[-1], threshold=1)])
-print attractors.find_num_attractors_onestage(G, max_len=2, max_num=3, verbose=True, sampling_bounds=(10, 10),
-                                              use_sampling_for_mip_start=False, simplify_general_boolean=False,
-                                              key_slice_size=5)
+import random
+from graphs import FunctionTypeRestriction, Network
+for _ in range(20):
+    n = random.randint(1, 20)
+    for restriction in [FunctionTypeRestriction.NONE, FunctionTypeRestriction.SYMMETRIC_THRESHOLD]:
+        # TODO: implement and test for FunctionTypeRestriction.SIMPLE_GATES
+        if random.choice([False, True]):
+            indegree_bounds = [0, 5]
+            indegree_geometric_p = None
+        else:
+            indegree_bounds = None
+            indegree_geometric_p = 0.6
+        G = Network.generate_random(n_vertices=n, indegree_bounds=indegree_bounds,
+                                    function_type_restriction=restriction,
+                                    indegree_geometric_p=indegree_geometric_p)
+        G.export_to_cnet("./temp_test_network.cnet")
+        G_tag = Network.parse_cnet("./temp_test_network.cnet")
+        assert G == G_tag
