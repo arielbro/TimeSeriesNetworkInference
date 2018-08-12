@@ -7,16 +7,16 @@ import utility
 class TestNetwork(TestCase):
 
     def test_cnet_export_and_import(self):
-        for _ in range(20):
+        for _ in range(10):
             n = random.randint(1, 20)
             for restriction in [FunctionTypeRestriction.NONE, FunctionTypeRestriction.SYMMETRIC_THRESHOLD]:
                 # TODO: implement and test for FunctionTypeRestriction.SIMPLE_GATES
                 if random.choice([False, True]):
-                    indegree_bounds = [0, 7]
+                    indegree_bounds = [0, 4]
                     indegree_geometric_p = None
                 else:
                     indegree_bounds = None
-                    indegree_geometric_p = 0.3
+                    indegree_geometric_p = 0.8
                 G = Network.generate_random(n_vertices=n, indegree_bounds=indegree_bounds,
                                             function_type_restriction=restriction,
                                             indegree_geometric_p=indegree_geometric_p)
@@ -108,3 +108,14 @@ class TestNetwork(TestCase):
                                                       true_double_step))
                 self.assertTrue(utility.is_same_state(G_cubed.next_state(starting_state, return_as_string=False),
                                                       true_triple_step))
+
+    def test_randomize_edges(self):
+        self.assertTrue(False)  # TODO: implement...
+
+    def truth_table_import_export(self):
+        for i in range(50):
+            n = random.randint(1, 10)
+            G = Network.generate_random(n_vertices=n, indegree_bounds=[1, 3])
+            G.export_to_boolean_tables(".", "temp_dir")
+            G_tag = Network.parse_boolean_tables("temp_dir")
+            self.assertTrue(G == G_tag)

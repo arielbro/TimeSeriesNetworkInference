@@ -13,8 +13,7 @@ import gurobipy
 import stochastic
 import subprocess
 
-
-timeout_seconds = 60 * 60  # TODO: refactor somewhere?
+timeout_seconds = 3 * 60  # TODO: refactor somewhere?
 dubrova_dir_path = "C:/Users/ariel/Downloads/Attractors - for Ariel/Attractors - for Ariel/BNS_Dubrova_2011"
 
 
@@ -180,7 +179,8 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
 
 
-def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_size=15, use_dubrova=False):
+def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_size=15, use_dubrova=False,
+                                           simplify_boolean=False):
     # TODO: add tests!
     start_time = time.time()
 
@@ -192,7 +192,8 @@ def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_
         attractors = [att for att in attractors if len(att) <= max_len]
     else:
         attractors = find_attractors_onestage_enumeration(G=G, max_len=max_len, verbose=verbose,
-                                                          simplify_general_boolean=True, key_slice_size=key_slice_size)
+                                                          simplify_general_boolean=simplify_boolean,
+                                                          key_slice_size=key_slice_size)
 
     model, state_keys, a_matrix, function_bitchange_vars = \
         ilp.bitchange_attractor_ilp_with_keys(G, max_len=max_len, slice_size=key_slice_size)
@@ -258,11 +259,14 @@ def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_
         #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
 
 
-def find_model_bitchange_probability_for_different_attractors(G, n_iter=100):
+def find_model_bitchange_probability_for_different_attractors(G, n_iter=100, use_dubrova=True, max_len=15):
     # TODO: implement for other types of functions? Implement less expensively?
     # TODO: write tests
     # TODO: implement individual vertex stability.
-    attractors = find_attractors_dubrova(G, dubrova_dir_path=dubrova_dir_path, mutate_input_nodes=True)
+    if use_dubrova:
+        attractors = find_attractors_dubrova(G, dubrova_dir_path=dubrova_dir_path, mutate_input_nodes=True)
+    else:
+        attractors = find_attractors_onestage_enumeration(G, max_len=max_len)
 
     n_changes = 0
 
@@ -275,13 +279,18 @@ def find_model_bitchange_probability_for_different_attractors(G, n_iter=100):
         current_value = v.function(*truth_table_row)
 
         if isinstance(v.function, logic.BooleanSymbolicFunc):
-            v.function = logic.BooleanSymbolicFunc(formula=v.function.formula)  # don't mutate existing vertex's function
+            # don't mutate existing vertex's function
+            v.function = logic.BooleanSymbolicFunc(formula=v.function.formula)
             truth_table_row_expression = sympy.And(*[
                 var if val else sympy.Not(val) for val, var in zip(truth_table_row, v.function.input_vars)])
             if current_value:
                 v.function.formula = sympy.And(v.function.formula, sympy.Not(truth_table_row_expression))
             else:
                 v.function.formula = sympy.Or(v.function.formula, truth_table_row_expression)
+            truth_table_row_index = sum(2**i for i, val in enumerate(truth_table_row))
+            if v.function.boolean_outputs is not None:
+                v.function.boolean_outputs[truth_table_row_index] = \
+                    not v.function.boolean_outputs[truth_table_row_index]
         elif isinstance(v.function, logic.SymmetricThresholdFunction):
             raise NotImplementedError("can't do a bitchange for a SymmetricThresholdFunction")
         elif callable(v.function):
@@ -291,7 +300,10 @@ def find_model_bitchange_probability_for_different_attractors(G, n_iter=100):
         else:
             raise NotImplementedError("Can't do a bitchange for a non-function")
 
-        new_attractors = find_attractors_dubrova(copy, dubrova_dir_path, mutate_input_nodes=True)
+        if use_dubrova:
+            new_attractors = find_attractors_dubrova(copy, dubrova_dir_path, mutate_input_nodes=True)
+        else:
+            new_attractors = find_attractors_onestage_enumeration(copy, max_len=15)
         if not utility.attractor_sets_equality(attractors, new_attractors):
             n_changes += 1
     return float(n_changes) / n_iter
@@ -627,12 +639,12 @@ def find_attractors_dubrova(G, dubrova_dir_path, mutate_input_nodes=False):
         if len(v.predecessors()) != 0 and v.function is None:
             raise ValueError("Can't run dubrova with a non-fixed vertex function")
 
-    for input_combination in itertools.product([0,1], repeat=len(input_nodes)):
+    for input_combination in itertools.product([0, 1], repeat=len(input_nodes)):
 
         for i, input_node in enumerate(input_nodes):
             input_node.function = bool(input_combination[i])
 
-        temp_network_path = "./temp_network.cnet"
+        temp_network_path = "./temp_network_{}_{}.cnet".format(int(time.time()), random.randint(1, 1000))
         graphs.Network.export_to_cnet(G, temp_network_path)
         env = os.environ.copy()
         env['PATH'] += ";C:/cygwin/bin"  # TODO: less hardcoding (it somehow didn't have the right PATH)

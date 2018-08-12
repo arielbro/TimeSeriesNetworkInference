@@ -6,6 +6,8 @@ import time
 import numpy as np
 from enum import Enum
 import sympy
+import os
+import csv
 
 from logic import BooleanSymbolicFunc, SymmetricThresholdFunction
 from utility import list_repr
@@ -75,6 +77,32 @@ class Network:
 
     def __ne__(self, other):
         return not self == other
+
+    def randomize_edges(self, include_self_loops=False):
+        """
+        Replaces the ingoing edges of nodes by choosing uniformly (and without replacement) the same number
+        of in-neighbors. Operates on graph inplace.
+        :return:
+        """
+        # TODO: allow outgoing edges randomization, maybe a hybrid between the two.
+
+        in_degrees = []
+        for v in self.vertices:
+            in_degrees.append(len(v.predecessors()))
+            v.precomputed_predecessors = None
+        new_edges = []
+        for in_degree, v in zip(in_degrees, self.vertices):
+            possible_neighbors = self.vertices if include_self_loops else \
+                (self.vertices[:v.index] + self.vertices[v.index + 1:])
+            in_neighbors = np.random.choice(possible_neighbors, in_degree, replace=False)
+            new_edges.extend([(neighbor, v) for neighbor in in_neighbors])
+
+            # BooleanSymbolicFunctions hold input names, so we need to recreate them
+            if isinstance(v.function, BooleanSymbolicFunc):
+                v.function = BooleanSymbolicFunc(input_names=[neighbor.name for neighbor in in_neighbors],
+                                                 boolean_outputs=v.function.get_truth_table_outputs())
+
+        self.edges = new_edges
 
     def randomize_functions(self, function_type_restriction=FunctionTypeRestriction.NONE, mutate_inputs=False):
         for v in self.vertices:
@@ -150,7 +178,7 @@ class Network:
         edges = set()
         for v in vertices:
             if indegree_bounds is not None:
-                indegree = random.randint(indegree_bounds[0], min(indegree_bounds[1], n_vertices))
+                indegree = random.randint(min(indegree_bounds[0], n_vertices), min(indegree_bounds[1], n_vertices))
             elif indegree_geometric_p is not None:
                 indegree = min([np.random.geometric(indegree_geometric_p), len(vertices)])
             else:
@@ -258,7 +286,7 @@ class Network:
                     if len(section.split("\n")[-1]) == 1:
                         val = section.split("\n")[-1]
                         assert val == '0' or val == '1'
-                        bool_funcs.append(lambda _: bool(int(val)))
+                        bool_funcs.append(bool(int(val)))
                     else:
                         bool_funcs.append(None)
                     continue
@@ -280,6 +308,80 @@ class Network:
         G = Network(vertex_names=names, edges=edges, vertex_functions=bool_funcs)
         print "time taken for graph import: {:.2f} seconds".format(time.time() - start)
         return G
+
+    def export_to_boolean_tables(self, base_path, model_name):
+        """
+        Exports a network to (only possibly compatible) cellcollective's truth tables format.
+        Given a base directory and a name for the model, exports it to a set of boolean table files in the following
+        format - a directory is created with the model's name.
+        Within, a csv (with tab separators) file is created for each vertex. The file's name is the vertex index
+        (1 based). First row lists indices of predecessors and the node's index, others are truth table rows
+        with predecessors' values and output value.
+        Additionally, creates an empty external_components.ALL.txt file (we don't distinguish nodes) and a SPECIES_KEY
+        csv file. This is a tab separated file, where each row has a node index and name.
+        :param base_path:
+        :param model_name:
+        :return:
+        """
+        os.mkdir(os.path.join(base_path, model_name))
+        open(os.path.join(base_path, model_name, "external_components.ALL.txt"), 'a').close()
+
+        # create name mapping
+        row_tuples = [(v.index + 1, v.name) for v in self.vertices]
+        with open(os.path.join(base_path, model_name, "SPECIES_KEY.csv"), 'w') as mapping_file:
+            writer = csv.writer(mapping_file, delimiter='\\t')
+            for row in row_tuples:
+                writer.writerow(row)
+
+        # write truth tables
+        for v in self.vertices:
+            row_tuples = [tup + (int(v.function(*tup)),) for tup in itertools.product(
+                [0, 1], repeat=len(v.predecessors()))]
+            with open(os.path.join(base_path, model_name, "{}.csv".format(v.index + 1)), 'w') as table_file:
+                writer = csv.writer(table_file, delimiter='\\t')
+                writer.writerow([u.index + 1 for u in v.predecessors()] + [v.index + 1])
+                for row in row_tuples:
+                    writer.writerow(row)
+
+    @staticmethod
+    def parse_boolean_tables(path):
+        """
+        Parses cellcollective's truth tables format directory and returns a corresponding network.
+        See export_toboolean_tables for format information. Note that this loses information about
+        external components (we don't differentiate nodes).
+        :param path:
+        :return:
+        """
+        with(open(os.path.join(path, "SPECIES_KEY.csv"), 'r')) as mapping_file:
+            reader = csv.reader(mapping_file)
+            lines = reader.readlines()
+            foreign_index_name_mapping = {tup[0]: tup[1] for tup in lines}  # not necessarily contiguous
+            vertex_names = [tup[1] for tup in lines()]
+
+        edges = []
+        functions = []
+        for v_index, v_name in foreign_index_name_mapping.items():
+            with(open(os.path.join(path, "{}.csv".format(v_index)), 'r')) as truth_table_file:
+                reader = csv.reader(truth_table_file)
+                lines = reader.readlines()
+                # add edges
+                predecessor_indices = lines[0][:-1]
+                for predecessor_index in predecessor_indices:
+                    edges.append((predecessor_index, v_index))
+
+                # assert that the order of predecessors is sorted same as in the SPECIES_KEY file (important for
+                # defining function input order on vertices)
+                predecessor_names = [foreign_index_name_mapping[index] for index in predecessor_indices]
+                assert sorted(predecessor_names, key=lambda name: vertex_names.index(name)) == predecessor_names
+
+                ordered_truth_table_rows = list(itertools.product(("0", "1"), repeat=len(predecessor_indices)))
+                # build function
+                outputs = []
+                for truth_table_line, ordered_truth_table_rows in zip(lines[1:], ordered_truth_table_rows):
+                    assert truth_table_line[:-1] == ordered_truth_table_rows
+                    outputs.append(bool(truth_table_file[-1]))
+                functions.append(BooleanSymbolicFunc(input_names=predecessor_names, boolean_outputs=outputs))
+        return Network(vertex_names=vertex_names, edges=edges, vertex_functions=functions)
 
     def contract_vertex(self, vertex):
         """

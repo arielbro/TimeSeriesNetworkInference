@@ -185,11 +185,11 @@ for _ in range(20):
     for restriction in [FunctionTypeRestriction.NONE, FunctionTypeRestriction.SYMMETRIC_THRESHOLD]:
         # TODO: implement and test for FunctionTypeRestriction.SIMPLE_GATES
         if random.choice([False, True]):
-            indegree_bounds = [0, 5]
+            indegree_bounds = [5, 9]
             indegree_geometric_p = None
         else:
             indegree_bounds = None
-            indegree_geometric_p = 0.6
+            indegree_geometric_p = 0.3
         G = Network.generate_random(n_vertices=n, indegree_bounds=indegree_bounds,
                                     function_type_restriction=restriction,
                                     indegree_geometric_p=indegree_geometric_p)

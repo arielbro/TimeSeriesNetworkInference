@@ -3,10 +3,10 @@ import itertools
 import math
 import numpy
 from utility import list_repr
-
+import time
 
 class BooleanSymbolicFunc:
-    def __init__(self, input_names=None, boolean_outputs=None, formula=None, simplify_boolean_outputs=True):
+    def __init__(self, input_names=None, boolean_outputs=None, formula=None, simplify_boolean_outputs=False):
         self.boolean_outputs = boolean_outputs  # for easy exporting of truth-tables
 
         if formula is not None:
@@ -30,6 +30,7 @@ class BooleanSymbolicFunc:
             boolean_outputs, itertools.product(*[[~var, var] for var in boolean_inputs])) if b_output]
         self.formula = sympy.Or(*positive_row_clauses)
         if simplify_boolean_outputs:
+            start = time.time()
             self.formula = sympy.simplify(self.formula)
 
     def get_truth_table_outputs(self):

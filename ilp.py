@@ -177,6 +177,8 @@ def add_model_invariant_uniqueness_constraints(
         attractor is compared to one state in each model attractor, and state keys slice size is used for comparisons.
         NOTE: creates (slice_size - 1) * len(sampled_attractors) * T auxiliary variables.
     """
+    if len(attractors) == 0:
+        return
     P = len(model_activity_vars)
     T = len(model_activity_vars[0]) - 1
     n = len(attractors[0][0])
