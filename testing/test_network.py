@@ -119,3 +119,5 @@ class TestNetwork(TestCase):
             G.export_to_boolean_tables(".", "temp_dir")
             G_tag = Network.parse_boolean_tables("temp_dir")
             self.assertTrue(G == G_tag)
+            # TODO: permute vertex order in the species list file and make sure the import still goes well.
+            # TODO: load corresponding models from Dubrova's cnet and this format and make sure they are equal.

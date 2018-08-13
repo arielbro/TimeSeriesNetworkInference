@@ -46,6 +46,9 @@ class Network:
         assert len(matches) == 1
         return matches[0]
 
+    def __len__(self):
+        return len(self.vertices)
+
     def __str__(self):
         res = "Graph: \n\tV=" + list_repr(self.vertices) + \
               "\n\tE=" + list_repr([(a.name, b.name) for a, b in self.edges]) + \
@@ -329,7 +332,7 @@ class Network:
         # create name mapping
         row_tuples = [(v.index + 1, v.name) for v in self.vertices]
         with open(os.path.join(base_path, model_name, "SPECIES_KEY.csv"), 'w') as mapping_file:
-            writer = csv.writer(mapping_file, delimiter='\\t')
+            writer = csv.writer(mapping_file, delimiter='\t')
             for row in row_tuples:
                 writer.writerow(row)
 
@@ -338,7 +341,7 @@ class Network:
             row_tuples = [tup + (int(v.function(*tup)),) for tup in itertools.product(
                 [0, 1], repeat=len(v.predecessors()))]
             with open(os.path.join(base_path, model_name, "{}.csv".format(v.index + 1)), 'w') as table_file:
-                writer = csv.writer(table_file, delimiter='\\t')
+                writer = csv.writer(table_file, delimiter='\t')
                 writer.writerow([u.index + 1 for u in v.predecessors()] + [v.index + 1])
                 for row in row_tuples:
                     writer.writerow(row)
@@ -353,34 +356,47 @@ class Network:
         :return:
         """
         with(open(os.path.join(path, "SPECIES_KEY.csv"), 'r')) as mapping_file:
-            reader = csv.reader(mapping_file)
-            lines = reader.readlines()
-            foreign_index_name_mapping = {tup[0]: tup[1] for tup in lines}  # not necessarily contiguous
-            vertex_names = [tup[1] for tup in lines()]
+            reader = csv.reader(mapping_file, delimiter="\t")
+            lines = list(reader)
+            vertex_indices = [tup[0] for tup in lines]
+            vertex_names = [tup[1] for tup in lines]
+            indices_to_names = {tup[0]: tup[1] for tup in lines}
 
         edges = []
         functions = []
-        for v_index, v_name in foreign_index_name_mapping.items():
-            with(open(os.path.join(path, "{}.csv".format(v_index)), 'r')) as truth_table_file:
-                reader = csv.reader(truth_table_file)
-                lines = reader.readlines()
-                # add edges
-                predecessor_indices = lines[0][:-1]
-                for predecessor_index in predecessor_indices:
-                    edges.append((predecessor_index, v_index))
+        for v_index, v_name in zip(vertex_indices, vertex_names):
+            truth_table_path = os.path.join(path, "{}.csv".format(v_index))
+            if not os.path.exists(truth_table_path):
+                # an external species. For us this eans input node.
+                functions.append(None)
+            else:
+                with(open(truth_table_path, 'r')) as truth_table_file:
+                    reader = csv.reader(truth_table_file, delimiter="\t")
+                    lines = list(reader)
+                    # add edges
+                    predecessor_indices = lines[0][:-1]
+                    for predecessor_index in predecessor_indices:
+                        edges.append((indices_to_names[predecessor_index], indices_to_names[v_index]))
 
-                # assert that the order of predecessors is sorted same as in the SPECIES_KEY file (important for
-                # defining function input order on vertices)
-                predecessor_names = [foreign_index_name_mapping[index] for index in predecessor_indices]
-                assert sorted(predecessor_names, key=lambda name: vertex_names.index(name)) == predecessor_names
-
-                ordered_truth_table_rows = list(itertools.product(("0", "1"), repeat=len(predecessor_indices)))
-                # build function
-                outputs = []
-                for truth_table_line, ordered_truth_table_rows in zip(lines[1:], ordered_truth_table_rows):
-                    assert truth_table_line[:-1] == ordered_truth_table_rows
-                    outputs.append(bool(truth_table_file[-1]))
-                functions.append(BooleanSymbolicFunc(input_names=predecessor_names, boolean_outputs=outputs))
+                    # build function
+                    # The order of predecessors might not be sorted same as in the SPECIES_KEY file, so for the
+                    # function to be defined correctly (in ascending model index of variables)
+                    # we need to permute the truth table rows.
+                    n_vars = len(predecessor_indices)
+                    sorted_indices = sorted(range(n_vars),
+                                            key=lambda i: vertex_indices.index(predecessor_indices[i]))
+                    outputs = [None] * (2 ** n_vars)
+                    for truth_table_line in lines[1:]:
+                        # MSB is first var
+                        permuted_row_index = sum(2**(n_vars - i - 1) for i in range(n_vars)
+                                                 if bool(int(truth_table_line[sorted_indices[i]])))
+                        assert outputs[permuted_row_index] is None
+                        outputs[permuted_row_index] = bool(int(truth_table_line[-1]))
+                    for out in outputs:
+                        assert out is not None
+                    predecessor_names = [indices_to_names[predecessor_indices[sorted_indices[i]]] for
+                                         i in range(n_vars)]
+                    functions.append(BooleanSymbolicFunc(input_names=predecessor_names, boolean_outputs=outputs))
         return Network(vertex_names=vertex_names, edges=edges, vertex_functions=functions)
 
     def contract_vertex(self, vertex):
