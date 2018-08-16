@@ -5,6 +5,7 @@ import numpy
 from utility import list_repr
 import time
 
+
 class BooleanSymbolicFunc:
     def __init__(self, input_names=None, boolean_outputs=None, formula=None, simplify_boolean_outputs=False):
         self.boolean_outputs = boolean_outputs  # for easy exporting of truth-tables
@@ -83,6 +84,15 @@ class BooleanSymbolicFunc:
             return self.formula == True
         return bool(self.formula)
 
+    @staticmethod
+    def sanitized_nand(*args):
+        """
+        Replaces sympy nand with Or of Nots (because Nand introduces problems with other replacements)
+        :param args:
+        :return:
+        """
+        return sympy.Or(*(sympy.Not(x) for x in args))
+
     def compose(self, input_funcs, simplify=True):
         """
         Composes symbolic boolean functions. Assumes input_funcs are ordered in the order of self.input_vars.
@@ -96,8 +106,14 @@ class BooleanSymbolicFunc:
             if not isinstance(f, BooleanSymbolicFunc):
                 raise NotImplementedError(
                     "Can't compose a symbolic boolean function with a function of type {}".format(f.type))
-        replacement_dict = dict(zip(self.input_vars, [f.formula for f in input_funcs]))
-        new_exp = self.formula.subs(replacement_dict, simultaneous=True)
+
+        print [f.formula for f in input_funcs]
+        nand_free_formulas = [f.formula.replace(sympy.Nand,
+                                                 BooleanSymbolicFunc.sanitized_nand) for f in input_funcs]
+
+        replacement_dict = dict(zip(self.input_vars, nand_free_formulas))
+        new_exp = self.formula.replace(sympy.Nand, BooleanSymbolicFunc.sanitized_nand).\
+            subs(replacement_dict, simultaneous=True)
         if simplify:
             new_exp = sympy.simplify(new_exp)
         return BooleanSymbolicFunc(formula=new_exp)

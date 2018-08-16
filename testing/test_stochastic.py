@@ -32,10 +32,10 @@ class TestStochastic(TestCase):
         self.assertTrue(utility.attractor_sets_equality(unique_mapping_values, {((0, 0),), ((0, 1), (1, 0))}))
 
         # random graphs, assure what's found is an actual attractor.
-        for test in range(50):
-            n = random.randint(1, 20)
+        for test in range(10):
+            n = random.randint(2, 10)
             G = graphs.Network.generate_random(n_vertices=n, indegree_bounds=[1, n - 1])
-            attractor = stochastic.walk_to_attractor(G, stochastic.random_state(G))
+            attractor = stochastic.walk_to_attractor(G, stochastic.random_state(G), max_walk=100)
             for t in range(len(attractor)):
                 self.assertTrue(utility.is_same_state(attractor[(t + 1) % len(attractor)], G.next_state(attractor[t])))
 
@@ -43,7 +43,8 @@ class TestStochastic(TestCase):
         for test in range(50):
             n = random.randint(1, 6)
             G = graphs.Network.generate_random(n_vertices=n, indegree_bounds=[1, 6])
-            model_attractors = attractors.find_attractors_dubrova(G, attractors.dubrova_dir_path)
+            model_attractors = attractors.find_attractors_dubrova(G, "../bns_dubrova.exe")
             estimated_attractors = stochastic.estimate_attractors(G, n_walks=1000, max_walk_len=1000, with_basins=False)
+
             self.assertTrue(utility.attractor_sets_equality(model_attractors, estimated_attractors))
 

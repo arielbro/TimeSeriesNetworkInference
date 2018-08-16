@@ -178,21 +178,21 @@ def estimate_size(n, m, T, P):
 #                                               key_slice_size=5)
 #
 
-import random
-from graphs import FunctionTypeRestriction, Network
-for _ in range(20):
-    n = random.randint(1, 20)
-    for restriction in [FunctionTypeRestriction.NONE, FunctionTypeRestriction.SYMMETRIC_THRESHOLD]:
-        # TODO: implement and test for FunctionTypeRestriction.SIMPLE_GATES
-        if random.choice([False, True]):
-            indegree_bounds = [5, 9]
-            indegree_geometric_p = None
-        else:
-            indegree_bounds = None
-            indegree_geometric_p = 0.3
-        G = Network.generate_random(n_vertices=n, indegree_bounds=indegree_bounds,
-                                    function_type_restriction=restriction,
-                                    indegree_geometric_p=indegree_geometric_p)
-        G.export_to_cnet("./temp_test_network.cnet")
-        G_tag = Network.parse_cnet("./temp_test_network.cnet")
-        assert G == G_tag
+# import random
+# from graphs import FunctionTypeRestriction, Network
+# for _ in range(20):
+#     n = random.randint(1, 20)
+#     for restriction in [FunctionTypeRestriction.NONE, FunctionTypeRestriction.SYMMETRIC_THRESHOLD]:
+#         # TODO: implement and test for FunctionTypeRestriction.SIMPLE_GATES
+#         if random.choice([False, True]):
+#             indegree_bounds = [5, 9]
+#             indegree_geometric_p = None
+#         else:
+#             indegree_bounds = None
+#             indegree_geometric_p = 0.3
+#         G = Network.generate_random(n_vertices=n, indegree_bounds=indegree_bounds,
+#                                     function_type_restriction=restriction,
+#                                     indegree_geometric_p=indegree_geometric_p)
+#         G.export_to_cnet("./temp_test_network.cnet")
+#         G_tag = Network.parse_cnet("./temp_test_network.cnet")
+#         assert G == G_tag

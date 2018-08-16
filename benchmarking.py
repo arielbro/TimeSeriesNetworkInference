@@ -22,9 +22,7 @@ for i in range(10000):
     print "working on {}".format(name)
     print "running Dubrova"
     start = time.time()
-    attractors = attractors.find_attractors_dubrova(G, "C:/Users/ariel/Downloads/Attractors - "
-                                                                           "for Ariel/Attractors - for Ariel/BNS_Dubrova_2011",
-                                                                        return_max_length=True)
+    attractors = attractors.find_attractors_dubrova(G, "bns_dubrova.exe", return_max_length=True)
     num_attractors, max_length = len(attractors), max(len(att) for att in attractors)
     timings.append(TimingResult(algorithm="Dubrova", graph_name=name, n=len(G.vertices),
                                 P=num_attractors, T=max_length, simplify=None, sample=None,

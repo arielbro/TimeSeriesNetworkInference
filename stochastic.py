@@ -1,6 +1,7 @@
 import random
 import utility
 
+
 def walk_to_attractor(G, initial_state, max_walk=None, state_to_attractor_mapping=None):
     """
     Simulates the network from an initial state until an attractor is reached, and returns the attractor.
@@ -38,6 +39,9 @@ def walk_to_attractor(G, initial_state, max_walk=None, state_to_attractor_mappin
         # A new attractor!
         cycle_start_index = visited_states.index(current_state)
         attractor = tuple(visited_states[cycle_start_index:])
+        # print "walked attractor: {}".format(attractor)
+        # for state in attractor:
+        #     print "source: {}. next: {}".format(state, G.next_state(state))
         for state in visited_states:
             state_to_attractor_mapping[state] = attractor
         return attractor

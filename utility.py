@@ -10,7 +10,6 @@ def rotate(l, n):
 class Attractor:
     # TODO: Use a general class for attractors (everywhere)
     def __init__(self, states):
-        # print states
         largest_ind = max(range(len(states)), key=lambda t: order_key_func(states[t]))
         self.states = tuple(tuple(states[(t + largest_ind + 1) % len(states)]) for t in range(len(states)))
 
@@ -26,7 +25,6 @@ class Attractor:
             raise NotImplementedError("Can't compare an attractor to anything else")
         if len(self.states) != len(other.states):
             return False
-
         return self.states == other.states
 
     def __ne__(self, other):
@@ -35,6 +33,11 @@ class Attractor:
     def __hash__(self):
         return tuple([tuple(s) for s in self.states]).__hash__()
 
+    def __str__(self):
+        return "Attractor, states: {}".format(self.states)
+
+    def __repr__(self):
+        return str(self)
 
 def order_key_func(node_states): return sum(node * 2 ** i for (i, node) in enumerate(node_states))
 

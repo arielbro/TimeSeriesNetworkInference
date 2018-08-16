@@ -396,7 +396,7 @@ class TestAttractors(TestCase):
                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
         self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=False), 12)
 
-    def find_attractors_dubrova(self):
+    def test_find_attractors_dubrova(self):
         experiments = []
 
         """test on known toy models"""
@@ -428,21 +428,29 @@ class TestAttractors(TestCase):
         G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "A"), ("C", "A")],
                            vertex_functions=[logic.SymmetricThresholdFunction.from_function(sympy.Nand, 2),
                                              logic.SymmetricThresholdFunction.from_function(sympy.Nand, 1),
-                                             logic.SymmetricThresholdFunction.from_function(sympy.Nand, 0)])
+                                             True])
         experiments.append(DubrovaExperimentParameters(G=G, mutate=False, n_attractors=3))
         experiments.append(DubrovaExperimentParameters(G=G, mutate=True, n_attractors=3))
         # 11, 12
         G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "A"), ("C", "A")],
                            vertex_functions=[logic.SymmetricThresholdFunction.from_function(sympy.Nand, 2),
                                              logic.SymmetricThresholdFunction.from_function(sympy.Nand, 1),
-                                             True])
+                                             False])
         experiments.append(DubrovaExperimentParameters(G=G, mutate=False, n_attractors=1))
-        experiments.append(DubrovaExperimentParameters(G=G, mutate=True, n_attractors=3))
+        experiments.append(DubrovaExperimentParameters(G=G, mutate=True, n_attractors=1))
 
-        # 13
+        #13
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "A"), ("C", "A")],
+                           vertex_functions=[logic.SymmetricThresholdFunction.from_function(sympy.Nand, 2),
+                                             logic.SymmetricThresholdFunction.from_function(sympy.Nand, 1),
+                                             None])
+        experiments.append(DubrovaExperimentParameters(G=G, mutate=False, n_attractors=1))
+        experiments.append(DubrovaExperimentParameters(G=G, mutate=True, n_attractors=4))
+
+        # 14
         G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large.cnet")
-        experiments.append(DubrovaExperimentParameters(G=G, mutate=True, n_attractors=16))
+        experiments.append(DubrovaExperimentParameters(G=G, mutate=False, n_attractors=16))
 
         print "number of experiments (with keys)={}".format(len(experiments))
         for i, experiment in enumerate(experiments):
@@ -451,9 +459,8 @@ class TestAttractors(TestCase):
                                                                      experiment.mutate, experiment.n_attractors)
             # continue
             n_attractors = len(find_attractors_dubrova(G=experiment.G,
-                                                   dubrova_dir_path="C:/Users/ariel/Downloads/Attractors - for Ariel/"
-                                                                    "Attractors - for Ariel/BNS_Dubrova_2011",
-                                                   mutate_input_nodes=experiment.mutate))
+                                                       dubrova_path="../bns_dubrova.exe",
+                                                       mutate_input_nodes=experiment.mutate))
             try:
                 self.assertEqual(n_attractors, experiment.n_attractors)
             except AssertionError as e:
@@ -462,6 +469,32 @@ class TestAttractors(TestCase):
                 raise e
             except Exception as e:
                 raise e
+
+        print "testing state order in attractor"
+        # TODO: expand? random graphs, compare ILP attractors with Dubrova's
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "A")],
+                           vertex_functions=[sympy.And, sympy.Nand, True])
+        desired_attractor = [[0, 0, 1], [0, 1, 1], [1, 1, 1], [1, 0, 1]]
+        # repeat manually, (otherwise there's mutual dependence of tests).
+        possible_attractors = [desired_attractor[shift:] + desired_attractor[:shift] for shift in range(4)]
+        print possible_attractors
+        found_attractors = find_attractors_dubrova(G, dubrova_path="../bns_dubrova.exe", mutate_input_nodes=True)
+        self.assertTrue(len(found_attractors) == 1)
+        found_attractor = [[int(v) for v in state] for state in found_attractors[0]]
+        print found_attractor
+        self.assertTrue(any(found_attractor == possible_attractors[i] for i in range(len(possible_attractors))))
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
+                           vertex_functions=[sympy.And, sympy.Nand])
+        desired_attractor = [[0, 0], [0, 1], [1, 1], [1, 0]]
+        # repeat manually, (otherwise there's mutual dependence of tests).
+        possible_attractors = [desired_attractor[shift:] + desired_attractor[:shift] for shift in range(4)]
+        print possible_attractors
+        found_attractors = find_attractors_dubrova(G, dubrova_path="../bns_dubrova.exe", mutate_input_nodes=True)
+        self.assertTrue(len(found_attractors) == 1)
+        found_attractor = [[int(v) for v in state] for state in found_attractors[0]]
+        print found_attractor
+        self.assertTrue(any(found_attractor == possible_attractor for possible_attractor in possible_attractors))
 
     def test_find_attractors_enumerate(self):
         experiments = []

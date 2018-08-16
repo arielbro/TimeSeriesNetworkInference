@@ -3,4 +3,4 @@ import unittest
 
 class MyTestCase(unittest.TestCase):
     def test_something(self):
-        self.assertEqual(True, True)  # TODO: write tests
+        self.assertTrue(False)  # TODO: write tests

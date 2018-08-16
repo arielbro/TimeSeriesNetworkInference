@@ -13,8 +13,8 @@ import gurobipy
 import stochastic
 import subprocess
 
-timeout_seconds = 3 * 60  # TODO: refactor somewhere?
-dubrova_dir_path = "C:/Users/ariel/Downloads/Attractors - for Ariel/Attractors - for Ariel/BNS_Dubrova_2011"
+timeout_seconds = 30 * 60  # TODO: refactor somewhere?
+dubrova_path = "bns_dubrova.exe"
 
 
 class TimeoutError(Exception):
@@ -188,7 +188,7 @@ def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_
     for v in G.vertices:
         assert (v.function is not None) or len(v.predecessors()) == 0
     if use_dubrova:
-        attractors = find_attractors_dubrova(G=G, dubrova_dir_path=dubrova_dir_path)
+        attractors = find_attractors_dubrova(G=G, dubrova_path=dubrova_path)
         attractors = [att for att in attractors if len(att) <= max_len]
     else:
         attractors = find_attractors_onestage_enumeration(G=G, max_len=max_len, verbose=verbose,
@@ -264,7 +264,7 @@ def find_model_bitchange_probability_for_different_attractors(G, n_iter=100, use
     # TODO: write tests
     # TODO: implement individual vertex stability.
     if use_dubrova:
-        attractors = find_attractors_dubrova(G, dubrova_dir_path=dubrova_dir_path, mutate_input_nodes=True)
+        attractors = find_attractors_dubrova(G, dubrova_path=dubrova_path, mutate_input_nodes=True)
     else:
         attractors = find_attractors_onestage_enumeration(G, max_len=max_len)
 
@@ -301,7 +301,7 @@ def find_model_bitchange_probability_for_different_attractors(G, n_iter=100, use
             raise NotImplementedError("Can't do a bitchange for a non-function")
 
         if use_dubrova:
-            new_attractors = find_attractors_dubrova(copy, dubrova_dir_path, mutate_input_nodes=True)
+            new_attractors = find_attractors_dubrova(copy, dubrova_path, mutate_input_nodes=True)
         else:
             new_attractors = find_attractors_onestage_enumeration(copy, max_len=15)
         if not utility.attractor_sets_equality(attractors, new_attractors):
@@ -623,32 +623,40 @@ def write_random_fixed_graph_estimations_sampling(G, n_iter, function_type_restr
         writer.writerows(res)
 
 
-def find_attractors_dubrova(G, dubrova_dir_path, mutate_input_nodes=False):
+def find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=False):
     """
     Export G, call dubrova's algorithm on it, and parse the attractors from results.
+    If mutate_input_nodes is False, assumes all input nodes without a function are constantly off,
+    otherwise iterates over value combinations of all None functioned input nodes.
     :param G:
-    :param dubrova_dir_path:
+    :param dubrova_path:
     :return: n_attractors
     """
     # TODO: write tests.
     G = G.copy()
-    input_nodes = [v for v in G.vertices if len(v.predecessors()) == 0] if mutate_input_nodes else []
+    input_nodes = [v for v in G.vertices if len(v.predecessors()) == 0]
+    unspecified_input_nodes = [v for v in input_nodes if v.function is None]
+    input_node_orig_functions = [v.function for v in input_nodes]
     attractors = []
 
     for v in G.vertices:
         if len(v.predecessors()) != 0 and v.function is None:
             raise ValueError("Can't run dubrova with a non-fixed vertex function")
 
-    for input_combination in itertools.product([0, 1], repeat=len(input_nodes)):
-
-        for i, input_node in enumerate(input_nodes):
-            input_node.function = bool(input_combination[i])
+    for input_combination in itertools.product([0, 1],
+                                               repeat=len(unspecified_input_nodes) if mutate_input_nodes else 0):
+        for node, orig_func in zip(input_nodes, input_node_orig_functions):
+            if node not in unspecified_input_nodes:
+                node.function = bool(node.function()) if callable(node.function) else bool(node.function)
+        if mutate_input_nodes:
+            for i, input_node in enumerate(unspecified_input_nodes):
+                input_node.function = bool(input_combination[i])
 
         temp_network_path = "./temp_network_{}_{}.cnet".format(int(time.time()), random.randint(1, 1000))
         graphs.Network.export_to_cnet(G, temp_network_path)
         env = os.environ.copy()
         env['PATH'] += ";C:/cygwin/bin"  # TODO: less hardcoding (it somehow didn't have the right PATH)
-        process = subprocess.Popen(args=[os.path.join(dubrova_dir_path, "bns.exe"), temp_network_path],
+        process = subprocess.Popen(args=[dubrova_path, temp_network_path],
                                    stderr=subprocess.STDOUT, stdout=subprocess.PIPE, env=env)
         out, _ = process.communicate()
         if process.returncode != 0:
@@ -664,7 +672,7 @@ def find_attractors_dubrova(G, dubrova_dir_path, mutate_input_nodes=False):
             if line.startswith("0") or line.startswith("1"):
                 cur_attractor.append([int(c) for c in line if c != " "])
             elif len(cur_attractor) > 0:
-                attractors.append(cur_attractor)
+                attractors.append(cur_attractor[::-1])  # Appearently Dubrova writes attractors reversed! (bottom->top)
                 cur_attractor = []
 
     return attractors

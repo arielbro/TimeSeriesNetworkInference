@@ -10,28 +10,33 @@ import sympy
 class TestUtility(TestCase):
 
     def test_attractor_sets_equality(self):
-        for test in range(50):
-            n = random.randint(1, 20)
-            G = graphs.Network.generate_random(n_vertices=n, indegree_bounds=[1,5])
+        for test in range(100):
+            n = random.randint(1, 10)
+            G = graphs.Network.generate_random(n_vertices=n, indegree_bounds=[1, 5])
             first_attractors = list(
-                stochastic.estimate_attractors(G, n_walks=20, max_walk_len=1000, with_basins=False))
+                stochastic.estimate_attractors(G, n_walks=30, max_walk_len=1000, with_basins=False))
+
+            if len(first_attractors) == 0:
+                continue
 
             second_attractors = first_attractors
             self.assertTrue(utility.attractor_sets_equality(first_attractors, second_attractors))
-            second_attractors = tuple(s for s in first_attractors)
+            second_attractors = list(s for s in first_attractors)
             random.shuffle(second_attractors)
             self.assertTrue(utility.attractor_sets_equality(first_attractors, second_attractors))
+
+            if len(first_attractors) == 1:
+                continue
+
             second_attractors = first_attractors[:-1]
             self.assertFalse(utility.attractor_sets_equality(first_attractors, second_attractors))
             first_attractors = first_attractors[1:]
-            print first_attractors
-            print second_attractors
             self.assertFalse(utility.attractor_sets_equality(first_attractors, second_attractors))
 
     def test_is_same_attractor(self):
         for test in range(50):
             n = random.randint(1, 20)
-            G = graphs.Network.generate_random(n_vertices=n, indegree_bounds=[1,5])
+            G = graphs.Network.generate_random(n_vertices=n, indegree_bounds=[1, 5])
             attractor = stochastic.walk_to_attractor(G, stochastic.random_state(G))
             random_index = random.randint(0, len(attractor) - 1)
             shifted = utility.rotate(attractor, random_index)

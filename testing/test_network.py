@@ -1,3 +1,5 @@
+import os
+import shutil
 from unittest import TestCase
 from graphs import Network, FunctionTypeRestriction
 import random
@@ -110,12 +112,60 @@ class TestNetwork(TestCase):
                                                       true_triple_step))
 
     def test_randomize_edges(self):
-        self.assertTrue(False)  # TODO: implement...
-
-    def truth_table_import_export(self):
         for i in range(50):
             n = random.randint(1, 10)
             G = Network.generate_random(n_vertices=n, indegree_bounds=[1, 3])
+            G_tag = G.copy()
+            G_tag.randomize_edges(include_self_loops=False)
+            for v, v_tag in zip(G.vertices, G_tag.vertices):
+                self.assertTrue(v.function == v_tag.function)
+                self.assertTrue(len(v.predecessors()) == len(v_tag.predecessors()))
+
+        G = Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("A", "A"), ("B", "A")],
+                    vertex_functions=[None] * 3)
+        for i in range(10):
+            G_tag = G.copy()
+            G_tag.randomize_edges(include_self_loops=False)
+            self.assertTrue(G_tag.get_vertex("A").predecessors() == [G_tag.get_vertex("B"), G_tag.get_vertex("C")])
+            self.assertTrue(G_tag.get_vertex("B").predecessors() in [[G_tag.get_vertex("A")], [G_tag.get_vertex("C")]])
+            self.assertTrue(G_tag.get_vertex("C").predecessors() == [])
+
+        had_self_loop = False
+        for i in range(100):
+            G_tag = G.copy()
+            G_tag.randomize_edges(include_self_loops=True)
+            self.assertTrue(G_tag.get_vertex("A").predecessors() in [[G_tag.get_vertex("A"), G_tag.get_vertex("B")],
+                                                                     [G_tag.get_vertex("B"), G_tag.get_vertex("C")],
+                                                                     [G_tag.get_vertex("A"), G_tag.get_vertex("C")]])
+            self.assertTrue(G_tag.get_vertex("B").predecessors() in [[G_tag.get_vertex("A")],
+                                                                     [G_tag.get_vertex("B")],
+                                                                     [G_tag.get_vertex("C")]])
+            self.assertTrue(G_tag.get_vertex("C").predecessors() == [])
+            had_self_loop = (G.vertices[0] in G.vertices[0].predecessors()) or \
+                            (G.vertices[1] in G.vertices[1].predecessors()) or had_self_loop
+        self.assertTrue(had_self_loop)
+
+    def test_randomize_functions(self):
+        self.assertTrue(False)  # TODO: implement...
+
+    def test_truth_table_import_export(self):
+
+        for model_dir in os.listdir("../cellcollective_models"):
+            print model_dir
+            try:
+                G = Network.parse_boolean_tables(os.path.join("../cellcollective_models", model_dir))
+            except ValueError as e:
+                if e.message.startswith("Model export from cellcollective failed"):
+                    print "\nWarning: {}\n".format(e.message)
+                    pass
+                else:
+                    raise e
+
+        for i in range(50):
+            n = random.randint(1, 10)
+            G = Network.generate_random(n_vertices=n, indegree_bounds=[1, 3])
+            if os.path.exists("temp_dir"):
+                shutil.rmtree("temp_dir", ignore_errors=True)
             G.export_to_boolean_tables(".", "temp_dir")
             G_tag = Network.parse_boolean_tables("temp_dir")
             self.assertTrue(G == G_tag)

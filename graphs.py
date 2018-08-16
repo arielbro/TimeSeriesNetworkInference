@@ -97,6 +97,10 @@ class Network:
         for in_degree, v in zip(in_degrees, self.vertices):
             possible_neighbors = self.vertices if include_self_loops else \
                 (self.vertices[:v.index] + self.vertices[v.index + 1:])
+            if len(possible_neighbors) < in_degree:
+                print "Warning - cannot get in-degree {} of vertex {} without self loops. Allowing self-loop".\
+                    format(in_degree, v)
+                possible_neighbors.append(v)
             in_neighbors = np.random.choice(possible_neighbors, in_degree, replace=False)
             new_edges.extend([(neighbor, v) for neighbor in in_neighbors])
 
@@ -338,7 +342,7 @@ class Network:
 
         # write truth tables
         for v in self.vertices:
-            row_tuples = [tup + (int(v.function(*tup)),) for tup in itertools.product(
+            row_tuples = [tup + (int(bool(v.function(*tup))),) for tup in itertools.product(
                 [0, 1], repeat=len(v.predecessors()))]
             with open(os.path.join(base_path, model_name, "{}.csv".format(v.index + 1)), 'w') as table_file:
                 writer = csv.writer(table_file, delimiter='\t')
@@ -359,12 +363,13 @@ class Network:
             reader = csv.reader(mapping_file, delimiter="\t")
             lines = list(reader)
             vertex_indices = [tup[0] for tup in lines]
-            vertex_names = [tup[1] for tup in lines]
-            indices_to_names = {tup[0]: tup[1] for tup in lines}
+            vertex_names = [tup[1].replace(" ", "_") for tup in lines]  # sympy is sensitive to spaces.
+            indices_to_names = {tup[0]: tup[1].replace(" ", "_") for tup in lines}
 
         edges = []
         functions = []
         for v_index, v_name in zip(vertex_indices, vertex_names):
+            # print v_index, v_name
             truth_table_path = os.path.join(path, "{}.csv".format(v_index))
             if not os.path.exists(truth_table_path):
                 # an external species. For us this eans input node.
@@ -373,6 +378,9 @@ class Network:
                 with(open(truth_table_path, 'r')) as truth_table_file:
                     reader = csv.reader(truth_table_file, delimiter="\t")
                     lines = list(reader)
+                    if "Unable to generate" in lines[0][0]:
+                        raise ValueError("Model export from cellcollective failed for node #{} - {}. "
+                                         "See model file".format(v_index, v_name))
                     # add edges
                     predecessor_indices = lines[0][:-1]
                     for predecessor_index in predecessor_indices:
@@ -387,12 +395,16 @@ class Network:
                                             key=lambda i: vertex_indices.index(predecessor_indices[i]))
                     outputs = [None] * (2 ** n_vars)
                     for truth_table_line in lines[1:]:
+                        # print truth_table_line
                         # MSB is first var
                         permuted_row_index = sum(2**(n_vars - i - 1) for i in range(n_vars)
                                                  if bool(int(truth_table_line[sorted_indices[i]])))
                         assert outputs[permuted_row_index] is None
                         outputs[permuted_row_index] = bool(int(truth_table_line[-1]))
+                        # print permuted_row_index
+                        # print bool(int(truth_table_line[-1]))
                     for out in outputs:
+                        # print out
                         assert out is not None
                     predecessor_names = [indices_to_names[predecessor_indices[sorted_indices[i]]] for
                                          i in range(n_vars)]
