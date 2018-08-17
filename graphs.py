@@ -111,22 +111,32 @@ class Network:
 
         self.edges = new_edges
 
-    def randomize_functions(self, function_type_restriction=FunctionTypeRestriction.NONE, mutate_inputs=False):
+    def randomize_functions(self, function_type_restriction=FunctionTypeRestriction.NONE,
+                            mutate_input_nodes=False, preserve_truth_ratio=False):
         for v in self.vertices:
             n = len(v.predecessors())
-            if n == 0 and mutate_inputs:
+            if n == 0 and mutate_input_nodes:
                 v.function = random.choice([False, True])
             elif n == 0:
                 v.function = None
             elif function_type_restriction == FunctionTypeRestriction.NONE:
-                boolean_outputs = [random.choice([False, True]) for _ in range(2 ** n)]
+                if preserve_truth_ratio:
+                    boolean_outputs = [v.function(*row_args) for row_args in itertools.product(
+                        [False, True], repeat=n)]
+                    random.shuffle(boolean_outputs)
+                else:
+                    boolean_outputs = [random.choice([False, True]) for _ in range(2 ** n)]
                 input_names = [u.name for u in v.predecessors()]
                 v.function = BooleanSymbolicFunc(input_names=input_names, boolean_outputs=boolean_outputs)
             elif function_type_restriction == FunctionTypeRestriction.SYMMETRIC_THRESHOLD:
                 signs = [random.choice([False, True]) for _ in range(n)]
-                threshold = random.randint(1, n) if \
-                    function_type_restriction != FunctionTypeRestriction.SIMPLE_GATES else \
-                    random.choice([1, n])
+                if preserve_truth_ratio and isinstance(v.function, SymmetricThresholdFunction):
+                    threshold = v.function.threshold
+                elif preserve_truth_ratio:
+                    raise NotImplementedError("Preserving truth ratio in threhsold "
+                                              "function when origin is generic isn't supported.")
+                else:
+                    threshold = random.randint(1, n)
                 v.function = SymmetricThresholdFunction(signs, threshold)
             elif function_type_restriction == FunctionTypeRestriction.SIMPLE_GATES:
                 raise NotImplementedError("randomizing simple gates funntions not yet implemented")

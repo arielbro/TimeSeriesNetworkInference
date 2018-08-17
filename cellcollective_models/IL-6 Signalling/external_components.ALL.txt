@@ -1,0 +1,15 @@
+gp130m
+pias3
+slim
+ros
+gab1_kin
+pten
+pias1
+nfkb
+cyt_ptpe
+phlpp
+mtor
+sirp1a
+pdk1
+ship
+il6

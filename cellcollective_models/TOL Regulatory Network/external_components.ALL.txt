@@ -1,0 +1,10 @@
+m-xyl
+CAA
+Cold
+RpoN
+Glu
+RpoD
+CellDens
+Heat
+HU
+3MBz

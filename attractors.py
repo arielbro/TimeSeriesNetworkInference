@@ -1,3 +1,4 @@
+import multiprocessing
 import utility
 import numpy
 import os
@@ -62,7 +63,8 @@ def find_num_attractors_multistage(G, use_ilp):
 
 
 def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, verbose=False,
-                                 sampling_bounds=None, use_sampling_for_mip_start=True, simplify_general_boolean=False,
+                                 sampling_bounds=None, use_sampling_for_mip_start=True,
+                                 simplify_general_boolean=False,
                                  key_slice_size=15):
     # TODO: refactor to a method that returns actual attractors (like in the enumerate version).
     T = 2 ** len(G.vertices) if not max_len else max_len
@@ -309,33 +311,41 @@ def find_model_bitchange_probability_for_different_attractors(G, n_iter=100, use
     return float(n_changes) / n_iter
 
 
-def find_state_bitchange_probability_for_different_attractors(G, n_iter=1000):
+def single_state_bitchange_experiment(G, state_to_attractor_mapping=None):
+    initial_state = stochastic.random_state(G)
+    original_attractor = stochastic.walk_to_attractor(G, initial_state, max_walk=None,
+                                                      state_to_attractor_mapping=state_to_attractor_mapping)
+    unaltered_state = random.choice(original_attractor)
+    perturbed_index = random.randint(0, len(unaltered_state) - 1)
+    perturbed_state = unaltered_state[:perturbed_index] + \
+                      (1 - unaltered_state[perturbed_index],) + unaltered_state[perturbed_index + 1:]
+    perturbed_attractor = stochastic.walk_to_attractor(G, perturbed_state, max_walk=None,
+                                                       state_to_attractor_mapping=state_to_attractor_mapping)
+    return not utility.is_same_attractor(original_attractor, perturbed_attractor)
+
+
+def find_state_bitchange_probability_for_different_attractors(G, n_iter=1000, parallel=False):
     """
     Stochastically estimate the probability for a bitchange in a network state to move the network
     from a certain attractor to another attractor (or to the basin of another attractor).
+    If parallel=True, uses multiprocessing pool for iterations. Note that this doesn't allow different iterations
+    to share basin information, so it can be slower in some circumstances.
     :param G:
     :param n_iter:
     :return:
     """
     # TODO: add an option to distinguish input nodes from others
     # TODO: implement individual attractor stability.
-    attractor_changes = 0
-    state_to_attractor_mapping = dict()
-    for i in range(n_iter):
-        # if i and not (i % 10):
-        #     print i
-        initial_state = stochastic.random_state(G)
-        original_attractor = stochastic.walk_to_attractor(G, initial_state, max_walk=None,
-                                                          state_to_attractor_mapping=state_to_attractor_mapping)
-        unaltered_state = random.choice(original_attractor)
-        perturbed_index = random.randint(0, len(unaltered_state) - 1)
-        perturbed_state = unaltered_state[:perturbed_index] + \
-            (1 - unaltered_state[perturbed_index], ) + unaltered_state[perturbed_index + 1:]
-        perturbed_attractor = stochastic.walk_to_attractor(G, perturbed_state, max_walk=None,
-                                                           state_to_attractor_mapping=state_to_attractor_mapping)
-        if not utility.is_same_attractor(original_attractor, perturbed_attractor):
-            attractor_changes += 1
-    return attractor_changes / float(n_iter)
+    if parallel:
+        pool = multiprocessing.Pool()
+        bitchange_results = pool.map(single_state_bitchange_experiment, [G] * n_iter)
+    else:
+        # exploit basin mapping memory
+        state_to_attractor_mapping = dict()
+        bitchange_results = []
+        for _ in n_iter:
+            bitchange_results.append(single_state_bitchange_experiment(G, state_to_attractor_mapping))
+    return sum(bitchange_results) / float(n_iter)
 
 
 def find_attractors_onestage_enumeration(G, max_len=None, verbose=False, simplify_general_boolean=False,

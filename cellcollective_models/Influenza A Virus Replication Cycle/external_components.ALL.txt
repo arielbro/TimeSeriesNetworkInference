@@ -1,0 +1,11 @@
+Bisindolylmaleimide_I
+PB1_Inhibitor
+Methyl_Beta_Cyclodextrin
+Viral_Dose
+HA_SialicAcid_Affinity
+U0126
+RTK_Inhibitor
+Wortmannin
+PB1_PA_Interface_Inhibitor
+Neuraminidase_inhibitor
+M2_inhibitor
