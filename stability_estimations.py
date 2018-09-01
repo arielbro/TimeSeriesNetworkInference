@@ -2,6 +2,7 @@ import random
 import time
 import graphs
 import attractors
+from shutil import copyfile
 from collections import namedtuple
 import csv
 import numpy
@@ -18,14 +19,19 @@ if __name__ == "__main__":
         analyze_originals = bool(int(sys.argv[2]))
 
     experiment_max_len = 15
-    experiment_n_iter = 300
+    experiment_n_iter = 1
+
+    # cupy Dubrova's executable, to prevent mysterious errors when running multiple processes calling it.
+    process_specific_dubrova_path = "temp_{}_{}".format(attractors.dubrova_path, os.getpid())
+    copyfile(attractors.dubrova_path, process_specific_dubrova_path)
+    attractors.dubrova_path = process_specific_dubrova_path
 
     StabilityResult = namedtuple("StabilityResult", "graph_name random_functions random_edges size "
-                                                    "n_inputs normalized_n_inputs max_degree mean_degree"
-                                                    "state_bits_changed"
+                                                    "n_inputs normalized_n_inputs max_degree mean_degree "
+                                                    "state_bits_changed "
                                                     # "minimal_model_bitchange "
                                                     "model_bitchange_prob "
-                                                    "state_bitchange_prob"
+                                                    "state_bitchange_prob "
                                 )
     results = []
 
@@ -46,9 +52,9 @@ if __name__ == "__main__":
         size = len(graph.vertices)
         mean_degree = sum([len(v.predecessors()) for v in graph.vertices]) / float(size)
         normaliezd_n_inputs = n_inputs / float(size)
-        graph_name_to_attributes[graph.name] = dict(n_inputs=n_inputs, max_degree=max_degree,
+        graph_name_to_attributes[name] = dict(n_inputs=n_inputs, max_degree=max_degree,
                                                     size=size, mean_degree=mean_degree,
-                                                    normaliezd_n_inputs=normaliezd_n_inputs)
+                                              normalized_n_inputs=normaliezd_n_inputs)
         print "#{}; {} input nodes for graph {} of size {} and max degree {}".format(i, n_inputs, name,
                                                                                      size, max_degree)
     if analyze_originals:
@@ -64,12 +70,12 @@ if __name__ == "__main__":
             #     minimal_model_bitchange = numpy.inf
             print "time taken for model_bitchange={:.2f} secs".format(time.time() - start)
             second_start = time.time()
-            state_bits_changed = random.randint(5)
+            state_bits_changed = random.randint(1, 5)
             try:
                 model_bitchange_probability = \
                     attractors.find_model_bitchange_probability_for_different_attractors(graph,
                                                                                          n_iter=experiment_n_iter,
-                                                                                         use_dubrova=False)
+                                                                                         use_dubrova=True)
             except attractors.TimeoutError as e:
                 model_bitchange_probability = numpy.inf
             print "time taken for model_bitchange_probability={:.2f} secs".format(time.time() - second_start)
@@ -79,7 +85,7 @@ if __name__ == "__main__":
                     attractors.find_state_bitchange_probability_for_different_attractors(graph,
                                                                                          n_iter=experiment_n_iter,
                                                                                          n_bits=state_bits_changed,
-                                                                                         parallel=True)
+                                                                                         parallel=False)
             except attractors.TimeoutError as e:
                 state_bitchange_probability = numpy.inf
             print "time taken for state_bitchange_probability={:.2f} secs".format(time.time() - third_start)
@@ -125,12 +131,14 @@ if __name__ == "__main__":
             #     minimal_model_bitchange = numpy.inf
             print "time taken for model_bitchange={:.2f} secs".format(time.time() - start)
             second_start = time.time()
+            state_bits_changed = random.randint(1, 5)
             try:
                 model_bitchange_probability = \
                     attractors.find_model_bitchange_probability_for_different_attractors(graph_copy,
                                                                                          max_len=experiment_max_len,
                                                                                          n_iter=experiment_n_iter,
-                                                                                         use_dubrova=False)
+                                                                                         n_bits=state_bits_changed,
+                                                                                         use_dubrova=True)
             except attractors.TimeoutError as e:
                 model_bitchange_probability = numpy.inf
             print "time taken for model_bitchange_probability={:.2f} secs".format(time.time() - second_start)
@@ -140,7 +148,7 @@ if __name__ == "__main__":
                     attractors.find_state_bitchange_probability_for_different_attractors(graph_copy,
                                                                                          n_iter=experiment_n_iter,
                                                                                          n_bits=state_bits_changed,
-                                                                                         parallel=True)
+                                                                                         parallel=False)
             except attractors.TimeoutError as e:
                 state_bitchange_probability = numpy.inf
             print "time taken for state_bitchange_probability={:.2f} secs".format(time.time() - third_start)

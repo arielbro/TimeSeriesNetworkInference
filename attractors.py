@@ -317,10 +317,11 @@ def single_state_bitchange_experiment(G, state_to_attractor_mapping=None, n_bits
     original_attractor = stochastic.walk_to_attractor(G, initial_state, max_walk=None,
                                                       state_to_attractor_mapping=state_to_attractor_mapping)
     unaltered_state = random.choice(original_attractor)
-    perturbed_indices = np.random.choice(range(len(unaltered_state), n_bits, replace=False))
-    perturbed_state = list(unaltered_state)
+    perturbed_indices = np.random.choice(range(len(unaltered_state)), n_bits, replace=False)
+    perturbed_state = list(unaltered_state)  # so we can perturbe it
     for index in perturbed_indices:
         perturbed_state[index] = 1 - perturbed_state[index]
+    perturbed_state = tuple(perturbed_state)  # so it will be hashable
     perturbed_attractor = stochastic.walk_to_attractor(G, perturbed_state, max_walk=None,
                                                        state_to_attractor_mapping=state_to_attractor_mapping)
     return not utility.is_same_attractor(original_attractor, perturbed_attractor)
@@ -340,7 +341,7 @@ def find_state_bitchange_probability_for_different_attractors(G, n_iter=1000, pa
     # TODO: implement individual attractor stability.
     if parallel:
         pool = multiprocessing.Pool()
-        bitchange_results = pool.map(single_state_bitchange_experiment, [G] * n_iter)
+        bitchange_results = pool.map(single_state_bitchange_experiment, tuple([G] * n_iter))
     else:
         # exploit basin mapping memory
         state_to_attractor_mapping = dict()
