@@ -1,5 +1,0 @@
-CO2
-BL
-ABA
-RL
-CO2_high

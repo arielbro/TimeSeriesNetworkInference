@@ -1,7 +1,0 @@
-PDGF
-Stimuli
-TAX
-IL15
-CD45
-Stimuli2
-IFN

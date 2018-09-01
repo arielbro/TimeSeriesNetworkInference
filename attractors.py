@@ -1,3 +1,4 @@
+import numpy as np
 import multiprocessing
 import utility
 import numpy
@@ -311,22 +312,23 @@ def find_model_bitchange_probability_for_different_attractors(G, n_iter=100, use
     return float(n_changes) / n_iter
 
 
-def single_state_bitchange_experiment(G, state_to_attractor_mapping=None):
+def single_state_bitchange_experiment(G, state_to_attractor_mapping=None, n_bits=1):
     initial_state = stochastic.random_state(G)
     original_attractor = stochastic.walk_to_attractor(G, initial_state, max_walk=None,
                                                       state_to_attractor_mapping=state_to_attractor_mapping)
     unaltered_state = random.choice(original_attractor)
-    perturbed_index = random.randint(0, len(unaltered_state) - 1)
-    perturbed_state = unaltered_state[:perturbed_index] + \
-                      (1 - unaltered_state[perturbed_index],) + unaltered_state[perturbed_index + 1:]
+    perturbed_indices = np.random.choice(range(len(unaltered_state), n_bits, replace=False))
+    perturbed_state = list(unaltered_state)
+    for index in perturbed_indices:
+        perturbed_state[index] = 1 - perturbed_state[index]
     perturbed_attractor = stochastic.walk_to_attractor(G, perturbed_state, max_walk=None,
                                                        state_to_attractor_mapping=state_to_attractor_mapping)
     return not utility.is_same_attractor(original_attractor, perturbed_attractor)
 
 
-def find_state_bitchange_probability_for_different_attractors(G, n_iter=1000, parallel=False):
+def find_state_bitchange_probability_for_different_attractors(G, n_iter=1000, parallel=False, n_bits=1):
     """
-    Stochastically estimate the probability for a bitchange in a network state to move the network
+    Stochastically estimate the probability for k-bitchanges in a network state to move the network
     from a certain attractor to another attractor (or to the basin of another attractor).
     If parallel=True, uses multiprocessing pool for iterations. Note that this doesn't allow different iterations
     to share basin information, so it can be slower in some circumstances.
@@ -343,7 +345,7 @@ def find_state_bitchange_probability_for_different_attractors(G, n_iter=1000, pa
         # exploit basin mapping memory
         state_to_attractor_mapping = dict()
         bitchange_results = []
-        for _ in n_iter:
+        for _ in range(n_iter):
             bitchange_results.append(single_state_bitchange_experiment(G, state_to_attractor_mapping))
     return sum(bitchange_results) / float(n_iter)
 
@@ -662,7 +664,7 @@ def find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=False):
             for i, input_node in enumerate(unspecified_input_nodes):
                 input_node.function = bool(input_combination[i])
 
-        temp_network_path = "./temp_network_{}_{}.cnet".format(int(time.time()), random.randint(1, 1000))
+        temp_network_path = "./temp_network_{}_{}.cnet".format(int(time.time()), os.getpid())
         graphs.Network.export_to_cnet(G, temp_network_path)
         env = os.environ.copy()
         env['PATH'] += ";C:/cygwin/bin"  # TODO: less hardcoding (it somehow didn't have the right PATH)

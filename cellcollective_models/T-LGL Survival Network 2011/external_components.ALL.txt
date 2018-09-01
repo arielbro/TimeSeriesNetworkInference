@@ -1,6 +1,0 @@
-TAX
-PDGF
-Stimuli
-Stimuli2
-CD45
-IL15
