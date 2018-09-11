@@ -89,3 +89,20 @@ def estimate_attractors(G, n_walks, max_walk_len=None, with_basins=True):
     if with_basins:
         return attractor_to_basin.items()
     return tuple(attractor_to_basin.keys())
+
+
+def estimate_probability_to_reroll_attractor(G, n_walks, max_walk_len=None):
+    """
+    Using attractor estimation, estimate the probability of two uniform random choices of states to belong
+    to same attractor. This is the sum of squares of probabilities to land in each attractor
+    in the first place.
+    :param G:
+    :param n_walks:
+    :param max_walk_len:
+    :return:
+    """
+    attractor_to_basin_items = estimate_attractors(G, n_walks, max_walk_len, with_basins=True)
+    total_basins = sum(basin_size for attractor, basin_size in attractor_to_basin_items)
+    probabilities = [basin_size / float(total_basins) for attractor, basin_size in attractor_to_basin_items]
+    return sum(p*p for p in probabilities)
+

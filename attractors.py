@@ -341,13 +341,16 @@ def find_state_bitchange_probability_for_different_attractors(G, n_iter=1000, pa
     # TODO: implement individual attractor stability.
     if parallel:
         pool = multiprocessing.Pool()
-        bitchange_results = pool.map(single_state_bitchange_experiment, tuple([G] * n_iter))
+        bitchange_results = pool.map(lambda graph:
+                                     single_state_bitchange_experiment(graph, n_bits=n_bits),
+                                     tuple([G] * n_iter))
     else:
         # exploit basin mapping memory
         state_to_attractor_mapping = dict()
         bitchange_results = []
         for _ in range(n_iter):
-            bitchange_results.append(single_state_bitchange_experiment(G, state_to_attractor_mapping))
+            bitchange_results.append(single_state_bitchange_experiment(G, state_to_attractor_mapping,
+                                                                       n_bits=n_bits))
     return sum(bitchange_results) / float(n_iter)
 
 
