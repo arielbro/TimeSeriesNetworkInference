@@ -15,10 +15,8 @@ if __name__ == "__main__":
     # TODO: use grownups' argument parsing library.
     if len(sys.argv) == 1:
         output_path = 'bitchange_results.csv'
-        analyze_originals = True
     else:
         output_path = sys.argv[1]
-        analyze_originals = bool(int(sys.argv[2]))
 
     experiment_max_len = 15
     experiment_n_iter = 100
