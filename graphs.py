@@ -81,7 +81,43 @@ class Network:
     def __ne__(self, other):
         return not self == other
 
-    def randomize_edges(self, include_self_loops=False):
+    def randomize_edges_by_switching(self, n_attempts=None, include_self_loops=False):
+        """
+        Attempts to sample the space of graphs preserving in and out degrees of all vertices of self,
+        by choosing pairs of edges and switching their outgoing vertices. Does a predetermined number of
+        attempts, some are failures in the sense that in or out vertices might be the same, remaining unchanged.
+        :param n_attempts:
+        :return:
+        """
+        for v in self.vertices:
+            v.precomputed_predecessors = None
+        if n_attempts is None:
+            n_attempts = 10 * len(self.edges)
+        if len(self.edges) < 2:
+            print "Warning - randomize_edges_by_switching called for graph with {} edges".format(len(self.edges))
+            return
+        self.edges = set(self.edges)  # so we can speed up lookups and replacements
+        for attempt in range(n_attempts):
+            e1, e2 = random.sample(self.edges, 2)
+            if (not include_self_loops) and ((e1[0] == e2[1]) or (e2[0] == e1[1])):
+                continue
+            if (e1[0], e2[1]) in self.edges or (e2[0], e1[1]) in self.edges:
+                # switching will create duplicate edges.
+                continue
+            self.edges.remove(e1)
+            self.edges.remove(e2)
+            self.edges.add((e1[0], e2[1]))
+            self.edges.add((e2[0], e1[1]))
+
+        self.edges = list(self.edges)  # just to be careful with other methods' assumptions.
+        # BooleanSymbolicFunctions hold input names, so we need to recreate them
+        for v in self.vertices:
+            in_neighbors = v.predecessors()
+            if isinstance(v.function, BooleanSymbolicFunc):
+                v.function = BooleanSymbolicFunc(input_names=[neighbor.name for neighbor in in_neighbors],
+                                                 boolean_outputs=v.function.get_truth_table_outputs())
+
+    def randomize_incoming_edges(self, include_self_loops=False):
         """
         Replaces the ingoing edges of nodes by choosing uniformly (and without replacement) the same number
         of in-neighbors. Operates on graph inplace.

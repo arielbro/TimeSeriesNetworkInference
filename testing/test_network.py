@@ -111,21 +111,21 @@ class TestNetwork(TestCase):
                 self.assertTrue(utility.is_same_state(G_cubed.next_state(starting_state, return_as_string=False),
                                                       true_triple_step))
 
-    def test_randomize_edges(self):
+    def test_randomize_incoming_edges(self):
         for i in range(50):
             n = random.randint(1, 10)
             G = Network.generate_random(n_vertices=n, indegree_bounds=[1, 3])
             G_tag = G.copy()
-            G_tag.randomize_edges(include_self_loops=False)
+            G_tag.randomize_incoming_edges(include_self_loops=False)
             for v, v_tag in zip(G.vertices, G_tag.vertices):
                 self.assertTrue(v.function == v_tag.function)
                 self.assertTrue(len(v.predecessors()) == len(v_tag.predecessors()))
 
         G = Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("A", "A"), ("B", "A")],
                     vertex_functions=[None] * 3)
-        for i in range(10):
+        for i in range(100):
             G_tag = G.copy()
-            G_tag.randomize_edges(include_self_loops=False)
+            G_tag.randomize_incoming_edges(include_self_loops=False)
             self.assertTrue(G_tag.get_vertex("A").predecessors() == [G_tag.get_vertex("B"), G_tag.get_vertex("C")])
             self.assertTrue(G_tag.get_vertex("B").predecessors() in [[G_tag.get_vertex("A")], [G_tag.get_vertex("C")]])
             self.assertTrue(G_tag.get_vertex("C").predecessors() == [])
@@ -133,7 +133,7 @@ class TestNetwork(TestCase):
         had_self_loop = False
         for i in range(100):
             G_tag = G.copy()
-            G_tag.randomize_edges(include_self_loops=True)
+            G_tag.randomize_incoming_edges(include_self_loops=True)
             self.assertTrue(G_tag.get_vertex("A").predecessors() in [[G_tag.get_vertex("A"), G_tag.get_vertex("B")],
                                                                      [G_tag.get_vertex("B"), G_tag.get_vertex("C")],
                                                                      [G_tag.get_vertex("A"), G_tag.get_vertex("C")]])
@@ -144,6 +144,25 @@ class TestNetwork(TestCase):
             had_self_loop = (G.vertices[0] in G.vertices[0].predecessors()) or \
                             (G.vertices[1] in G.vertices[1].predecessors()) or had_self_loop
         self.assertTrue(had_self_loop)
+
+    def test_randomize_edges_by_switching(self):
+        for i in range(10):
+            n = random.randint(1, 10)
+            G = Network.generate_random(n_vertices=n, indegree_bounds=[1, 3])
+            G_tag = G.copy()
+            G_tag.randomize_edges_by_switching(include_self_loops=False)
+            for v, v_tag in zip(G.vertices, G_tag.vertices):
+                self.assertTrue(v.function == v_tag.function)
+                self.assertTrue(len(v.predecessors()) == len(v_tag.predecessors()))
+
+        G = Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("A", "A"), ("B", "A"), ("B", "C")],
+                    vertex_functions=[None] * 3)
+        for i in range(10):
+            G_tag = G.copy()
+            G_tag.randomize_edges_by_switching(include_self_loops=False)
+            self.assertTrue(G_tag.get_vertex("A").predecessors() == [G_tag.get_vertex("A"), G_tag.get_vertex("B")])
+            self.assertTrue(G_tag.get_vertex("B").predecessors() == [G_tag.get_vertex("A")])
+            self.assertTrue(G_tag.get_vertex("C").predecessors() == [G_tag.get_vertex("B")])
 
     def test_randomize_functions(self):
         self.assertTrue(False)  # TODO: implement...

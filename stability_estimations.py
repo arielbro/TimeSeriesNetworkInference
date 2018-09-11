@@ -71,7 +71,8 @@ if __name__ == "__main__":
                 if randomize_functions:
                     graph_copy.randomize_functions(preserve_truth_ratio=True)
                 if randomize_edges:
-                    graph_copy.randomize_edges()
+                    # graph_copy.randomize_incoming_edges()
+                    graph_copy.randomize_edges_by_switching()
             start = time.time()
 
             # try:
