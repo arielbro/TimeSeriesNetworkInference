@@ -72,7 +72,9 @@ if __name__ == "__main__":
                     graph_copy.randomize_functions(preserve_truth_ratio=True)
                 if randomize_edges:
                     # graph_copy.randomize_incoming_edges()
+                    start = time.time()
                     graph_copy.randomize_edges_by_switching()
+                    print "time taken for graph randomization={:.2f} secs".format(time.time() - start)
             start = time.time()
 
             # try:
