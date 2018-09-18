@@ -647,11 +647,12 @@ def vertex_impact_scores(G, current_attractors, max_len, max_num,
     return vertex_scores
 
 
-def vertex_degeneracy_score(G, current_attractors, verbose=True):
+def vertex_degeneracy_scores(G, current_attractors, relative=False, verbose=True):
     """
     For each vertex in G, solves an ILP representing the amount of degeneracy in its function, defined as the
     maximal amount of bits that can be changed in its function without rendering any of the model's current
     attractors invalid.
+    If relative is True, divides each score by the number of truth-table rows.
     """
     start = time.time()
     for v in G.vertices:
@@ -702,7 +703,8 @@ def vertex_degeneracy_score(G, current_attractors, verbose=True):
                 print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start)
             # ilp.print_attractors(model)
             # ilp.print_model_values(model)
-            vertex_scores.append(model.objVal)
+            denominator = 1 if not relative else 2 ** len(v.predecessors())
+            vertex_scores.append(model.objVal / denominator)
             print "score of vertex {}: {:.2f}".format(v.name, vertex_scores[-1])
     return vertex_scores
 

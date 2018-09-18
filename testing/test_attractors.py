@@ -276,6 +276,9 @@ class TestAttractors(TestCase):
         #         print experiment.G
         #         raise e
 
+    def test_vertex_degeneracy_scores(self):
+        self.assertTrue(False) # TODO: write...
+
     def test_vertex_impact_scores(self):
         # TODO: also test the resulting models (assure they have the correct number of attractors)
         experiments = []

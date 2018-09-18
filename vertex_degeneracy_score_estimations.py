@@ -14,7 +14,7 @@ import stat
 if __name__ == "__main__":
     # TODO: use grownups' argument parsing library.
     if len(sys.argv) == 1:
-        output_path = 'vertex_impact_results_invalidation.csv'
+        output_path = 'vertex_degeneracy_results.csv'
     else:
         output_path = sys.argv[1]
     print "saving output to {}".format(output_path)
@@ -25,13 +25,10 @@ if __name__ == "__main__":
     os.chmod(process_specific_dubrova_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
     attractors.dubrova_path = process_specific_dubrova_path
 
-    VertexImpactResult = namedtuple("VertexImpactResult", "graph_name random_functions random_edges size "
-                                                          "maximal_change_bits n_inputs normalized_n_inputs "
+    VertexDegeneracyResult = namedtuple("VertexImpactResult", "graph_name random_functions random_edges size "
+                                                          "n_inputs normalized_n_inputs "
                                                           "max_degree mean_degree "
-                                                          "invalidation_scores "
-                                                          # "addition score "
-                                                          # "both score "
-                                                          )
+                                                          "scores")
     results = []
 
     biological_graphs = []
@@ -76,33 +73,29 @@ if __name__ == "__main__":
                 print "time taken for graph randomization={:.2f} secs".format(time.time() - start)
             start = time.time()
 
+            # current_attractors = attractors.find_attractors_dubrova(G, process_specific_dubrova_path,
+            #                                                 mutate_input_nodes=True)
             attractor_basin_tuples = stochastic.estimate_attractors(graph, n_walks=1000, max_walk_len=100,
                                                                     with_basins=True)
             current_attractors = [pair[0] for pair in attractor_basin_tuples]
+
             # TODO: insert number of current attractors, and maybe average length, as attributes to save
-            basin_sizes = [pair[1] for pair in attractor_basin_tuples]
-            sum_sizes = sum(basin_sizes)
-            basin_sizes = [size / float(sum_sizes) for size in basin_sizes]
-            print "time taken for attractor estimation={:.2f} secs".format(time.time() - start)
+            print "time taken for attractor computation={:.2f} secs".format(time.time() - start)
             start = time.time()
 
-            impact_scores = attractors.vertex_impact_scores(graph, current_attractors=current_attractors,
-                                                            max_len=12, max_num=5, verbose=False,
-                                                            impact_types=attractors.ImpactType.Invalidation,
-                                                            normalize_addition_scores=True,
-                                                            relative_attractor_basin_sizes=basin_sizes,
-                                                            maximal_bits_of_change=1)
-
+            scores = attractors.vertex_degeneracy_scores(graph,
+                                                         relative=True,
+                                                         current_attractors=current_attractors,
+                                                         verbose=False)
             attributes = graph_name_to_attributes[name]
-            result = VertexImpactResult(graph_name=name, random_functions=randomize_functions,
-                                        random_edges=randomize_edges,
-                                        size=graph_name_to_attributes[name]['size'],
-                                        maximal_change_bits=1,
-                                        n_inputs=graph_name_to_attributes[name]['n_inputs'],
-                                        normalized_n_inputs=graph_name_to_attributes[name]['normalized_n_inputs'],
-                                        max_degree=graph_name_to_attributes[name]['max_degree'],
-                                        mean_degree=graph_name_to_attributes[name]['mean_degree'],
-                                        invalidation_scores=impact_scores)
+            result = VertexDegeneracyResult(graph_name=name, random_functions=randomize_functions,
+                                            random_edges=randomize_edges,
+                                            size=graph_name_to_attributes[name]['size'],
+                                            n_inputs=graph_name_to_attributes[name]['n_inputs'],
+                                            normalized_n_inputs=graph_name_to_attributes[name]['normalized_n_inputs'],
+                                            max_degree=graph_name_to_attributes[name]['max_degree'],
+                                            mean_degree=graph_name_to_attributes[name]['mean_degree'],
+                                            scores=scores)
             results.append(result)
 
             print "time_taken for impact scores: {:.2f} secs".format(time.time() - start)
@@ -110,12 +103,8 @@ if __name__ == "__main__":
         # save on each iteration, why not
         with open(output_path, 'wb') as csv_file:
             writer = csv.writer(csv_file)
-            writer.writerow(["graph_name", "random_functions", "random_edges", "size", "maximal_change_bits",
-                            "n_inputs", "normalized_n_inputs", "max_degree", "mean_degree",
-                            "invalidation_scores",
-                                            # "addition score",
-                                            # "both score",
-                                            ])
+            writer.writerow(["graph_name", "random_functions", "random_edges", "size",
+                            "n_inputs", "normalized_n_inputs", "max_degree", "mean_degree", "scores"])
             for impact_result in results:
                 writer.writerow(impact_result)
         print "time taken for test #{}: {:.2f} secs".format(test, time.time() - test_start)
