@@ -14,9 +14,16 @@ import csv
 import gurobipy
 import stochastic
 import subprocess
+from enum import Enum
 
 timeout_seconds = 30 * 60  # TODO: refactor somewhere?
 dubrova_path = "bns_dubrova.exe"
+
+
+class ImpactType(Enum):
+    Invalidation = 1
+    Addition = 2
+    Both = 3
 
 
 class TimeoutError(Exception):
@@ -114,16 +121,17 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         model, formulas_to_variables = ilp.logic_to_ilp(ATTRACTORS)
         active_ilp_vars = [formulas_to_variables[active_logic_var] for active_logic_var in active_logic_vars]
     else:
-        model, active_ilp_vars, v_matrix, state_keys = ilp.attractors_ilp_with_keys(G, T, P, simplify_general_boolean=simplify_general_boolean,
+        model, a_matrix, v_matrix, state_keys, _ = ilp.attractors_ilp_with_keys(G, T, P, simplify_general_boolean=simplify_general_boolean,
                                                                         slice_size=key_slice_size)
+        active_attractors = [a_matrix[p, -1] for p in range(a_matrix.shape[0])]
         if sampling_bounds is not None:
             if use_sampling_for_mip_start:
-                ilp.set_mip_start(model, v_matrix, active_ilp_vars, attractors)
+                ilp.set_mip_start(model, v_matrix, active_attractors, attractors)
             else:
                 ilp.add_uniqueness_constraints_from_sampled_attractors(model, state_keys, attractors, 2**key_slice_size,
-                                                                       active_ilp_vars, "sampling_non_equality")
+                                                                       active_attractors, "sampling_non_equality")
 
-    model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
+    model.setObjective(sum(active_attractors), gurobipy.GRB.MAXIMIZE)
     # model.setParam(gurobipy.GRB.Param.NumericFocus, 3)
     # model.setParam(gurobipy.GRB.Param.OptimalityTol, 1e-6) # gurobi warns against using those for numerical issues
     # model.setParam(gurobipy.GRB.Param.IntFeasTol, 1e-9)
@@ -201,7 +209,7 @@ def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_
     model, state_keys, a_matrix, function_bitchange_vars = \
         ilp.bitchange_attractor_ilp_with_keys(G, max_len=max_len, slice_size=key_slice_size)
     ilp.add_model_invariant_uniqueness_constraints(model=model, model_state_keys=state_keys, attractors=attractors,
-                                                   upper_bound=2 ** key_slice_size, model_activity_vars=a_matrix)
+                                                   upper_bound=2 ** key_slice_size, a_matrix=a_matrix)
 
     model.addConstr(sum(function_bitchange_vars) >= 1) # So Gurobi doesn't work hard proving this.
     model.update()
@@ -359,10 +367,11 @@ def find_attractors_onestage_enumeration(G, max_len=None, verbose=False, simplif
     T = 2 ** len(G.vertices) if not max_len else max_len
     start_time = time.time()
 
-    model, active_ilp_vars, v_matrix, _ = ilp.attractors_ilp_with_keys(G, T, 1,
+    model, activity_matrix, v_matrix, _, _ = ilp.attractors_ilp_with_keys(G, T, 1,
                                                                     simplify_general_boolean=simplify_general_boolean,
                                                                     slice_size=key_slice_size)
-    model.addConstr(sum(active_ilp_vars) == 1)
+    active_attractors = [activity_matrix[p, -1] for p in range(activity_matrix.shape[0])]
+    model.addConstr(sum(active_attractors) == 1)
     model.params.PoolSolutions = 2000000000
     model.params.PoolSearchMode = 2
     # model.setParam(gurobipy.GRB.Param.NumericFocus, 3)
@@ -428,12 +437,13 @@ def find_min_attractors_model(G, max_len=None, min_attractors=None, key_slice_si
         print "P={}, T={}".format(P, T)
         iteration += 1
         start_time = time.time()
-        model, activity_variables, _, _ = ilp.attractors_ilp_with_keys(G, max_len=T, max_num=P, find_full_model=True,
+        model, a_matrix, _, _, _ = ilp.attractors_ilp_with_keys(G, max_len=T, max_num=P, find_full_model=True,
                                                                     model_type_restriction=False,
                                                                     slice_size=key_slice_size)
+        active_attractors = [a_matrix[p, -1] for p in range(a_matrix.shape[0])]
         model.params.LogToConsole = 0
-        model.setObjective(sum(activity_variables))
-        model.addConstr(sum(activity_variables) == P)
+        model.setObjective(sum(active_attractors))
+        model.addConstr(sum(active_attractors) == P)
         model.params.PoolSolutions = pool_size
         model.params.PoolSearchMode = 2
         model.params.MIPGap = 0
@@ -501,16 +511,17 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
     T = 1
     while True:
         if use_state_keys:
-            model, active_ilp_vars, _, _ = ilp.attractors_ilp_with_keys(G, T, P,
+            model, a_matrix, _, _, _ = ilp.attractors_ilp_with_keys(G, T, P,
                                                                      model_type_restriction=model_type_restriction,
                                                                      simplify_general_boolean=False,
                                                                      slice_size=key_slice_size)
         else:
-            model, active_ilp_vars, _ = ilp.direct_graph_to_ilp_classic(G, T, P,
+            model, a_matrix, _ = ilp.direct_graph_to_ilp_classic(G, T, P,
                                                                      model_type_restriction=model_type_restriction,
                                                                      simplify_general_boolean=False,
                                                                     slice_size=key_slice_size)
-        model.setObjective(sum(active_ilp_vars), gurobipy.GRB.MAXIMIZE)
+        active_attractors = [a_matrix[p, -1] for p in range(a_matrix.shape[0])]
+        model.setObjective(sum(active_attractors), gurobipy.GRB.MAXIMIZE)
         if not verbose:
             model.params.LogToConsole = 0
         start_time = time.time()
@@ -518,9 +529,9 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
         # print "Time taken for ILP solve: {:.2f} (T={}, P={})".format(time.time() - start_time, T, P)
         if model.Status != gurobipy.GRB.OPTIMAL:
             print "warning, model not solved to optimality."
-            print "writing IIS data to model_iis.ilp"
-            model.computeIIS()
-            model.write("model_iis.ilp")
+            # print "writing IIS data to model_iis.ilp"
+            # model.computeIIS()
+            # model.write("model_iis.ilp")
             return None
         else:
             found_attractors = int(round(model.ObjVal))
@@ -547,37 +558,153 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
     return found_attractors, function_vars
 
 
-def vertex_impact_scores(G, model_type_restriction=graphs.FunctionTypeRestriction.NONE,
-                         attractor_length_threshold=None, attractor_num_threshold=None):
+def vertex_impact_scores(G, current_attractors, max_len, max_num,
+                         impact_types=ImpactType.Both, verbose=True,
+                         relative_attractor_basin_sizes=None,
+                         normalize_addition_scores=False,
+                         maximal_bits_of_change=1):
     """
-    Iterate over G's vertices, for each one "erease" the knowledge about its function, and find the maximal
-    number of attractors using find_max_attractor_model. Score vertices according to that number, and return the
-    scores and models achieving them.
-    :param G: A graph, assumed to have a complete boolean model defined.
-    :param model_type_restriction:
-    :param attractor_length_threshold:
-    :param attractor_num_threshold:
-    :return: vertex_scores[i] = score(v_i), vertex_models[i] = opt f_i.
+    For each vertex in G, solves an ILP representing the impact of changing its function on attractors -
+    impact is defined as either the addition of new attractors to the model, or rendering present attractors
+    invalid, depending on impact_types.
+    The number of bits allowed to change in a node's function is given by maximal_bits_of_change. Note that with
+    unlimited bits of change, any vertex can invalidate any attractor.
+    The score is either the relative number of attractors invalidated/added,
+    or if supplied a weighted sum with the invalidated attractors' relative basin sizes
+    (given in relative_basin_sizes). If both, divide both by two.
+    Ideally, score should be in range [0-1], but since more new attractors can be created than there currently
+    are, the score isn't actually bound when impact_types is not invalidation.
+    If normalize_addition_scores is True, the addition scores are divided by max_num instead, forcing a score
+    in range [0-1], regardless of number of current attractors.
     """
+    start = time.time()
     for v in G.vertices:
         assert v.function is not None or len(v.predecessors()) == 0
     vertex_scores = []
-    vertex_models = []
     for i, v in enumerate(G.vertices):
-        # TODO: handle input nodes as a special case.
-        # TODO: consider calculating relative impact (ratio between n_attractors with or without the pertubation)
-        last_func = v.function
-        v.function = None
+        if len(v.predecessors()) == 0:
+            vertex_scores.append(np.nan)
+        else:
+            slize_size = 15
+            original_function = v.function
+            v.function = None
+            model, a_matrix, v_matrix, state_keys, vertices_f_vars = ilp.attractors_ilp_with_keys(G,
+                max_len=0 if impact_types == ImpactType.Invalidation else max_len,
+                max_num=0 if impact_types == ImpactType.Invalidation else max_num)
+            v.function = original_function
+            truth_table_lines = [v.function(*line_in) for line_in in
+                                itertools.product([False, True], repeat=len(v.predecessors()))]
+            bits_of_change = sum(1 - f_var if truth_table_line else f_var for
+                                 (f_var, truth_table_line) in zip(vertices_f_vars[i], truth_table_lines))
+            model.addConstr(bits_of_change <= maximal_bits_of_change, name="bits_of_change_constraint")
+            objective = 0
 
-        # TODO: decide on that or onestage variant
-        score, function_var_values = find_max_attractor_model(G, model_type_restriction=model_type_restriction,
-                                 attractor_length_threshold=attractor_length_threshold,
-                                 attractor_num_threshold=attractor_num_threshold, clean_up=True)
-        vertex_scores.append(score)
-        vertex_models.append([pair for pair in function_var_values if pair[0].startswith("f_{}_".format(i))])
-        print "cur score={}".format(vertex_scores[-1])
-        v.function = last_func
-    return vertex_scores, vertex_models
+            if impact_types == ImpactType.Addition or impact_types == ImpactType.Both:
+                ilp.add_model_invariant_uniqueness_constraints(model, state_keys, current_attractors,
+                                                               upper_bound=2 ** slize_size,
+                                                               a_matrix=a_matrix)
+                denominator = max_num if normalize_addition_scores else len(current_attractors)
+                objective += sum(a_matrix[p, -1] for p in range(max_num)) / denominator
+
+            if impact_types == ImpactType.Invalidation or impact_types == ImpactType.Both:
+                if relative_attractor_basin_sizes is None:
+                    relative_attractor_basin_sizes = \
+                        [1 / float(len(current_attractors))] * len(current_attractors)
+                assert len(relative_attractor_basin_sizes) == len(current_attractors) and \
+                       abs(sum(relative_attractor_basin_sizes) - 1) < 1e-6
+                for attractor, weight in zip(current_attractors, relative_attractor_basin_sizes):
+                    objective += weight * ilp.add_indicator_for_attractor_invalidity(
+                                            model, G, attractor, vertices_f_vars, "invalidated_attractors")
+            if impact_types == ImpactType.Both:
+                objective /= 2
+
+            print "time taken to build model: {:.2f}".format(time.time() - start)
+            start = time.time()
+            if not verbose:
+                model.params.LogToConsole = 0
+            model.setObjective(objective, gurobipy.GRB.MAXIMIZE)
+            model.setParam('TimeLimit', timeout_seconds)
+            model.optimize()
+            if model.Status != gurobipy.GRB.OPTIMAL:
+                print "warning, model not solved to optimality."
+                if model.Status == gurobipy.GRB.INFEASIBLE:
+                    # print "writing IIS data to model_iis.ilp"
+                    # model.computeIIS()
+                    # model.write("./model_iis.ilp")
+                    raise RuntimeError("Gurobi failed to reach optimal solution")
+                elif model.Status == gurobipy.GRB.TIME_LIMIT:
+                    raise TimeoutError("Gurobi failed with time_out")
+                else:
+                    raise ValueError("Gurobi failed, status code - {}".format(model.Status))
+            else:
+                if model.ObjVal != int(round(model.ObjVal)):
+                    print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
+                print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start)
+            # ilp.print_attractors(model)
+            # ilp.print_model_values(model)
+            vertex_scores.append(model.objVal)
+            print "score of vertex {}: {:.2f}".format(v.name, vertex_scores[-1])
+    return vertex_scores
+
+
+def vertex_degeneracy_score(G, current_attractors, verbose=True):
+    """
+    For each vertex in G, solves an ILP representing the amount of degeneracy in its function, defined as the
+    maximal amount of bits that can be changed in its function without rendering any of the model's current
+    attractors invalid.
+    """
+    start = time.time()
+    for v in G.vertices:
+        assert v.function is not None or len(v.predecessors()) == 0
+    vertex_scores = []
+    for i, v in enumerate(G.vertices):
+        if len(v.predecessors()) == 0:
+            vertex_scores.append(np.nan)
+        else:
+            slize_size = 15
+            original_function = v.function
+            v.function = None
+            model, a_matrix, v_matrix, state_keys, vertices_f_vars = \
+                ilp.attractors_ilp_with_keys(G, max_len=0, max_num=0)
+            v.function = original_function
+            truth_table_lines = [v.function(*line_in) for line_in in
+                                itertools.product([False, True], repeat=len(v.predecessors()))]
+            bits_of_change = sum(1 - f_var if truth_table_line else f_var for
+                                 (f_var, truth_table_line) in zip(vertices_f_vars[i], truth_table_lines))
+            model.setObjective(bits_of_change, gurobipy.GRB.MAXIMIZE)
+
+            for i, attractor in enumerate(current_attractors):
+                invalidity_indicator = ilp.add_indicator_for_attractor_invalidity(
+                                        model, G, attractor, vertices_f_vars, "invalidated_attractors")
+                model.addConstr(invalidity_indicator == 0, name="validity_constraint_attractor_{}".format(i))
+            model.update()
+
+            print "time taken to build model: {:.2f}".format(time.time() - start)
+            start = time.time()
+            if not verbose:
+                model.params.LogToConsole = 0
+            model.setParam('TimeLimit', timeout_seconds)
+            model.optimize()
+            if model.Status != gurobipy.GRB.OPTIMAL:
+                print "warning, model not solved to optimality."
+                if model.Status == gurobipy.GRB.INFEASIBLE:
+                    # print "writing IIS data to model_iis.ilp"
+                    # model.computeIIS()
+                    # model.write("./model_iis.ilp")
+                    raise RuntimeError("Gurobi failed to reach optimal solution")
+                elif model.Status == gurobipy.GRB.TIME_LIMIT:
+                    raise TimeoutError("Gurobi failed with time_out")
+                else:
+                    raise ValueError("Gurobi failed, status code - {}".format(model.Status))
+            else:
+                if model.ObjVal != int(round(model.ObjVal)):
+                    print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
+                print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start)
+            # ilp.print_attractors(model)
+            # ilp.print_model_values(model)
+            vertex_scores.append(model.objVal)
+            print "score of vertex {}: {:.2f}".format(v.name, vertex_scores[-1])
+    return vertex_scores
 
 
 def stochastic_attractor_estimation(G, n_walks, max_walk_len=None):

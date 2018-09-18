@@ -61,8 +61,10 @@ if __name__ == "__main__":
         print "#{}; {} input nodes for graph {} of size {} and max degree {}".format(i, n_inputs, name,
                                                                                      size, max_degree)
     for test in range(5000):
+        test_start = time.time()
         print "test #{}".format(test)
-        for graph, name in zip(biological_graphs, biological_graph_names):
+        for graph_index, graph, name in zip(range(len(biological_graphs)), biological_graphs, biological_graph_names):
+            print "working on graph #{}".format(graph_index)
             is_biological = (test % biological_test_frequency) == 0
             graph_copy = graph.copy()
 
@@ -84,7 +86,7 @@ if __name__ == "__main__":
             #                                                           simplify_boolean=False)
             # except attractors.TimeoutError as e:
             #     minimal_model_bitchange = numpy.inf
-            print "time taken for model_bitchange={:.2f} secs".format(time.time() - start)
+            # print "time taken for model_bitchange={:.2f} secs".format(time.time() - start)
             second_start = time.time()
             state_bits_changed = random.randint(1, 5)
             try:
@@ -147,3 +149,4 @@ if __name__ == "__main__":
                              ])
             for stability_result in results:
                 writer.writerow(stability_result)
+    print "time taken for test #{}: {:.2f} secs".format(test, time.time() - test_start)
