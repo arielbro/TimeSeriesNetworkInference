@@ -270,6 +270,75 @@ def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_
         #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
 
 
+def stochastic_vertex_impact_scores(G, current_attractors, n_iter=100, use_dubrova=False,
+                                    bits_of_change=1,
+                                    relative_attractor_basin_sizes=None,
+                                    attractor_estimation_n_iter=500):
+    """
+    For each vertex in G, returns the mean impact of for uniformly selected bit changes
+    in its function. Impact is defined as the proportion of graph states that will no longer belong to
+    the same attractor in the model, which is equivalent to
+    the invalidated attractors weighted by their basin size, which is what is actually computed.
+    If no basin sizes are given, attractors are weighted equally.
+    :param G:
+    :param current_attractors:
+    :param n_iter:
+    :param bits_of_change:
+    :param relative_attractor_basin_sizes:
+    :return:
+    """
+    # TODO: write tests
+
+    start = time.time()
+    for v in G.vertices:
+        assert v.function is not None or len(v.predecessors()) == 0
+    vertex_scores = []
+    for i, v in enumerate(G.vertices):
+        vertex_start = time.time()
+        if len(v.predecessors()) == 0:
+            vertex_scores.append(np.nan)
+        else:
+            assert isinstance(v.function, logic.BooleanSymbolicFunc)
+            score = 0.0
+            for iteration in range(n_iter):
+                if iteration and not iteration % 50:
+                    print "iteration #{}".format(iteration)
+
+                # don't mutate existing vertex's function
+                original_function = v.function
+                v.function = None
+                truth_table_row_indices = random.sample(list(range(2 ** len(v.predecessors()))), bits_of_change)
+                # TODO: decide if this version, or building sympy expression without this row and then
+                # TODO: adding it (as I did in another function), is better.
+                boolean_outputs = list(original_function.boolean_outputs)
+                for index in truth_table_row_indices:
+                    boolean_outputs[index] = 1 - boolean_outputs[index]
+                v.function = logic.BooleanSymbolicFunc(input_names=[u.name for u in v.predecessors()],
+                                                       boolean_outputs=boolean_outputs)
+
+                attractors_start = time.time()
+                if use_dubrova:
+                    new_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+                else:
+                    new_attractors = stochastic.estimate_attractors(G, n_walks=attractor_estimation_n_iter,
+                                                                    max_walk_len=100,
+                                                                    with_basins=False)
+                print "time taken to calculate new attractors: {:.2f} secs".format(time.time() - attractors_start)
+
+                for attractor, basin_size in zip(current_attractors, relative_attractor_basin_sizes):
+                    if attractor not in new_attractors:
+                        score += basin_size
+
+                v.function = original_function
+
+            print "time taken for vertex {}: {:.2f} secs".format(v.name, time.time() - vertex_start)
+
+            score /= n_iter
+            vertex_scores.append(score)
+    print "time taken for stochastic impact scores: {:.2f} secs".format(time.time() - start)
+    return vertex_scores
+
+
 def find_model_bitchange_probability_for_different_attractors(G, n_iter=100, use_dubrova=True, max_len=15):
     # TODO: implement for other types of functions? Implement less expensively?
     # TODO: write tests

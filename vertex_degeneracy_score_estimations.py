@@ -63,19 +63,23 @@ if __name__ == "__main__":
             start = time.time()
             graph_copy = graph.copy()
 
-            randomize_functions, randomize_edges = random.choice([(False, True), (True, False), (True, True)])
+            if is_biological:
+                randomize_functions, randomize_edges = False, False
+            else:
+                randomize_functions, randomize_edges = random.choice([(False, True), (True, False), (True, True)])
             if randomize_functions:
                 graph_copy.randomize_functions(preserve_truth_ratio=True)
             if randomize_edges:
                 # graph_copy.randomize_incoming_edges()
                 start = time.time()
                 graph_copy.randomize_edges_by_switching()
+            if randomize_edges or randomize_functions:
                 print "time taken for graph randomization={:.2f} secs".format(time.time() - start)
             start = time.time()
 
             # current_attractors = attractors.find_attractors_dubrova(G, process_specific_dubrova_path,
             #                                                 mutate_input_nodes=True)
-            attractor_basin_tuples = stochastic.estimate_attractors(graph, n_walks=1000, max_walk_len=100,
+            attractor_basin_tuples = stochastic.estimate_attractors(graph_copy, n_walks=1000, max_walk_len=100,
                                                                     with_basins=True)
             current_attractors = [pair[0] for pair in attractor_basin_tuples]
 
@@ -83,7 +87,7 @@ if __name__ == "__main__":
             print "time taken for attractor computation={:.2f} secs".format(time.time() - start)
             start = time.time()
 
-            scores = attractors.vertex_degeneracy_scores(graph,
+            scores = attractors.vertex_degeneracy_scores(graph_copy,
                                                          relative=True,
                                                          current_attractors=current_attractors,
                                                          verbose=False)
