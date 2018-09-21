@@ -3,6 +3,8 @@ import time
 import graphs
 import attractors
 from shutil import copyfile
+from pebble import ProcessPool
+from concurrent.futures import TimeoutError
 from collections import namedtuple
 import csv
 import stochastic
@@ -134,13 +136,27 @@ if __name__ == "__main__":
         results = []
         if parallel:
             start = time.time()
-            pool = multiprocessing.Pool(processes=n_processes)
             repeat = len(biological_graphs)
-            results = pool.map(one_graph_impact_score_estimation_wrapper,
-                               zip(biological_graphs, biological_graph_names,
-                               itertools.repeat(is_biological),
-                               itertools.repeat(graph_name_to_attributes)))
-            print "time_taken for impact scores: {:.2f} secs".format(time.time() - start)
+            with ProcessPool() as pool:
+                future = pool.map(one_graph_impact_score_estimation_wrapper,
+                                   zip(biological_graphs, biological_graph_names,
+                                       itertools.repeat(is_biological),
+                                       itertools.repeat(graph_name_to_attributes)),
+                                   timeout=4000)
+                results_iterator = future.result()
+
+                while True:
+                    try:
+                        result = next(results_iterator)
+                        results.append(result)
+                    except StopIteration:
+                        break
+                    except TimeoutError as e:
+                        print "Breaking stochastic impact score estimation for timeout after {} seconds".\
+                            format(e.args[1])
+                        results.append(None)
+
+                print "time_taken for impact scores: {:.2f} secs".format(time.time() - start)
 
         else:
             for graph_index, graph, name in zip(range(len(biological_graphs)), biological_graphs, biological_graph_names):
