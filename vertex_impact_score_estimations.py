@@ -165,26 +165,26 @@ if __name__ == "__main__":
             start = time.time()
             repeat = len(biological_graphs)
             # with ProcessPool() as pool:
-            with multiprocessing.Pool(processes=n_processes) as pool:
-                future = pool.map(one_graph_impact_score_estimation_wrapper,
-                                   zip(biological_graphs, biological_graph_names,
-                                       itertools.repeat(is_biological),
-                                       itertools.repeat(graph_name_to_attributes)),
-                                   timeout=4000)
-                results_iterator = future.result()
+            pool = multiprocessing.Pool(processes=n_processes)
+            future = pool.map(one_graph_impact_score_estimation_wrapper,
+                               zip(biological_graphs, biological_graph_names,
+                                   itertools.repeat(is_biological),
+                                   itertools.repeat(graph_name_to_attributes)),
+                               timeout=4000)
+            results_iterator = future.result()
 
-                while True:
-                    try:
-                        result = next(results_iterator)
-                        results.append(result)
-                    except StopIteration:
-                        break
-                    except TimeoutError as e:
-                        print "Breaking stochastic impact score estimation for timeout after {} seconds".\
-                            format(e.args[1])
-                        results.append(None)
+            while True:
+                try:
+                    result = next(results_iterator)
+                    results.append(result)
+                except StopIteration:
+                    break
+                except TimeoutError as e:
+                    print "Breaking stochastic impact score estimation for timeout after {} seconds".\
+                        format(e.args[1])
+                    results.append(None)
 
-                print "time_taken for impact scores: {:.2f} secs".format(time.time() - start)
+            print "time_taken for impact scores: {:.2f} secs".format(time.time() - start)
 
         else:
             for graph_index, graph, name in zip(range(len(biological_graphs)), biological_graphs, biological_graph_names):
