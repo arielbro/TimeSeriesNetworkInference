@@ -172,7 +172,7 @@ if __name__ == "__main__":
                                    itertools.repeat(graph_name_to_attributes)))
                                # timeout=4000)
             # results_iterator = future.result()
-            results_iterator = future
+            results_iterator = iter(future)  # keeping syntax close to Pebble in case I can get it on nova.
 
             while True:
                 try:
