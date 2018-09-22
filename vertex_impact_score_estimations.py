@@ -56,7 +56,7 @@ def one_graph_impact_score_estimation_wrapper(args):
     try:
         return one_graph_impact_score_estimation(*args)
     except TimeoutError as e:
-        print "warning - timeout on vertex impact score estimation after {} seconds.".format(e.args[1])
+        print "warning - timeout on vertex impact score estimation after {} seconds.".format(timeout_seconds)
         return None
 
 @timeout(timeout_seconds)
@@ -172,7 +172,7 @@ if __name__ == "__main__":
                                    itertools.repeat(graph_name_to_attributes)))
                                # timeout=4000)
             # results_iterator = future.result()
-            result_iterator = future
+            results_iterator = future
 
             while True:
                 try:
