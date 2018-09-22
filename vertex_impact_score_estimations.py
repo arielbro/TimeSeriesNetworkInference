@@ -59,6 +59,7 @@ def one_graph_impact_score_estimation_wrapper(args):
         print "warning - timeout on vertex impact score estimation after {} seconds.".format(timeout_seconds)
         return None
 
+
 @timeout(timeout_seconds)
 def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_attributes):
     # copy Dubrova's executable, to prevent mysterious errors when running multiple processes calling it.
@@ -154,13 +155,12 @@ if __name__ == "__main__":
                                               normalized_n_inputs=normaliezd_n_inputs)
         print "#{}; {} input nodes for graph {} of size {} and max degree {}".format(i, n_inputs, name,
                                                                                      size, max_degree)
-
+    results = []
     for test in range(1000):
         test_start = time.time()
         print "test #{}".format(test)
         is_biological = (test % 10 == 0)  # TODO: remove redundancy in repeating optimization results...
 
-        results = []
         if parallel:
             start = time.time()
             repeat = len(biological_graphs)
