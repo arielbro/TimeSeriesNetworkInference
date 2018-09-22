@@ -56,7 +56,7 @@ def one_graph_impact_score_estimation_wrapper(args):
     try:
         return one_graph_impact_score_estimation(*args)
     except TimeoutError as e:
-        print "timeout on vertex impact score estimation after {} seconds.".format(e.args[1])
+        print "warning - timeout on vertex impact score estimation after {} seconds.".format(e.args[1])
         return None
 
 @timeout(timeout_seconds)
@@ -171,7 +171,8 @@ if __name__ == "__main__":
                                    itertools.repeat(is_biological),
                                    itertools.repeat(graph_name_to_attributes)))
                                # timeout=4000)
-            results_iterator = future.result()
+            # results_iterator = future.result()
+            result_iterator = future
 
             while True:
                 try:
@@ -181,7 +182,7 @@ if __name__ == "__main__":
                     break
                 except TimeoutError as e:
                     print "Breaking stochastic impact score estimation for timeout after {} seconds".\
-                        format(e.args[1])
+                        format(timeout_seconds)
                     results.append(None)
 
             print "time_taken for impact scores: {:.2f} secs".format(time.time() - start)

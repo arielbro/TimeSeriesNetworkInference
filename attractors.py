@@ -169,8 +169,8 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
             raise ValueError("Gurobi failed, status code - {}".format(model.Status))
     else:
         # print "# attractors = {}".format(model.ObjVal)
-        if model.ObjVal != int(round(model.ObjVal)):
-            print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
+        # if model.ObjVal != int(round(model.ObjVal)):
+        #     print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
         # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
         # ilp.print_attractors(model)
         # ilp.print_model_values(model)
@@ -323,7 +323,7 @@ def stochastic_vertex_impact_scores(G, current_attractors, n_iter=100, use_dubro
                     new_attractors = stochastic.estimate_attractors(G, n_walks=attractor_estimation_n_iter,
                                                                     max_walk_len=100,
                                                                     with_basins=False)
-                print "time taken to calculate new attractors: {:.2f} secs".format(time.time() - attractors_start)
+                # print "time taken to calculate new attractors: {:.2f} secs".format(time.time() - attractors_start)
 
                 for attractor, basin_size in zip(current_attractors, relative_attractor_basin_sizes):
                     if attractor not in new_attractors:
