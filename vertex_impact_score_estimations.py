@@ -3,7 +3,7 @@ import time
 import graphs
 import attractors
 from shutil import copyfile
-from pebble import ProcessPool
+# from pebble import ProcessPool
 from concurrent.futures import TimeoutError
 from collections import namedtuple
 import csv
@@ -13,17 +13,53 @@ import itertools
 import numpy
 import os
 import sys
+import signal, os, errno
+from functools import wraps
 import stat
 
 stochastic_n_iter = 50
 parallel = True
 n_processes = 49
+timeout_seconds = 50
+
+VertexImpactResult = namedtuple("VertexImpactResult", "graph_name random_functions random_edges size "
+                                                      "maximal_change_bits n_inputs normalized_n_inputs "
+                                                      "max_degree mean_degree "
+                                                      "optimization_impact_scores "
+                                                      "stochastic_impact_scores"
+                                # "invalidation_scores "
+                                # "addition score "
+                                # "both score "
+                                )
+
+
+def timeout(seconds,error_message=os.strerror(errno.ETIMEDOUT)):
+    def decorator(func):
+        def _handle_timeout(signum, frame):
+            raise TimeoutError(error_message)
+
+        def wrapper(*args, **kwargs):
+            signal.signal(signal.SIGALRM, _handle_timeout)
+            signal.setitimer(signal.ITIMER_REAL, seconds)
+            try:
+                ret = func(*args, **kwargs)
+            finally:
+                signal.alarm(0)
+            return ret
+
+        return wraps(func)(wrapper)
+
+    return decorator
 
 
 def one_graph_impact_score_estimation_wrapper(args):
-    return one_graph_impact_score_estimation(*args)
+    try:
+        return one_graph_impact_score_estimation(*args)
+    except TimeoutError as e:
+        print "timeout on vertex impact score estimation after {} seconds.".format(e.args[1])
+        return None
 
-
+@timeout(timeout_seconds)
 def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_attributes):
     # copy Dubrova's executable, to prevent mysterious errors when running multiple processes calling it.
     process_specific_dubrova_path = "temp_{}_{}".format(attractors.dubrova_path, os.getpid())
@@ -94,15 +130,6 @@ if __name__ == "__main__":
         output_path = sys.argv[1]
     print "saving output to {}".format(output_path)
 
-    VertexImpactResult = namedtuple("VertexImpactResult", "graph_name random_functions random_edges size "
-                                                          "maximal_change_bits n_inputs normalized_n_inputs "
-                                                          "max_degree mean_degree "
-                                                          "optimization_impact_scores "
-                                                          "stochastic_impact_scores"
-                                                          # "invalidation_scores "
-                                                          # "addition score "
-                                                          # "both score "
-                                                          )
     results = []
 
     biological_graphs = []
@@ -137,7 +164,8 @@ if __name__ == "__main__":
         if parallel:
             start = time.time()
             repeat = len(biological_graphs)
-            with ProcessPool() as pool:
+            # with ProcessPool() as pool:
+            with multiprocessing.Pool(processes=n_processes) as pool:
                 future = pool.map(one_graph_impact_score_estimation_wrapper,
                                    zip(biological_graphs, biological_graph_names,
                                        itertools.repeat(is_biological),
@@ -175,5 +203,7 @@ if __name__ == "__main__":
                                             # "both score",
                                             ])
             for impact_result in results:
+                if impact_result is None:
+                    continue
                 writer.writerow(impact_result)
         print "time taken for test #{}: {:.2f} secs".format(test, time.time() - test_start)
