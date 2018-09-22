@@ -312,7 +312,7 @@ def stochastic_vertex_impact_scores(G, current_attractors, n_iter=100, use_dubro
                 # TODO: adding it (as I did in another function), is better.
                 boolean_outputs = list(original_function.boolean_outputs)
                 for index in truth_table_row_indices:
-                    boolean_outputs[index] = 1 - boolean_outputs[index]
+                    boolean_outputs[index] = 1 - bool(boolean_outputs[index])  # to work with sympy's logic
                 v.function = logic.BooleanSymbolicFunc(input_names=[u.name for u in v.predecessors()],
                                                        boolean_outputs=boolean_outputs)
 

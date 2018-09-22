@@ -62,10 +62,10 @@ def one_graph_impact_score_estimation_wrapper(args):
 @timeout(timeout_seconds)
 def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_attributes):
     # copy Dubrova's executable, to prevent mysterious errors when running multiple processes calling it.
-    process_specific_dubrova_path = "temp_{}_{}".format(attractors.dubrova_path, os.getpid())
-    copyfile(attractors.dubrova_path, process_specific_dubrova_path)
-    os.chmod(process_specific_dubrova_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
-    attractors.dubrova_path = process_specific_dubrova_path
+    # process_specific_dubrova_path = "temp_{}_{}".format(attractors.dubrova_path, os.getpid())
+    # copyfile(attractors.dubrova_path, process_specific_dubrova_path)
+    # os.chmod(process_specific_dubrova_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+    # attractors.dubrova_path = process_specific_dubrova_path
     # TODO: tidy up after done
 
     start = time.time()
