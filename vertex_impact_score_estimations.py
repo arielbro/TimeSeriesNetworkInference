@@ -33,7 +33,7 @@ VertexImpactResult = namedtuple("VertexImpactResult", "graph_name random_functio
                                 )
 
 
-def timeout(seconds,error_message=os.strerror(errno.ETIMEDOUT)):
+def timeout(seconds, error_message=os.strerror(errno.ETIMEDOUT)):
     def decorator(func):
         def _handle_timeout(signum, frame):
             raise TimeoutError(error_message)
@@ -169,8 +169,8 @@ if __name__ == "__main__":
             future = pool.map(one_graph_impact_score_estimation_wrapper,
                                zip(biological_graphs, biological_graph_names,
                                    itertools.repeat(is_biological),
-                                   itertools.repeat(graph_name_to_attributes)),
-                               timeout=4000)
+                                   itertools.repeat(graph_name_to_attributes)))
+                               # timeout=4000)
             results_iterator = future.result()
 
             while True:
@@ -189,7 +189,8 @@ if __name__ == "__main__":
         else:
             for graph_index, graph, name in zip(range(len(biological_graphs)), biological_graphs, biological_graph_names):
                 print "working on graph #{}".format(graph_index)
-                result = one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_attributes)
+                args = graph, name, is_biological, graph_name_to_attributes
+                result = one_graph_impact_score_estimation_wrapper(args)
                 results.append(result)
 
         # save on each iteration, why not
