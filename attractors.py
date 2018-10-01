@@ -12,6 +12,7 @@ import ilp
 import random
 import csv
 import gurobipy
+from gurobipy import GRB
 import stochastic
 import subprocess
 from enum import Enum
@@ -270,10 +271,10 @@ def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_
         #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
 
 
-def stochastic_vertex_impact_scores(G, current_attractors, n_iter=100, use_dubrova=False,
-                                    bits_of_change=1,
-                                    relative_attractor_basin_sizes=None,
-                                    attractor_estimation_n_iter=500):
+def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use_dubrova=False,
+                                          bits_of_change=1,
+                                          relative_attractor_basin_sizes=None,
+                                          attractor_estimation_n_iter=500):
     """
     For each vertex in G, returns the mean impact of for uniformly selected bit changes
     in its function. Impact is defined as the proportion of graph states that will no longer belong to
@@ -331,7 +332,8 @@ def stochastic_vertex_impact_scores(G, current_attractors, n_iter=100, use_dubro
 
                 v.function = original_function
 
-            print "time taken for vertex {}: {:.2f} secs".format(v.name, time.time() - vertex_start)
+            print "time taken for vertex {}: {:.2f} secs. {} out of {}".format(v.name, time.time() - vertex_start,
+                                                                               i, len(G.vertices))
 
             score /= n_iter
             vertex_scores.append(score)
@@ -389,13 +391,16 @@ def find_model_bitchange_probability_for_different_attractors(G, n_iter=100, use
     return float(n_changes) / n_iter
 
 
-def single_state_bitchange_experiment(G, state_to_attractor_mapping=None, n_bits=1):
+def single_state_bitchange_experiment(G, state_to_attractor_mapping=None, n_bits=1, bitchange_node_indices=None):
     initial_state = stochastic.random_state(G)
     original_attractor = stochastic.walk_to_attractor(G, initial_state, max_walk=None,
                                                       state_to_attractor_mapping=state_to_attractor_mapping)
     unaltered_state = random.choice(original_attractor)
-    perturbed_indices = np.random.choice(range(len(unaltered_state)), n_bits, replace=False)
     perturbed_state = list(unaltered_state)  # so we can perturbe it
+    if bitchange_node_indices is not None:
+        perturbed_indices = bitchange_node_indices
+    else:
+        perturbed_indices = np.random.choice(range(len(unaltered_state)), n_bits, replace=False)
     for index in perturbed_indices:
         perturbed_state[index] = 1 - perturbed_state[index]
     perturbed_state = tuple(perturbed_state)  # so it will be hashable
@@ -404,31 +409,124 @@ def single_state_bitchange_experiment(G, state_to_attractor_mapping=None, n_bits
     return not utility.is_same_attractor(original_attractor, perturbed_attractor)
 
 
-def find_state_bitchange_probability_for_different_attractors(G, n_iter=1000, parallel=False, n_bits=1):
+def stochastic_vertex_state_impact_scores(G, n_iter=1000, parallel=False):
     """
-    Stochastically estimate the probability for k-bitchanges in a network state to move the network
+    Stochastically estimate the probability for a flip in the state of a each vertex a network to move the network
     from a certain attractor to another attractor (or to the basin of another attractor).
+    States to change are sampled by uniform selection then simulation to corresponding attractor.
+    Impacts of input nodes are non defined.
     If parallel=True, uses multiprocessing pool for iterations. Note that this doesn't allow different iterations
     to share basin information, so it can be slower in some circumstances.
     :param G:
     :param n_iter:
+    :param parallel:
     :return:
     """
-    # TODO: add an option to distinguish input nodes from others
-    # TODO: implement individual attractor stability.
-    if parallel:
-        pool = multiprocessing.Pool()
-        bitchange_results = pool.map(lambda graph:
-                                     single_state_bitchange_experiment(graph, n_bits=n_bits),
-                                     tuple([G] * n_iter))
-    else:
-        # exploit basin mapping memory
-        state_to_attractor_mapping = dict()
-        bitchange_results = []
-        for _ in range(n_iter):
-            bitchange_results.append(single_state_bitchange_experiment(G, state_to_attractor_mapping,
-                                                                       n_bits=n_bits))
-    return sum(bitchange_results) / float(n_iter)
+    vertex_scores = []
+    state_to_attractor_mapping = dict()
+    for vertex_index in range(len(G.vertices)):
+        vertex_start = time.time()
+        if len(G.vertices[vertex_index].predecessors()) == 0:
+            vertex_scores.append(np.nan)
+            continue
+        print "working on vertex {} ({} of {})".format(G.vertices[vertex_index].name, vertex_index + 1, len(G.vertices))
+
+        if parallel:
+            pool = multiprocessing.Pool()
+            bitchange_results = pool.map(lambda graph:
+                                         single_state_bitchange_experiment(graph, n_bits=1,
+                                                                           bitchange_node_indices=[vertex_index]),
+                                         tuple([G] * n_iter))
+        else:
+            # exploit basin mapping memory
+            bitchange_results = []
+            for _ in range(n_iter):
+                bitchange_results.append(single_state_bitchange_experiment(G, state_to_attractor_mapping,
+                                                                           n_bits=1,
+                                                                           bitchange_node_indices=[vertex_index]))
+        vertex_scores.append(sum(bitchange_results) / float(n_iter))
+        print "time taken for vertex {}: {:.2f} secs. {} out of {}".format(G.vertices[vertex_index].name,
+                                                                           time.time() - vertex_start,
+                                                                           vertex_index, len(G.vertices))
+
+    return vertex_scores
+
+
+def vertex_state_impact_scores(G, current_attractors, max_trainsient_len=30, verbose=True,
+                               relative_attractor_basin_sizes=None, key_slice_size=15):
+    """
+    For each vertex, finds the proportion of attractors, possibly weighted by their basin sizes, that can be
+    switched to the basin of another attractor by flipping that vertex.
+    """
+    if len(current_attractors) == 1:
+        return [0 if len(v.predecessors()) > 0 else np.nan for v in G.vertices]
+    if relative_attractor_basin_sizes is None:
+        relative_attractor_basin_sizes = [1 / float(len(current_attractors))] * len(current_attractors)
+    vertex_scores = []
+    for vertex_index in range(len(G.vertices)):
+        if len(G.vertices[vertex_index].predecessors()) == 0:
+            vertex_scores.append(np.nan)
+            continue
+        vertex_start = time.time()
+        print "working on vertex {} ({} of {})".format(G.vertices[vertex_index].name, vertex_index + 1, len(G.vertices))
+
+        score = 0
+        for attractor_index in range(len(current_attractors)):
+            model = gurobipy.Model()
+            source_state = [model.addVar(vtype=gurobipy.GRB.BINARY,
+                                         name="attractor_{}_first_state_{}".format(attractor_index, i))
+                            for i in range(len(G.vertices))]
+            model.update()
+            perturbed_state = [1 - var if i == vertex_index else var for i, var in enumerate(source_state)]
+            if max_trainsient_len > 0:
+                target_state = [model.addVar(vtype=gurobipy.GRB.BINARY,
+                                             name="attractor_{}_second_state_{}".format(attractor_index, i))
+                                for i in range(len(G.vertices))]
+                model.update()
+                ilp.add_path_to_model(G, model, path_len=max_trainsient_len, first_state_vars=perturbed_state,
+                                      last_state_vars=target_state)
+            else:
+                target_state = perturbed_state
+            this_attractor_states = current_attractors[attractor_index]
+            other_attractor_states = []
+            for other_attractor_index in range(len(current_attractors)):
+                if other_attractor_index == attractor_index:
+                    continue
+                other_attractor_states.extend(current_attractors[other_attractor_index])
+            first_inclusion_indicator = \
+                ilp.add_state_inclusion_indicator(model, first_state=source_state,
+                                                  second_state_set=this_attractor_states,
+                                                  slice_size=key_slice_size,
+                                                  prefix="attractor_{}_first_state".format(attractor_index))
+            second_inclusion_indicator = \
+                ilp.add_state_inclusion_indicator(model, first_state=target_state,
+                                                  second_state_set=other_attractor_states,
+                                                  slice_size=key_slice_size,
+                                                  prefix="attractor_{}_target_state".format(attractor_index))
+            model.addConstr(first_inclusion_indicator == 1, name="first_state_inclusion_constraint")
+            model.setObjective(second_inclusion_indicator, sense=GRB.MAXIMIZE)
+            # print "second inclusion indicator - {}".format(second_inclusion_indicator)
+            model.update()
+            model.optimize()
+            # print "Time taken for ILP solve: {:.2f} (T={}, P={})".format(time.time() - start_time, T, P)
+            if model.Status != gurobipy.GRB.OPTIMAL:
+                print "writing IIS data to model_iis.ilp"
+                model.computeIIS()
+                model.write("model_iis.ilp")
+                model.write("model.mps")
+                raise ValueError("model not solved to optimality.")
+            elif model.ObjVal != int(round(model.ObjVal)):
+                raise ValueError("model solved with non-integral objective function ({})".format(model.ObjVal))
+            else:
+                is_destructive = int(round(model.ObjVal))
+                # print model.ObjVal
+                # ilp.print_model_values(model)
+                # ilp.print_model_constraints(model)
+                score += is_destructive * relative_attractor_basin_sizes[attractor_index]
+        vertex_scores.append(score)
+        print "time taken for vertex {}: {:.2f} seconds".format(G.vertices[vertex_index].name,
+                                                                time.time() - vertex_start)
+    return vertex_scores
 
 
 def find_attractors_onestage_enumeration(G, max_len=None, verbose=False, simplify_general_boolean=False,
@@ -627,11 +725,11 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
     return found_attractors, function_vars
 
 
-def vertex_impact_scores(G, current_attractors, max_len, max_num,
-                         impact_types=ImpactType.Both, verbose=True,
-                         relative_attractor_basin_sizes=None,
-                         normalize_addition_scores=False,
-                         maximal_bits_of_change=1):
+def vertex_model_impact_scores(G, current_attractors, max_len, max_num,
+                               impact_types=ImpactType.Both, verbose=True,
+                               relative_attractor_basin_sizes=None,
+                               normalize_addition_scores=False,
+                               maximal_bits_of_change=1):
     """
     For each vertex in G, solves an ILP representing the impact of changing its function on attractors -
     impact is defined as either the addition of new attractors to the model, or rendering present attractors

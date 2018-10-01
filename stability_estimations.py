@@ -101,10 +101,10 @@ if __name__ == "__main__":
             third_start = time.time()
             try:
                 state_bitchange_probability = \
-                    attractors.find_state_bitchange_probability_for_different_attractors(graph_copy,
-                                                                                         n_iter=experiment_n_iter,
-                                                                                         n_bits=state_bits_changed,
-                                                                                         parallel=False)
+                    attractors.stochastic_vertex_state_impact_scores(graph_copy,
+                                                                     n_iter=experiment_n_iter,
+                                                                     n_bits=state_bits_changed,
+                                                                     parallel=False)
             except attractors.TimeoutError as e:
                 state_bitchange_probability = numpy.inf
             print "time taken for state_bitchange_probability={:.2f} secs".format(time.time() - third_start)

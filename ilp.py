@@ -411,6 +411,80 @@ def add_simplified_consistency_constraints(model, v_func, v_next_state_var, pred
                         name="{}_<=".format(activity_part))
 
 
+def add_state_inclusion_indicator(model, first_state, second_state_set, slice_size, prefix=None):
+    """
+    Adds and returns a binary indicator for whether one network state is included in a set of others.
+    States should be either iterables of constant binary values (False/True/0/1), or model variables.
+    It is assumed that all states in second_state_set are unique
+    Indicator is created with use of state hashing and order indicators for state pairs.
+    :param model:
+    :param first_state:
+    :param second_state_set:
+    :return:
+    """
+    indicator_sum = 0
+    first_state_keys = unique_state_keys(first_state, slice_size=slice_size)
+    # print "len of second state set - {}".format(len(second_state_set))
+    for i, second_state in enumerate(second_state_set):
+        second_state_keys = unique_state_keys(second_state, slice_size=slice_size)
+        larger_var = create_state_keys_comparison_var(model, first_state_keys, second_state_keys,
+                                                      include_equality=True,
+                                                      upper_bound=2**slice_size,
+                                                      name_prefix="{}_state_inclusion_{}_>=".format(prefix, i))
+        smaller_var = create_state_keys_comparison_var(model, second_state_keys, first_state_keys,
+                                                       include_equality=True,
+                                                       upper_bound=2**slice_size,
+                                                       name_prefix="{}_state_inclusion_{}_<=".format(prefix, i))
+        # print "indicator sum pre: {}".format(indicator_sum)
+        indicator_sum += larger_var + smaller_var
+        # print "indicator sum post: {}".format(indicator_sum)
+    model.update()
+    # We want an indicator for inclusion of first_state in the second state, which is equivalent to its equality
+    # with exactly one state there (since they're unique), or len(second_state_set) + 1 indicators with value 1.
+    print "indicator sum - {}".format(indicator_sum)
+    inclusion_indicator = indicator_sum - len(second_state_set)
+
+    return inclusion_indicator
+
+
+def add_path_to_model(G, model, path_len, first_state_vars, last_state_vars, v_funcs=None):
+    """
+    Adds a path from first_state_vars to last_state_vars to the model, i.e. requires that last_state_vars
+    represents the state resulting after path_len time steps from first_state_vars
+    :param G:
+    :param model:
+    :param path_len:
+    :param first_state_vars:
+    :param last_state_vars:
+    :param v_funcs:
+    :return:
+    """
+    start = time.time()
+    n = len(G.vertices)
+    assert path_len >= 1
+
+    previous_state_vars = first_state_vars
+    for l in range(path_len):
+        next_state_vars = last_state_vars if l == path_len - 1 else [
+            model.addVar(vtype=gurobipy.GRB.BINARY, name="transient_path_state_var_{}_{}".format(l, i))
+            for i in range(n)]
+        model.update()
+
+        for i in range(n):
+            v_func = v_funcs[i] if v_funcs is not None else G.vertices[i].function
+            predecessor_indices = [u.index for u in G.vertices[i].predecessors()]
+            predecessor_vars = [previous_state_vars[index] for index in predecessor_indices]
+            if len(predecessor_vars) == 0:
+                model.addConstr(previous_state_vars[i] == next_state_vars[i],
+                                name="stable_constraint_{}_node_{}".format(l, i))
+                model.update()
+            else:
+                add_truth_table_consistency_constraints(model, v_func, next_state_vars[i], predecessor_vars,
+                                                        name_prefix="transient_path_step_{}vertex_{}".format(l, i))
+
+    print "Time taken to add path constraints:{:.2f} seconds".format(time.time() - start)
+
+
 # noinspection PyArgumentList
 def attractors_ilp_with_keys(G, max_len=None, max_num=None,
                              model_type_restriction=FunctionTypeRestriction.NONE, simplify_general_boolean=False,

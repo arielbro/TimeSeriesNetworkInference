@@ -1,5 +1,24 @@
 import random
 import utility
+import numpy
+
+def estimate_path_len_to_attractor(G, n_iter=1000):
+    steps_nums = []
+    for iteration in range(n_iter):
+        if iteration and not iteration % 50:
+            print "iteration #{}".format(iteration)
+        step_number = 0
+        initial_state = tuple(random.choice([False, True]) for _ in range(len(G.vertices)))
+        visited_states_walk_count = {initial_state: 0}
+        current_state = tuple(G.next_state(initial_state))
+        while current_state not in visited_states_walk_count:
+            step_number += 1
+            visited_states_walk_count[current_state] = step_number
+            current_state = G.next_state(current_state)
+        steps_nums.append(visited_states_walk_count[current_state])
+    print "mean number of steps to reach an attractor - {:.2f}. Max - {}.".format(numpy.mean(steps_nums),
+                                                                                  max(steps_nums))
+    return steps_nums
 
 
 def walk_to_attractor(G, initial_state, max_walk=None, state_to_attractor_mapping=None):

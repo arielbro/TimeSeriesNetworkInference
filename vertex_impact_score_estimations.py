@@ -17,19 +17,22 @@ import signal, os, errno
 from functools import wraps
 import stat
 
-stochastic_n_iter = 50
+stochastic_n_iter = 5
 parallel = True
 n_processes = 49
-timeout_seconds = 50
+timeout_seconds = 100
 
 VertexImpactResult = namedtuple("VertexImpactResult", "graph_name random_functions random_edges size "
                                                       "maximal_change_bits n_inputs normalized_n_inputs "
                                                       "max_degree mean_degree "
-                                                      "optimization_impact_scores "
-                                                      "stochastic_impact_scores"
-                                # "invalidation_scores "
-                                # "addition score "
-                                # "both score "
+                                                      "optimization_model_impact_scores "
+                                                      "stochastic_model_impact_scores "
+                                                      "optimization_state_impact_scores "
+                                                      "stochastic_state_impact_scores "
+                                                      "optimization_model_time "
+                                                      "stochastic_model_time "
+                                                      "optimization_state_time "
+                                                      "stochastic_state_time"
                                 )
 
 
@@ -95,20 +98,37 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
     basin_sizes = [size / float(sum_sizes) for size in basin_sizes]
     print "time taken for attractor estimation={:.2f} secs".format(time.time() - start)
 
-    stochastic_impact_scores = attractors. \
-        stochastic_vertex_impact_scores(graph_copy, current_attractors,
-                                        use_dubrova=False,
-                                        n_iter=stochastic_n_iter,
-                                        bits_of_change=1,
-                                        relative_attractor_basin_sizes=basin_sizes)
+    res_start = time.time()
+    stochastic_model_impact_scores = attractors. \
+        stochastic_vertex_model_impact_scores(graph_copy, current_attractors,
+                                              use_dubrova=False,
+                                              n_iter=stochastic_n_iter,
+                                              bits_of_change=1,
+                                              relative_attractor_basin_sizes=basin_sizes)
+    stochastic_model_time = time.time() - res_start
 
-    optimization_impact_scores = attractors. \
-        vertex_impact_scores(graph_copy, current_attractors=current_attractors,
-                             max_len=12, max_num=5, verbose=False,
-                             impact_types=attractors.ImpactType.Invalidation,
-                             normalize_addition_scores=True,
-                             relative_attractor_basin_sizes=basin_sizes,
-                             maximal_bits_of_change=1)
+    res_start = time.time()
+    optimization_model_impact_scores = attractors. \
+        vertex_model_impact_scores(graph_copy, current_attractors=current_attractors,
+                                   max_len=12, max_num=5, verbose=False,
+                                   impact_types=attractors.ImpactType.Invalidation,
+                                   normalize_addition_scores=True,
+                                   relative_attractor_basin_sizes=basin_sizes,
+                                   maximal_bits_of_change=1)
+    optimization_model_time = time.time() - res_start
+
+    res_start = time.time()
+    stochastic_state_impact_scores = attractors. \
+        stochastic_vertex_state_impact_scores(graph_copy, n_iter=stochastic_n_iter)
+    stochastic_state_time = time.time() - res_start
+
+    res_start = time.time()
+    optimization_state_impact_scores = attractors. \
+        vertex_state_impact_scores(graph_copy, current_attractors=current_attractors,
+                                   max_trainsient_len=40, verbose=False,
+                                   relative_attractor_basin_sizes=basin_sizes,
+                                   key_slice_size=15)
+    optimization_state_time = time.time() - res_start
 
     result = VertexImpactResult(graph_name=name, random_functions=randomize_functions,
                                 random_edges=randomize_edges,
@@ -118,8 +138,15 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
                                 normalized_n_inputs=graph_name_to_attributes[name]['normalized_n_inputs'],
                                 max_degree=graph_name_to_attributes[name]['max_degree'],
                                 mean_degree=graph_name_to_attributes[name]['mean_degree'],
-                                optimization_impact_scores=optimization_impact_scores,
-                                stochastic_impact_scores=stochastic_impact_scores)
+                                optimization_model_impact_scores=optimization_model_impact_scores,
+                                stochastic_model_impact_scores=stochastic_model_impact_scores,
+                                optimization_state_impact_scores=optimization_state_impact_scores,
+                                stochastic_state_impact_scores=stochastic_state_impact_scores,
+                                optimization_model_time=optimization_model_time,
+                                stochastic_model_time=stochastic_model_time,
+                                optimization_state_time=optimization_state_time,
+                                stochastic_state_time=stochastic_state_time
+                                )
     print "time taken for graph {} impact scores function: {:.2f} secs".format(name, time.time() - start)
     return result
 
@@ -199,11 +226,11 @@ if __name__ == "__main__":
             writer = csv.writer(csv_file)
             writer.writerow(["graph_name", "random_functions", "random_edges", "size", "maximal_change_bits",
                             "n_inputs", "normalized_n_inputs", "max_degree", "mean_degree",
-                             "optimization_impact_scores", "stochastic_impact_scores"
-                                            # "invalidation_scores",
-                                            # "addition score",
-                                            # "both score",
-                                            ])
+                             "optimization_model_impact_scores", "stochastic_model_impact_scores",
+                             "optimization_state_impact_scores", "stochastic_state_impact_scores",
+                             "optimization_model_time", "stochastic_model_time",
+                             "optimization_state_time", "stochastic_state_time"
+                             ])
             for impact_result in results:
                 if impact_result is None:
                     continue
