@@ -16,6 +16,7 @@ import sys
 import signal, os, errno
 from functools import wraps
 import stat
+import platform
 
 stochastic_n_iter = 5
 parallel = True
@@ -101,7 +102,7 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
     res_start = time.time()
     stochastic_model_impact_scores = attractors. \
         stochastic_vertex_model_impact_scores(graph_copy, current_attractors,
-                                              use_dubrova=False,
+                                              use_dubrova=True,
                                               n_iter=stochastic_n_iter,
                                               bits_of_change=1,
                                               relative_attractor_basin_sizes=basin_sizes)
@@ -133,7 +134,7 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
     result = VertexImpactResult(graph_name=name, random_functions=randomize_functions,
                                 random_edges=randomize_edges,
                                 size=graph_name_to_attributes[name]['size'],
-                                maximal_change_bits=1,
+                                maximal_change_bits=1,  # TODO: repeat with more?
                                 n_inputs=graph_name_to_attributes[name]['n_inputs'],
                                 normalized_n_inputs=graph_name_to_attributes[name]['normalized_n_inputs'],
                                 max_degree=graph_name_to_attributes[name]['max_degree'],
@@ -189,6 +190,8 @@ if __name__ == "__main__":
         is_biological = (test % 10 == 0)  # TODO: remove redundancy in repeating optimization results...
 
         if parallel:
+            os.environ['GRB_LICENSE_FILE'] = \
+                '/a/home/cc/students/cs/arielbro/{}_gurobi_license/gurobi.lic'.format(platform.node())
             start = time.time()
             repeat = len(biological_graphs)
             # with ProcessPool() as pool:

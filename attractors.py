@@ -18,7 +18,7 @@ import subprocess
 from enum import Enum
 
 timeout_seconds = 30 * 60  # TODO: refactor somewhere?
-dubrova_path = "bns_dubrova.exe"
+dubrova_path = "bns"
 
 
 class ImpactType(Enum):
@@ -272,6 +272,7 @@ def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_
 
 
 def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use_dubrova=False,
+                                          cur_dubrova_path=dubrova_path,
                                           bits_of_change=1,
                                           relative_attractor_basin_sizes=None,
                                           attractor_estimation_n_iter=500):
@@ -288,8 +289,8 @@ def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use
     :param relative_attractor_basin_sizes:
     :return:
     """
-    # TODO: write tests
-
+    if relative_attractor_basin_sizes is None:
+        relative_attractor_basin_sizes = [1/float(len(current_attractors))] * len(current_attractors)
     start = time.time()
     for v in G.vertices:
         assert v.function is not None or len(v.predecessors()) == 0
@@ -299,19 +300,22 @@ def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use
         if len(v.predecessors()) == 0:
             vertex_scores.append(np.nan)
         else:
-            assert isinstance(v.function, logic.BooleanSymbolicFunc)
+            original_function = v.function
+            if isinstance(v.function, logic.BooleanSymbolicFunc):
+                original_outputs = v.function.boolean_outputs
+            else:
+                original_outputs = [v.function(*args) for args in itertools.product([False, True],
+                                                                                    repeat=len(v.predecessors()))]
             score = 0.0
             for iteration in range(n_iter):
                 if iteration and not iteration % 50:
                     print "iteration #{}".format(iteration)
 
-                # don't mutate existing vertex's function
-                original_function = v.function
                 v.function = None
                 truth_table_row_indices = random.sample(list(range(2 ** len(v.predecessors()))), bits_of_change)
                 # TODO: decide if this version, or building sympy expression without this row and then
                 # TODO: adding it (as I did in another function), is better.
-                boolean_outputs = list(original_function.boolean_outputs)
+                boolean_outputs = list(original_outputs)
                 for index in truth_table_row_indices:
                     boolean_outputs[index] = 1 - bool(boolean_outputs[index])  # to work with sympy's logic
                 v.function = logic.BooleanSymbolicFunc(input_names=[u.name for u in v.predecessors()],
@@ -319,18 +323,25 @@ def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use
 
                 attractors_start = time.time()
                 if use_dubrova:
-                    new_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+                    new_attractors = find_attractors_dubrova(G, cur_dubrova_path, mutate_input_nodes=True)
                 else:
                     new_attractors = stochastic.estimate_attractors(G, n_walks=attractor_estimation_n_iter,
                                                                     max_walk_len=100,
                                                                     with_basins=False)
                 # print "time taken to calculate new attractors: {:.2f} secs".format(time.time() - attractors_start)
 
+                # print "current attractors:"
+                # print current_attractors
+                # print "new attractors:"
+                # print new_attractors
+
                 for attractor, basin_size in zip(current_attractors, relative_attractor_basin_sizes):
-                    if attractor not in new_attractors:
+                    # TODO: write a one-time comparison method to avoid multiple Attractor set creation.
+                    is_valid = utility.is_attractor_in_attractor_list(attractor, new_attractors)
+                    if not is_valid:
                         score += basin_size
 
-                v.function = original_function
+            v.function = original_function
 
             print "time taken for vertex {}: {:.2f} secs. {} out of {}".format(v.name, time.time() - vertex_start,
                                                                                i, len(G.vertices))
@@ -409,14 +420,12 @@ def single_state_bitchange_experiment(G, state_to_attractor_mapping=None, n_bits
     return not utility.is_same_attractor(original_attractor, perturbed_attractor)
 
 
-def stochastic_vertex_state_impact_scores(G, n_iter=1000, parallel=False):
+def stochastic_vertex_state_impact_scores(G, n_iter=1000):
     """
     Stochastically estimate the probability for a flip in the state of a each vertex a network to move the network
     from a certain attractor to another attractor (or to the basin of another attractor).
     States to change are sampled by uniform selection then simulation to corresponding attractor.
     Impacts of input nodes are non defined.
-    If parallel=True, uses multiprocessing pool for iterations. Note that this doesn't allow different iterations
-    to share basin information, so it can be slower in some circumstances.
     :param G:
     :param n_iter:
     :param parallel:
@@ -431,19 +440,12 @@ def stochastic_vertex_state_impact_scores(G, n_iter=1000, parallel=False):
             continue
         print "working on vertex {} ({} of {})".format(G.vertices[vertex_index].name, vertex_index + 1, len(G.vertices))
 
-        if parallel:
-            pool = multiprocessing.Pool()
-            bitchange_results = pool.map(lambda graph:
-                                         single_state_bitchange_experiment(graph, n_bits=1,
-                                                                           bitchange_node_indices=[vertex_index]),
-                                         tuple([G] * n_iter))
-        else:
-            # exploit basin mapping memory
-            bitchange_results = []
-            for _ in range(n_iter):
-                bitchange_results.append(single_state_bitchange_experiment(G, state_to_attractor_mapping,
-                                                                           n_bits=1,
-                                                                           bitchange_node_indices=[vertex_index]))
+        # exploit basin mapping memory
+        bitchange_results = []
+        for _ in range(n_iter):
+            bitchange_results.append(single_state_bitchange_experiment(G, state_to_attractor_mapping,
+                                                                       n_bits=1,
+                                                                       bitchange_node_indices=[vertex_index]))
         vertex_scores.append(sum(bitchange_results) / float(n_iter))
         print "time taken for vertex {}: {:.2f} secs. {} out of {}".format(G.vertices[vertex_index].name,
                                                                            time.time() - vertex_start,
@@ -507,6 +509,8 @@ def vertex_state_impact_scores(G, current_attractors, max_trainsient_len=30, ver
             model.setObjective(second_inclusion_indicator, sense=GRB.MAXIMIZE)
             # print "second inclusion indicator - {}".format(second_inclusion_indicator)
             model.update()
+            if not verbose:
+                model.params.LogToConsole = 0
             model.optimize()
             # print "Time taken for ILP solve: {:.2f} (T={}, P={})".format(time.time() - start_time, T, P)
             if model.Status != gurobipy.GRB.OPTIMAL:
@@ -968,6 +972,7 @@ def find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=False):
         graphs.Network.export_to_cnet(G, temp_network_path)
         env = os.environ.copy()
         env['PATH'] += ";C:/cygwin/bin"  # TODO: less hardcoding (it somehow didn't have the right PATH)
+        # print "calling dubrova with args={}".format([dubrova_path, temp_network_path])
         process = subprocess.Popen(args=[dubrova_path, temp_network_path],
                                    stderr=subprocess.STDOUT, stdout=subprocess.PIPE, env=env)
         out, _ = process.communicate()

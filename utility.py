@@ -122,6 +122,10 @@ def attractor_sets_equality(first_attractors, second_attractors):
     second_attractors_set = set(Attractor(att) for att in second_attractors)
     return first_attractors_set == second_attractors_set
 
+def is_attractor_in_attractor_list(attractor, attractor_list):
+    first_attractor = Attractor(attractor)
+    second_attractors_set = set(Attractor(att) for att in attractor_list)
+    return first_attractor in second_attractors_set
 
 def is_same_attractor(a1, a2):
     """
