@@ -201,6 +201,8 @@ if __name__ == "__main__":
                                    itertools.repeat(is_biological),
                                    itertools.repeat(graph_name_to_attributes)))
                                # timeout=4000)
+            pool.close()
+            pool.join()
             # results_iterator = future.result()
             results_iterator = iter(future)  # keeping syntax close to Pebble in case I can get it on nova.
 

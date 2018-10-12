@@ -438,7 +438,7 @@ def stochastic_vertex_state_impact_scores(G, n_iter=1000):
         if len(G.vertices[vertex_index].predecessors()) == 0:
             vertex_scores.append(np.nan)
             continue
-        print "working on vertex {} ({} of {})".format(G.vertices[vertex_index].name, vertex_index + 1, len(G.vertices))
+        # print "working on vertex {} ({} of {})".format(G.vertices[vertex_index].name, vertex_index + 1, len(G.vertices))
 
         # exploit basin mapping memory
         bitchange_results = []
@@ -470,7 +470,7 @@ def vertex_state_impact_scores(G, current_attractors, max_trainsient_len=30, ver
             vertex_scores.append(np.nan)
             continue
         vertex_start = time.time()
-        print "working on vertex {} ({} of {})".format(G.vertices[vertex_index].name, vertex_index + 1, len(G.vertices))
+        # print "working on vertex {} ({} of {})".format(G.vertices[vertex_index].name, vertex_index + 1, len(G.vertices))
 
         score = 0
         for attractor_index in range(len(current_attractors)):
@@ -520,7 +520,11 @@ def vertex_state_impact_scores(G, current_attractors, max_trainsient_len=30, ver
                 model.write("model.mps")
                 raise ValueError("model not solved to optimality.")
             elif model.ObjVal != int(round(model.ObjVal)):
-                raise ValueError("model solved with non-integral objective function ({})".format(model.ObjVal))
+                if abs(model.ObjVal - int(round(model.ObjVal))) < 0.0001:
+                    print "Warning! Integral model solved with value {}. " \
+                          "Ignoring as small numeric error.".format(model.ObjVal)
+                else:
+                    raise ValueError("model solved with non-integral objective function ({})".format(model.ObjVal))
             else:
                 is_destructive = int(round(model.ObjVal))
                 # print model.ObjVal

@@ -441,7 +441,7 @@ def add_state_inclusion_indicator(model, first_state, second_state_set, slice_si
     model.update()
     # We want an indicator for inclusion of first_state in the second state, which is equivalent to its equality
     # with exactly one state there (since they're unique), or len(second_state_set) + 1 indicators with value 1.
-    print "indicator sum - {}".format(indicator_sum)
+    # print "indicator sum - {}".format(indicator_sum)
     inclusion_indicator = indicator_sum - len(second_state_set)
 
     return inclusion_indicator
@@ -482,7 +482,7 @@ def add_path_to_model(G, model, path_len, first_state_vars, last_state_vars, v_f
                 add_truth_table_consistency_constraints(model, v_func, next_state_vars[i], predecessor_vars,
                                                         name_prefix="transient_path_step_{}vertex_{}".format(l, i))
 
-    print "Time taken to add path constraints:{:.2f} seconds".format(time.time() - start)
+    # print "Time taken to add path constraints:{:.2f} seconds".format(time.time() - start)
 
 
 # noinspection PyArgumentList
