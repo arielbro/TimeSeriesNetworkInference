@@ -46,8 +46,8 @@ def single_graph_attractors(args):
 
 pool = Pool(processes=48)
 attractor_basin_pair_lists = pool.map(single_graph_attractors, zip(is_used, graph_list))
-pool.join()
 pool.close()
+pool.join()
 for graph_name, graph, attractor_basin_pairs in zip(graph_names, graph_list, attractor_basin_pair_lists):
     print(graph_name)
     if attractor_basin_pairs is None:
