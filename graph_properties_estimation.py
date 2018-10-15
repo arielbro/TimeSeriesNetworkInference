@@ -42,13 +42,20 @@ def single_graph_attractors(args):
     is_used, graph = args
     if not is_used:
         return None
-    return stochastic.estimate_attractors(G=graph, max_walk_len=500, n_walks=1000, with_basins=True)
+    return stochastic.estimate_attractors(G=graph, max_walk_len=500, n_walks=3000, with_basins=True)
+
+def singla_graph_steps_to_attractor(args):
+    is_used, graph = args
+    if not is_used:
+        return None
+    return stochastic.estimate_path_len_to_attractor(G=graph, n_iter=3000)
 
 pool = Pool(processes=48)
 attractor_basin_pair_lists = pool.map(single_graph_attractors, zip(is_used, graph_list))
+steps_to_attractor_lists = pool.map(singla_graph_steps_to_attractor, zip(is_used, graph_list))
 pool.close()
 pool.join()
-for graph_name, graph, attractor_basin_pairs in zip(graph_names, graph_list, attractor_basin_pair_lists):
+for graph_name, graph, attractor_basin_pairs, steps_to_attractor in zip(graph_names, graph_list, attractor_basin_pair_lists, steps_to_attractor_lists):
     print(graph_name)
     if attractor_basin_pairs is None:
         continue
@@ -56,12 +63,18 @@ for graph_name, graph, attractor_basin_pairs in zip(graph_names, graph_list, att
     basins = [pair[1] for pair in attractor_basin_pairs]
     graph_name_to_attributes[graph_name]['num_attractors'] = len(graph_attractors)
     graph_name_to_attributes[graph_name]['mean_attractor_len'] = np.mean([len(a) for a in graph_attractors])
+    graph_name_to_attributes[graph_name]['median_attractor_len'] = np.median([len(a) for a in graph_attractors])
     graph_name_to_attributes[graph_name]['max_attractor_len'] = np.max([len(a) for a in graph_attractors])
     graph_name_to_attributes[graph_name]['min_attractor_len'] = np.min([len(a) for a in graph_attractors])
-    graph_name_to_attributes[graph_name]['mean_attractor_relative_basin'] = np.mean([len(b) for b in graph_attractors]) / (2 ** len(graph.vertices))
-    graph_name_to_attributes[graph_name]['max_attractor_relative_basin'] = np.max([len(b) for b in graph_attractors]) / (2 ** len(graph.vertices))
-    graph_name_to_attributes[graph_name]['min_attractor_relative_basin'] = np.min([len(b) for b in graph_attractors]) / (2 ** len(graph.vertices))
+    sum_basins = sum(len(b) for b in basins)
+    graph_name_to_attributes[graph_name]['median_attractor_relative_basin'] = np.median([len(b) for b in basins]) / float(sum_basins)
+    graph_name_to_attributes[graph_name]['max_attractor_relative_basin'] = np.max([len(b) for b in basins]) / float(sum_basins)
+    graph_name_to_attributes[graph_name]['min_attractor_relative_basin'] = np.min([len(b) for b in basins]) / float(sum_basins)
 
+    graph_name_to_attributes[graph_name]['mean_path_len_to_attractor'] = np.mean([len(p) for p in steps_to_attractor])
+    graph_name_to_attributes[graph_name]['median_path_len_to_attractor'] = np.median([len(p) for p in steps_to_attractor])
+    graph_name_to_attributes[graph_name]['min_path_len_to_attractor'] = np.min([len(p) for p in steps_to_attractor])
+    graph_name_to_attributes[graph_name]['max_path_len_to_attractor'] = np.max([len(p) for p in steps_to_attractor])
 
 with open('graph_properties.csv', 'wb') as f:
     w = csv.DictWriter(f, graph_name_to_attributes[graph_names[0]].keys())
