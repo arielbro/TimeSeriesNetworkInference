@@ -107,7 +107,7 @@ class BooleanSymbolicFunc:
                 raise NotImplementedError(
                     "Can't compose a symbolic boolean function with a function of type {}".format(f.type))
 
-        print [f.formula for f in input_funcs]
+        print([f.formula for f in input_funcs])
         nand_free_formulas = [f.formula.replace(sympy.Nand,
                                                  BooleanSymbolicFunc.sanitized_nand) for f in input_funcs]
 
@@ -163,7 +163,7 @@ class SymmetricThresholdFunction:
             for input_comb in itertools.product([False, True], repeat=len(self.signs)):
                 if self(*input_comb) != other_func(*input_comb):
                     return False
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             return False
         return True
 

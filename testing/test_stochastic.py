@@ -23,12 +23,12 @@ class TestStochastic(TestCase):
         mapping = dict()
         attractor = stochastic.walk_to_attractor(G, initial_state=(0, 1), max_walk=5, state_to_attractor_mapping=mapping)
         self.assertTrue(utility.is_same_attractor(attractor, [[1, 0], [0, 1]]))
-        unique_mapping_values = set(tuple(att) for att in mapping.values())
+        unique_mapping_values = set(tuple(att) for att in list(mapping.values()))
         self.assertTrue(utility.attractor_sets_equality(unique_mapping_values, {attractor}))
         attractor = stochastic.walk_to_attractor(G, initial_state=(0, 0), max_walk=5,
                                                  state_to_attractor_mapping=mapping)
         self.assertTrue(utility.is_same_attractor(attractor, [[0, 0]]))
-        unique_mapping_values = set(tuple(att) for att in mapping.values())
+        unique_mapping_values = set(tuple(att) for att in list(mapping.values()))
         self.assertTrue(utility.attractor_sets_equality(unique_mapping_values, {((0, 0),), ((0, 1), (1, 0))}))
 
         # random graphs, assure what's found is an actual attractor.

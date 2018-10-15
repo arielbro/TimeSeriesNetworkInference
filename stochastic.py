@@ -6,7 +6,7 @@ def estimate_path_len_to_attractor(G, n_iter=1000):
     steps_nums = []
     for iteration in range(n_iter):
         if iteration and not iteration % 50:
-            print "iteration #{}".format(iteration)
+            print("iteration #{}".format(iteration))
         step_number = 0
         initial_state = tuple(random.choice([False, True]) for _ in range(len(G.vertices)))
         visited_states_walk_count = {initial_state: 0}
@@ -16,8 +16,8 @@ def estimate_path_len_to_attractor(G, n_iter=1000):
             visited_states_walk_count[current_state] = step_number
             current_state = G.next_state(current_state)
         steps_nums.append(visited_states_walk_count[current_state])
-    print "mean number of steps to reach an attractor - {:.2f}. Max - {}.".format(numpy.mean(steps_nums),
-                                                                                  max(steps_nums))
+    print("mean number of steps to reach an attractor - {:.2f}. Max - {}.".format(numpy.mean(steps_nums),
+                                                                                  max(steps_nums)))
     return steps_nums
 
 
@@ -58,9 +58,9 @@ def walk_to_attractor(G, initial_state, max_walk=None, state_to_attractor_mappin
         # A new attractor!
         cycle_start_index = visited_states.index(current_state)
         attractor = tuple(visited_states[cycle_start_index:])
-        # print "walked attractor: {}".format(attractor)
+        # print("walked attractor: {}".format(attractor))
         # for state in attractor:
-        #     print "source: {}. next: {}".format(state, G.next_state(state))
+        #     print("source: {}. next: {}".format(state, G.next_state(state)))
         for state in visited_states:
             state_to_attractor_mapping[state] = attractor
         return attractor
@@ -104,7 +104,7 @@ def estimate_attractors(G, n_walks, max_walk_len=None, with_basins=True):
     attractor_to_basin = dict()
     for state, attractor in state_to_attractor_mapping.items():
         attractor_to_basin[attractor] = attractor_to_basin.get(attractor, 0) + 1
-    # print 'finished estimation'
+    # print('finished estimation')
     if with_basins:
         return attractor_to_basin.items()
     return tuple(attractor_to_basin.keys())

@@ -36,8 +36,8 @@ class Network:
         self.edges = [(self.get_vertex(str(a)), self.get_vertex(str(b))) for a, b in edges]
         for v in self.vertices:
             if len(v.predecessors()) == 0 and v.function not in [None, lambda _: False, lambda _:True, False, True]:
-                print "warning, input node {} created with non-constant function {}. Removing function".\
-                      format(v.name, v.function)
+                print("warning, input node {} created with non-constant function {}. Removing function".\
+                      format(v.name, v.function))
                 v.function = None
 
     def get_vertex(self, name):
@@ -94,7 +94,8 @@ class Network:
         if n_attempts is None:
             n_attempts = 10 * len(self.edges)
         if len(self.edges) < 2:
-            print "Warning - randomize_edges_by_switching called for graph with {} edges".format(len(self.edges))
+            print("Warning - randomize_edges_by_switching called for graph with {} edges".
+                  format(len(self.edges)))
             return
         self.edges = set(self.edges)  # so we can speed up lookups and replacements
         for attempt in range(n_attempts):
@@ -134,8 +135,8 @@ class Network:
             possible_neighbors = self.vertices if include_self_loops else \
                 (self.vertices[:v.index] + self.vertices[v.index + 1:])
             if len(possible_neighbors) < in_degree:
-                print "Warning - cannot get in-degree {} of vertex {} without self loops. Allowing self-loop".\
-                    format(in_degree, v)
+                print("Warning - cannot get in-degree {} of vertex {} without self loops. Allowing self-loop".\
+                    format(in_degree, v))
                 possible_neighbors.append(v)
             in_neighbors = np.random.choice(possible_neighbors, in_degree, replace=False)
             new_edges.extend([(neighbor, v) for neighbor in in_neighbors])
@@ -287,7 +288,7 @@ class Network:
                         cnet_file.write("{} {}\n".format(comb_str, out))
                 cnet_file.write("\n")
             cnet_file.write("\n\n")
-        # print "time taken for graph export: {:.2f}".format(time.time() - start)
+        # print("time taken for graph export: {:.2f}".format(time.time() - start))
 
     @staticmethod
     def parse_cnet(path):
@@ -359,7 +360,7 @@ class Network:
                 bool_funcs.append(func)
         assert len(bool_funcs) == n
         G = Network(vertex_names=names, edges=edges, vertex_functions=bool_funcs)
-        print "time taken for graph import: {:.2f} seconds".format(time.time() - start)
+        print("time taken for graph import: {:.2f} seconds".format(time.time() - start))
         return G
 
     def export_to_boolean_tables(self, base_path, model_name):
@@ -415,7 +416,7 @@ class Network:
         edges = []
         functions = []
         for v_index, v_name in zip(vertex_indices, vertex_names):
-            # print v_index, v_name
+            # print(v_index, v_name)
             truth_table_path = os.path.join(path, "{}.csv".format(v_index))
             if not os.path.exists(truth_table_path):
                 # an external species. For us this eans input node.
@@ -441,16 +442,16 @@ class Network:
                                             key=lambda i: vertex_indices.index(predecessor_indices[i]))
                     outputs = [None] * (2 ** n_vars)
                     for truth_table_line in lines[1:]:
-                        # print truth_table_line
+                        # print(truth_table_line)
                         # MSB is first var
                         permuted_row_index = sum(2**(n_vars - i - 1) for i in range(n_vars)
                                                  if bool(int(truth_table_line[sorted_indices[i]])))
                         assert outputs[permuted_row_index] is None
                         outputs[permuted_row_index] = bool(int(truth_table_line[-1]))
-                        # print permuted_row_index
-                        # print bool(int(truth_table_line[-1]))
+                        # print(permuted_row_index)
+                        # print(bool(int(truth_table_line[-1])))
                     for out in outputs:
-                        # print out
+                        # print(out)
                         assert out is not None
                     predecessor_names = [indices_to_names[predecessor_indices[sorted_indices[i]]] for
                                          i in range(n_vars)]
@@ -520,7 +521,7 @@ class Network:
                 source_functions[v.name] = logic.BooleanSymbolicFunc.from_sympy_func(v.function, predecessors_names)
                 any_converted = True
         if any_converted:
-            print "warning - graph with generic function types passed to __mul__, converting to BooleanSymbolicFunc"
+            print("warning - graph with generic function types passed to __mul__, converting to BooleanSymbolicFunc")
 
         for v in self.vertices:
             vertex_names.append(v.name)

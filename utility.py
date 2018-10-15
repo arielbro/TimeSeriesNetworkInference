@@ -1,6 +1,7 @@
 import fractions
 import math
 import sympy
+from functools import reduce
 
 
 def rotate(l, n):
@@ -10,7 +11,7 @@ def rotate(l, n):
 class Attractor:
     # TODO: Use a general class for attractors (everywhere)
     def __init__(self, states):
-        largest_ind = max(range(len(states)), key=lambda t: order_key_func(states[t]))
+        largest_ind = max(list(range(len(states))), key=lambda t: order_key_func(states[t]))
         self.states = tuple(tuple(states[(t + largest_ind + 1) % len(states)]) for t in range(len(states)))
 
     def __eq__(self, other):

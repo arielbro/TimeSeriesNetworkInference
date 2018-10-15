@@ -93,7 +93,7 @@ def unique_state_keys(ordered_state_variables, slice_size):
         if i < n_parts or residue != 0:
             parts.append(sum_expression)
 
-    # print "parts={}".format(parts)
+    # print("parts={}".format(parts))
     return parts
 
 
@@ -126,7 +126,7 @@ def create_state_keys_comparison_var(model, first_state_keys, second_state_keys,
         model.addConstr(M * z >= a - b + last_var, name="{}_{}_>=constraint".format(name_prefix, i))
         model.addConstr(M * z <= a - b + last_var + (M - 1), name="{}_{}_<=constraint".format(name_prefix, i))
         last_var = z
-        # print "a_{}={}, b_{}={}, M={}, M+1={}".format(len(first_state_keys) - i-1, a, len(first_state_keys) -i-1, b, M, M+1)
+        # print("a_{}={}, b_{}={}, M={}, M+1={}".format(len(first_state_keys) - i-1, a, len(first_state_keys) -i-1, b, M, M+1))
     return last_var
 
 
@@ -238,8 +238,7 @@ def add_model_invariant_uniqueness_constraints(
     slice_size = int(math.log(upper_bound, 2))
     for given_p in list(range(len(ordered_attractors))):
         if len(ordered_attractors[given_p]) > T:
-            print "warning, given attractor of length {} as reference for a problem with T={}. Ignoring". \
-                format(len(ordered_attractors[given_p]), T)
+            print("warning, given attractor of length {} as reference for a problem with T={}. Ignoring".format(len(ordered_attractors[given_p]), T))
             continue
         for p in list(range(P)):
             # require that either attractor length or actual states be different from the given attractor.
@@ -273,7 +272,7 @@ def add_model_invariant_uniqueness_constraints(
                 if is_active:
                     given_state_keys = unique_state_keys(
                         ordered_attractors[given_p][t - (T - len(ordered_attractors[given_p]))], slice_size)
-                    # print "t={}, given_index={}, given_state_keys={}".format(
+                    # print("t={}, given_index={}, given_state_keys={}".format()
                     #     t, t - (T - len(ordered_attractors[given_p])), given_state_keys)
                 else:
                     given_state_keys = unique_state_keys([0] * n, slice_size)
@@ -424,7 +423,7 @@ def add_state_inclusion_indicator(model, first_state, second_state_set, slice_si
     """
     indicator_sum = 0
     first_state_keys = unique_state_keys(first_state, slice_size=slice_size)
-    # print "len of second state set - {}".format(len(second_state_set))
+    # print("len of second state set - {}".format(len(second_state_set)))
     for i, second_state in enumerate(second_state_set):
         second_state_keys = unique_state_keys(second_state, slice_size=slice_size)
         larger_var = create_state_keys_comparison_var(model, first_state_keys, second_state_keys,
@@ -435,13 +434,13 @@ def add_state_inclusion_indicator(model, first_state, second_state_set, slice_si
                                                        include_equality=True,
                                                        upper_bound=2**slice_size,
                                                        name_prefix="{}_state_inclusion_{}_<=".format(prefix, i))
-        # print "indicator sum pre: {}".format(indicator_sum)
+        # print("indicator sum pre: {}".format(indicator_sum))
         indicator_sum += larger_var + smaller_var
-        # print "indicator sum post: {}".format(indicator_sum)
+        # print("indicator sum post: {}".format(indicator_sum))
     model.update()
     # We want an indicator for inclusion of first_state in the second state, which is equivalent to its equality
     # with exactly one state there (since they're unique), or len(second_state_set) + 1 indicators with value 1.
-    # print "indicator sum - {}".format(indicator_sum)
+    # print("indicator sum - {}".format(indicator_sum))
     inclusion_indicator = indicator_sum - len(second_state_set)
 
     return inclusion_indicator
@@ -482,7 +481,7 @@ def add_path_to_model(G, model, path_len, first_state_vars, last_state_vars, v_f
                 add_truth_table_consistency_constraints(model, v_func, next_state_vars[i], predecessor_vars,
                                                         name_prefix="transient_path_step_{}vertex_{}".format(l, i))
 
-    # print "Time taken to add path constraints:{:.2f} seconds".format(time.time() - start)
+    # print("Time taken to add path constraints:{:.2f} seconds".format(time.time() - start))
 
 
 # noinspection PyArgumentList
@@ -502,7 +501,7 @@ def attractors_ilp_with_keys(G, max_len=None, max_num=None,
                               for t in range(T+1)] for p in range(P)] for i in range(n)])
     model.update()
 
-    # print "Time taken for basic prep:{:.2f} seconds".format(time.time() - part_start)
+    # print("Time taken for basic prep:{:.2f} seconds".format(time.time() - part_start))
     # part_start = time.time()
 
     for p, t in itertools.product(range(P), range(T + 1)):
@@ -522,7 +521,7 @@ def attractors_ilp_with_keys(G, max_len=None, max_num=None,
         if p != P - 1:
             model.addConstr(a_matrix[p, T] <= a_matrix[p + 1, T], name="active_order_{}".format(p))
 
-    # print "Time taken for activity constraints preparation:{:.2f} seconds".format(time.time() - part_start)
+    # print("Time taken for activity constraints preparation:{:.2f} seconds".format(time.time() - part_start))
     # part_start = time.time()
 
     for i in range(n):
@@ -626,7 +625,7 @@ def attractors_ilp_with_keys(G, max_len=None, max_num=None,
                                     (in_degree + input_sum_expression - threshold_expression + 1),
                                     name="monotone_func_consistency_<=_{}_{}_{}".format(i, p, t))
 
-    # print "Time taken for consistent and stable preparation:{:.2f} seconds".format(time.time() - part_start)
+    # print("Time taken for consistent and stable preparation:{:.2f} seconds".format(time.time() - part_start))
     # part_start = time.time()
 
     # CYCLIC
@@ -640,7 +639,7 @@ def attractors_ilp_with_keys(G, max_len=None, max_num=None,
 
     # model.update()
 
-    # print "Time taken for cyclic constraints preparation:{:.2f} seconds".format(time.time() - part_start)
+    # print("Time taken for cyclic constraints preparation:{:.2f} seconds".format(time.time() - part_start))
     # part_start = time.time()
 
     # SIMPLE
@@ -655,7 +654,7 @@ def attractors_ilp_with_keys(G, max_len=None, max_num=None,
                         name="simple_{}_{}".format(p, t))
     # model.update()
 
-    # print "Time taken for simple constraints preparation:{:.2f} seconds".format(time.time() - part_start)
+    # print("Time taken for simple constraints preparation:{:.2f} seconds".format(time.time() - part_start))
     # part_start = time.time()
 
     # UNIQUE
@@ -673,14 +672,14 @@ def attractors_ilp_with_keys(G, max_len=None, max_num=None,
                                                                upper_bound=2**slice_size,
                                                                name_prefix="key_order_between_attractors_{}".
                                                                format(p))
-        # print "state keys for p={}".format(p)
-        # print strictly_larger_ind.VarName
+        # print("state keys for p={}".format(p))
+        # print(strictly_larger_ind.VarName)
         # for key in state_keys[p+1][T]:
-        #     print key
-        # print "\n"
+        #     print(key)
+        # print("\n")
         # for key in state_keys[p][T]:
-        #     print key
-        # print "\n\n"
+        #     print(key)
+        # print("\n\n")
         model.addConstr(strictly_larger_ind >= a_matrix[p, T-1],  # need only a[p, T] because they're monotone
                         name="key_order_between_attractors_{}".format(p))
         # model.update()
@@ -690,11 +689,11 @@ def attractors_ilp_with_keys(G, max_len=None, max_num=None,
     model.addConstr(sum(a_matrix[p, T] for p in range(P)) <= P, name="upper_objective_bound")
     model.update()
 
-    # print "Time taken for unique constraints preparation:{:.2f} seconds".format(time.time() - part_start)
+    # print("Time taken for unique constraints preparation:{:.2f} seconds".format(time.time() - part_start))
 
     # print_model_constraints(model)
-    # print model
-    # print "Time taken for model preparation:{:.2f} seconds".format(time.time() - total_start)
+    # print(model)
+    # print("Time taken for model preparation:{:.2f} seconds".format(time.time() - total_start))
     return model, a_matrix, v_matrix, state_keys, vertices_f_vars_list
 
 
@@ -790,7 +789,7 @@ def bitchange_attractor_ilp_with_keys(G, max_len=None, slice_size=15):
     model.update()
 
     # print_model_constraints(model)
-    # print model
+    # print(model)
     return model, numpy.array([state_keys]), numpy.array([a_list]), all_functions_bitchange_vars
 
 
@@ -854,7 +853,7 @@ def set_mip_start(model, v_matrix, final_states_a_vars, attractors):
     #         for i in range(n):
     #             v_string += str(v_matrix[i, p, t].start) + ", "
     #         v_string += "\t t={}\n".format(t)
-    # print v_string
+    # print(v_string)
     return None
 
 
@@ -879,7 +878,7 @@ def print_model_values(model, model_vars=None):
     if not model_vars:
         model_vars = model.getVars()
     for var in model_vars:
-        print "{}\t{}".format(var.VarName, var.X)
+        print("{}\t{}".format(var.VarName, var.X))
 
 
 def print_attractors(model):
@@ -909,12 +908,12 @@ def print_attractors(model):
     for attractor_number in range(int(n_attractors)):
         p = P - attractor_number - 1
         length = len([None for t in range(T) if int(round(a_variables[p][t].X)) == 1])
-        print "Attractor #{}, length {}".format(attractor_number + 1, length)
+        print("Attractor #{}, length {}".format(attractor_number + 1, length))
         # TODO: support for original graph names?
-        # print reduce(lambda a, b: "{}\t{}".format(a, b), ["v_{}".format(i) for i in range(n)])
+        # print(reduce(lambda a, b: "{}\t{}".format(a, b), ["v_{}".format(i) for i in range(n)]))
         for t in range(T - length, T):
             # noinspection PyTypeChecker
-            print reduce(lambda a, b: "{}{}".format(a, b), [int(round(v_variables[i][p][t].X)) for i in range(n)])
+            print(reduce(lambda a, b: "{}{}".format(a, b), [int(round(v_variables[i][p][t].X)) for i in range(n)]))
 
 
 def print_attractors_enumeration(model):
@@ -942,12 +941,12 @@ def print_attractors_enumeration(model):
     for p in range(n_attracotrs):
         model.setParam(gurobipy.GRB.Param.SolutionNumber, p)
         length = len([None for t in range(T) if int(round(a_variables[0][t].Xn)) == 1])
-        print "Attractor #{}, length {}".format(p + 1, length)
+        print("Attractor #{}, length {}".format(p + 1, length))
         # TODO: support for original graph names?
-        # print reduce(lambda a, b: "{}\t{}".format(a, b), ["v_{}".format(i) for i in range(n)])
+        # print(reduce(lambda a, b: "{}\t{}".format(a, b), ["v_{}".format(i) for i in range(n)]))
         for t in range(T - length, T):
             # noinspection PyTypeChecker
-            print reduce(lambda a, b: "{}{}".format(a, b), [int(round(v_variables[i][0][t].Xn)) for i in range(n)])
+            print(reduce(lambda a, b: "{}{}".format(a, b), [int(round(v_variables[i][0][t].Xn)) for i in range(n)]))
 
 
 def get_model_attractors(model):
@@ -996,7 +995,7 @@ def print_model_constraints(model):
                 con_str += " {}{}{}".format(str(coeff) if coeff not in [1.0, -1.0] else "",
                                             "-" if coeff == -1.0 else "+" if coeff == 1 else "", var_name)
         con_str += " {} {}".format(*constr_attrs[constraint_index])
-        print con_str
+        print(con_str)
 
 
 def print_opt_solution(model):
@@ -1006,7 +1005,7 @@ def print_opt_solution(model):
     val_str = ""
     for pair in name_val_pairs:
         val_str += "{} = {}\n".format(pair[0], int(pair[1]))
-    print val_str
+    print(val_str)
 
 
 def steady_state_ilp(G, simplify_general_boolean=False):

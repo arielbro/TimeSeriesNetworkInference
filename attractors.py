@@ -36,39 +36,38 @@ def find_num_attractors_multistage(G, use_ilp):
     P = 1
     iteration = 1
     while P <= 2 ** len(G.vertices) and T <= 2 ** len(G.vertices):
-        print "iteration {}".format(iteration)
-        print "P={}, T={}".format(P, T)
+        print("iteration {}".format(iteration))
+        print("P={}, T={}".format(P, T))
         iteration += 1
         start_time = time.time()
 
         ATTRACTORS = logic.get_attractorlb_lengthub_formula(G, P, T)
-        # print ATTRACTORS
+        # print(ATTRACTORS)
 
         if use_ilp:
             model, _ = ilp.logic_to_ilp(ATTRACTORS)
             model.params.LogToConsole = 0
             model.setObjective(0)
             model.optimize()
-            # print "# solutions:", model.SolCount
+            # print("# solutions:", model.SolCount)
             sat = model.SolCount >= 1
         else:
             sat = sympy.satisfiable(ATTRACTORS)
             # sat_iterator = sympy.satisfiable(ATTRACTORS, all_models=True)
             # for model in sat_iterator:
-            #     print model
+            #     print(model)
 
-        print "time taken for {} check: {:.2f} seconds".format("ILP" if use_ilp else "SAT",
-                                                               time.time() - start_time)
-        # print sat, '\n'
+        print("time taken for {} check: {:.2f} seconds".format("ILP" if use_ilp else "SAT", time.time() - start_time))
+        # print(sat, '\n')
         if sat:
-            print "sat"
+            print("sat")
             P += 1
         else:
-            print "not sat"
+            print("not sat")
             T *= 2
-        print ''
+        print('')
     P = P - 1
-    print "#attractors:{}".format(P)
+    print("#attractors:{}".format(P))
 
 
 def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, verbose=False,
@@ -90,7 +89,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         for vertex in G.vertices:
             if vertex.function is None and len(vertex.predecessors()) > 0:
                 nonfixed = True
-                print "Attractor sampling for non-fixed functions currently unsupported. Skipping."
+                print("Attractor sampling for non-fixed functions currently unsupported. Skipping.")
                 sampling_bounds = None
                 break
         if not nonfixed:
@@ -100,9 +99,9 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
                                                                     max_walk_len=attractor_sampling_walk_length)
             num_raw_attractors = len(attractor_basin_tuples)
             attractors = [attractor for (attractor, _) in attractor_basin_tuples if len(attractor) <= T]
-            print "sampled {} suitable attractors (and {} total)".format(len(attractors), num_raw_attractors)
-            # print attractors
-            print "time taken for attractor sampling: {:.2f} seconds".format(time.time() - sample_start)
+            print("sampled {} suitable attractors (and {} total)".format(len(attractors), num_raw_attractors))
+            # print(attractors)
+            print("time taken for attractor sampling: {:.2f} seconds".format(time.time() - sample_start))
             if len(attractors) >= P:
                 return P
             if not use_sampling_for_mip_start:
@@ -111,14 +110,14 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     if use_sat:
         ATTRACTORS, active_logic_vars = logic.get_attractors_formula(G, P, T)
         # for arg in ATTRACTORS.args:
-        #     print arg
+        #     print(arg)
 
-        # print "\n"
+        # print("\n")
         # for active_formula in active_formulas:
-        #     print active_formula
-        # print ATTRACTORS
+        #     print(active_formula)
+        # print(ATTRACTORS)
 
-        # print "sat:", sympy.satisfiable(ATTRACTORS & active_logic_vars[0])
+        # print("sat:", sympy.satisfiable(ATTRACTORS & active_logic_vars[0]))
         model, formulas_to_variables = ilp.logic_to_ilp(ATTRACTORS)
         active_ilp_vars = [formulas_to_variables[active_logic_var] for active_logic_var in active_logic_vars]
     else:
@@ -143,7 +142,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     # model.tune()  # try automatic parameter tuning
     # model.getTuneResult(0)  # take best tuning parameters
     # model.write('tune v-{} P-{} T-{}.prm'.format(len(G.vertices), P, T))
-    # print model
+    # print(model)
     # model_vars = model.getVars()
     # ilp.print_model_constraints(model)
     # for var in model.getVars():
@@ -156,11 +155,11 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     # model.write("./model_mip_start.mst") # that just write sthe final solution as a MIP start...
 
     # ilp.print_opt_solution(model)
-    # print model
+    # print(model)
     if model.Status != gurobipy.GRB.OPTIMAL:
-        print "warning, model not solved to optimality."
+        print("warning, model not solved to optimality.")
         if model.Status == gurobipy.GRB.INFEASIBLE:
-            # print "writing IIS data to model_iis.ilp"
+            # print("writing IIS data to model_iis.ilp")
             # model.computeIIS()
             # model.write("./model_iis.ilp")
             raise RuntimeError("Gurobi failed to reach optimal solution")
@@ -169,25 +168,25 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         else:
             raise ValueError("Gurobi failed, status code - {}".format(model.Status))
     else:
-        # print "# attractors = {}".format(model.ObjVal)
+        # print("# attractors = {}".format(model.ObjVal))
         # if model.ObjVal != int(round(model.ObjVal)):
-        #     print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
-        # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
+        #     print("warning - model solved with non-integral objective function ({})".format(model.ObjVal))
+        # print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time))
         # ilp.print_attractors(model)
         # ilp.print_model_values(model)
         # ilp.print_model_constraints(model)
         # model.printStats()
-        print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
+        print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time))
         if (sampling_bounds is None) or use_sampling_for_mip_start:
             return int(round(model.objVal))
         else:
             return int(round(model.objVal)) + len(attractors)
 
     # for constr in model.getConstrs():
-    #     print constr
-    # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
+    #     print(constr)
+    # print([(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName))
     #        if re.match("a_[0-9]*_[0-9]*", v.varName)]  # abs(v.obj) > 1e-6
-    # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
+    # print([(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName))
     #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
 
 
@@ -225,7 +224,7 @@ def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_
     # model.tune()  # try automatic parameter tuning
     # model.getTuneResult(0)  # take best tuning parameters
     # model.write('tune v-{} P-{} T-{}.prm'.format(len(G.vertices), P, T))
-    # print model
+    # print(model)
     # model_vars = model.getVars()
     # ilp.print_model_constraints(model)
     # for var in model.getVars():
@@ -238,11 +237,11 @@ def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_
     # model.write("./model_mip_start.mst") # that just write sthe final solution as a MIP start...
 
     # ilp.print_opt_solution(model)
-    # print model
+    # print(model)
     if model.Status != gurobipy.GRB.OPTIMAL:
-        print "warning, model not solved to optimality."
+        print("warning, model not solved to optimality.")
         if model.Status == gurobipy.GRB.INFEASIBLE:
-            # print "writing IIS data to model_iis.ilp"
+            # print("writing IIS data to model_iis.ilp")
             # model.computeIIS()
             # model.write("./model_iis.ilp")
             return numpy.inf
@@ -252,22 +251,22 @@ def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_
         else:
             raise ValueError("Gurobi failed, status code - {}".format(model.Status))
     else:
-        # print "# attractors = {}".format(model.ObjVal)
+        # print("# attractors = {}".format(model.ObjVal))
         if model.ObjVal != int(round(model.ObjVal)):
-            print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
-        # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
+            print("warning - model solved with non-integral objective function ({})".format(model.ObjVal))
+        # print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time))
         # ilp.print_attractors(model)
         # ilp.print_model_values(model)
         # ilp.print_model_constraints(model)
         # model.printStats()
-        print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
+        print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time))
         return int(round(model.objVal))
 
         # for constr in model.getConstrs():
-        #     print constr
-        # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
+        #     print(constr)
+        # print([(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName))
         #        if re.match("a_[0-9]*_[0-9]*", v.varName)]  # abs(v.obj) > 1e-6
-        # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
+        # print([(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName))
         #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
 
 
@@ -309,7 +308,7 @@ def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use
             score = 0.0
             for iteration in range(n_iter):
                 if iteration and not iteration % 50:
-                    print "iteration #{}".format(iteration)
+                    print("iteration #{}".format(iteration))
 
                 v.function = None
                 truth_table_row_indices = random.sample(list(range(2 ** len(v.predecessors()))), bits_of_change)
@@ -328,12 +327,12 @@ def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use
                     new_attractors = stochastic.estimate_attractors(G, n_walks=attractor_estimation_n_iter,
                                                                     max_walk_len=100,
                                                                     with_basins=False)
-                # print "time taken to calculate new attractors: {:.2f} secs".format(time.time() - attractors_start)
+                # print("time taken to calculate new attractors: {:.2f} secs".format(time.time() - attractors_start))
 
-                # print "current attractors:"
-                # print current_attractors
-                # print "new attractors:"
-                # print new_attractors
+                # print("current attractors:")
+                # print(current_attractors)
+                # print("new attractors:")
+                # print(new_attractors)
 
                 for attractor, basin_size in zip(current_attractors, relative_attractor_basin_sizes):
                     # TODO: write a one-time comparison method to avoid multiple Attractor set creation.
@@ -343,12 +342,11 @@ def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use
 
             v.function = original_function
 
-            print "time taken for vertex {}: {:.2f} secs. {} out of {}".format(v.name, time.time() - vertex_start,
-                                                                               i, len(G.vertices))
+            print("time taken for vertex {}: {:.2f} secs. {} out of {}".format(v.name, time.time() - vertex_start, i, len(G.vertices)))
 
             score /= n_iter
             vertex_scores.append(score)
-    print "time taken for stochastic impact scores: {:.2f} secs".format(time.time() - start)
+    print("time taken for stochastic impact scores: {:.2f} secs".format(time.time() - start))
     return vertex_scores
 
 
@@ -365,7 +363,7 @@ def find_model_bitchange_probability_for_different_attractors(G, n_iter=100, use
 
     for i in range(n_iter):
         if i and not i % 10:
-            print "iteration #{}".format(i)
+            print("iteration #{}".format(i))
         copy = G.copy()
         v = random.choice([vertex for vertex in copy.vertices if len(vertex.predecessors()) != 0])
         truth_table_row = random.choice(list(itertools.product([False, True], repeat=len(v.predecessors()))))
@@ -438,7 +436,7 @@ def stochastic_vertex_state_impact_scores(G, n_iter=1000):
         if len(G.vertices[vertex_index].predecessors()) == 0:
             vertex_scores.append(np.nan)
             continue
-        # print "working on vertex {} ({} of {})".format(G.vertices[vertex_index].name, vertex_index + 1, len(G.vertices))
+        # print("working on vertex {} ({} of {})".format(G.vertices[vertex_index].name, vertex_index + 1, len(G.vertices)))
 
         # exploit basin mapping memory
         bitchange_results = []
@@ -447,9 +445,7 @@ def stochastic_vertex_state_impact_scores(G, n_iter=1000):
                                                                        n_bits=1,
                                                                        bitchange_node_indices=[vertex_index]))
         vertex_scores.append(sum(bitchange_results) / float(n_iter))
-        print "time taken for vertex {}: {:.2f} secs. {} out of {}".format(G.vertices[vertex_index].name,
-                                                                           time.time() - vertex_start,
-                                                                           vertex_index, len(G.vertices))
+        print("time taken for vertex {}: {:.2f} secs. {} out of {}".format(G.vertices[vertex_index].name, time.time() - vertex_start, vertex_index, len(G.vertices)))
 
     return vertex_scores
 
@@ -470,7 +466,7 @@ def vertex_state_impact_scores(G, current_attractors, max_trainsient_len=30, ver
             vertex_scores.append(np.nan)
             continue
         vertex_start = time.time()
-        # print "working on vertex {} ({} of {})".format(G.vertices[vertex_index].name, vertex_index + 1, len(G.vertices))
+        # print("working on vertex {} ({} of {})".format(G.vertices[vertex_index].name, vertex_index + 1, len(G.vertices)))
 
         score = 0
         for attractor_index in range(len(current_attractors)):
@@ -507,33 +503,31 @@ def vertex_state_impact_scores(G, current_attractors, max_trainsient_len=30, ver
                                                   prefix="attractor_{}_target_state".format(attractor_index))
             model.addConstr(first_inclusion_indicator == 1, name="first_state_inclusion_constraint")
             model.setObjective(second_inclusion_indicator, sense=GRB.MAXIMIZE)
-            # print "second inclusion indicator - {}".format(second_inclusion_indicator)
+            # print("second inclusion indicator - {}".format(second_inclusion_indicator))
             model.update()
             if not verbose:
                 model.params.LogToConsole = 0
             model.optimize()
-            # print "Time taken for ILP solve: {:.2f} (T={}, P={})".format(time.time() - start_time, T, P)
+            # print("Time taken for ILP solve: {:.2f} (T={}, P={})".format(time.time() - start_time, T, P))
             if model.Status != gurobipy.GRB.OPTIMAL:
-                print "writing IIS data to model_iis.ilp"
+                print("writing IIS data to model_iis.ilp")
                 model.computeIIS()
                 model.write("model_iis.ilp")
                 model.write("model.mps")
                 raise ValueError("model not solved to optimality.")
             elif model.ObjVal != int(round(model.ObjVal)):
                 if abs(model.ObjVal - int(round(model.ObjVal))) < 0.0001:
-                    print "Warning! Integral model solved with value {}. " \
-                          "Ignoring as small numeric error.".format(model.ObjVal)
+                    print("Warning! Integral model solved with value {}. Ignoring as small numeric error.".format(model.ObjVal))
                 else:
                     raise ValueError("model solved with non-integral objective function ({})".format(model.ObjVal))
             else:
                 is_destructive = int(round(model.ObjVal))
-                # print model.ObjVal
+                # print(model.ObjVal)
                 # ilp.print_model_values(model)
                 # ilp.print_model_constraints(model)
                 score += is_destructive * relative_attractor_basin_sizes[attractor_index]
         vertex_scores.append(score)
-        print "time taken for vertex {}: {:.2f} seconds".format(G.vertices[vertex_index].name,
-                                                                time.time() - vertex_start)
+        print("time taken for vertex {}: {:.2f} seconds".format(G.vertices[vertex_index].name, time.time() - vertex_start))
     return vertex_scores
 
 
@@ -559,7 +553,7 @@ def find_attractors_onestage_enumeration(G, max_len=None, verbose=False, simplif
     # model.tune()  # try automatic parameter tuning
     # model.getTuneResult(0)  # take best tuning parameters
     # model.write('tune v-{} P-{} T-{}.prm'.format(len(G.vertices), P, T))
-    # print model
+    # print(model)
     # model_vars = model.getVars()
     # ilp.print_model_constraints(model)
     # for var in model.getVars():
@@ -572,7 +566,7 @@ def find_attractors_onestage_enumeration(G, max_len=None, verbose=False, simplif
     # model.write("./model_mip_start.mst") # that just write sthe final solution as a MIP start...
 
     # ilp.print_opt_solution(model)
-    # print model
+    # print(model)
     if model.Status != gurobipy.GRB.OPTIMAL:
         if model.Status == gurobipy.GRB.TIME_LIMIT:
             raise TimeoutError("Gurobi failed with time_out")
@@ -581,23 +575,23 @@ def find_attractors_onestage_enumeration(G, max_len=None, verbose=False, simplif
         else:
             raise RuntimeError("Gurobi failed to reach optimal solution")
     else:
-        # print "# attractors = {}".format(model.ObjVal)
+        # print("# attractors = {}".format(model.ObjVal))
         if model.ObjVal != int(round(model.ObjVal)):
-            print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
-        # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
+            print("warning - model solved with non-integral objective function ({})".format(model.ObjVal))
+        # print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time))
         # ilp.print_attractors_enumeration(model)
         # ilp.print_model_values(model)
         # ilp.print_model_constraints(model)
         # model.printStats()
-        print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
-        print "number of attractors: {}".format(model.SolCount)
+        print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time))
+        print("number of attractors: {}".format(model.SolCount))
         return ilp.get_model_attractors(model)
 
     # for constr in model.getConstrs():
-    #     print constr
-    # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
+    #     print(constr)
+    # print([(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName))
     #        if re.match("a_[0-9]*_[0-9]*", v.varName)]  # abs(v.obj) > 1e-6
-    # print [(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName)
+    # print([(v.varName, v.X) for v in sorted(model.getVars(), key=lambda var: var.varName))
     #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
 
 
@@ -608,8 +602,8 @@ def find_min_attractors_model(G, max_len=None, min_attractors=None, key_slice_si
     P = min_attractors if min_attractors is not None else 1
     pool_size = 10  # 2000000000
     while True:
-        print "iteration {}".format(iteration)
-        print "P={}, T={}".format(P, T)
+        print("iteration {}".format(iteration))
+        print("P={}, T={}".format(P, T))
         iteration += 1
         start_time = time.time()
         model, a_matrix, _, _, _ = ilp.attractors_ilp_with_keys(G, max_len=T, max_num=P, find_full_model=True,
@@ -624,11 +618,11 @@ def find_min_attractors_model(G, max_len=None, min_attractors=None, key_slice_si
         model.params.MIPGap = 0
         model.optimize()
         if model.SolCount == pool_size and 2*pool_size < 2000000000:
-            print "reached pool size capacity ({}). Doubling capacity".format(pool_size)
+            print("reached pool size capacity ({}). Doubling capacity".format(pool_size))
             pool_size *= 2
             continue
         elif pool_size == 2*pool_size >= 2000000000:
-            print "too much solutions, ignoring this P"
+            print("too much solutions, ignoring this P")
             P += 1
             continue
         function_models = set()
@@ -636,8 +630,8 @@ def find_min_attractors_model(G, max_len=None, min_attractors=None, key_slice_si
             p_to_models[P] = function_models
         else:
             if model.ObjVal != int(round(model.ObjVal)):
-                print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
-            # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
+                print("warning - model solved with non-integral objective function ({})".format(model.ObjVal))
+            # print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time))
             for i in range(model.SolCount):
                 model.setParam(gurobipy.GRB.Param.SolutionNumber, i)
                 function_model = []
@@ -650,17 +644,17 @@ def find_min_attractors_model(G, max_len=None, min_attractors=None, key_slice_si
         p_to_models[P] = function_models
         if P > 1:
             selected_models = [boolean_model for boolean_model in p_to_models[P-1] if boolean_model not in p_to_models[P]]
-            print "Models with {} attractors: {}".format(P-1, len(selected_models))
+            print("Models with {} attractors: {}".format(P-1, len(selected_models)))
             for boolean_model in selected_models:
-                print boolean_model
+                print(boolean_model)
         if model.Status != gurobipy.GRB.OPTIMAL:
             break
         P += 1
         continue
     if P == 2 ** len(G.vertices) + 1 and len(p_to_models[P]) != 0:  # all that remain
-        print "Models with {} attractors: {}".format(P, len(function_models))
+        print("Models with {} attractors: {}".format(P, len(function_models)))
         for model in function_models:
-            print model
+            print(model)
 
 
 def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.FunctionTypeRestriction.NONE,
@@ -701,10 +695,10 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
             model.params.LogToConsole = 0
         start_time = time.time()
         model.optimize()
-        # print "Time taken for ILP solve: {:.2f} (T={}, P={})".format(time.time() - start_time, T, P)
+        # print("Time taken for ILP solve: {:.2f} (T={}, P={})".format(time.time() - start_time, T, P))
         if model.Status != gurobipy.GRB.OPTIMAL:
-            print "warning, model not solved to optimality."
-            # print "writing IIS data to model_iis.ilp"
+            print("warning, model not solved to optimality.")
+            # print("writing IIS data to model_iis.ilp")
             # model.computeIIS()
             # model.write("model_iis.ilp")
             return None
@@ -717,14 +711,14 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
                 continue
             else:
                 # if found_attractors != P - 1:
-                    # print "found {} attractors so far".format(found_attractors)
+                    # print("found {} attractors so far".format(found_attractors))
                 if T >= attractor_length_threshold:
                     break
                 T *= 2
-    # print "Found maximal model with {} attractors".format(found_attractors)
+    # print("Found maximal model with {} attractors".format(found_attractors))
     function_vars = [var for var in model.getVars() if "f_" in var.VarName
                      or "signs" in var.VarName or "threshold" in var.VarName]
-    # print G
+    # print(G)
     # ilp.print_model_values(model, model_vars=function_vars)
     # ilp.print_attractors(model)
     function_vars = [(v.VarName, v.X) for v in function_vars]
@@ -793,7 +787,7 @@ def vertex_model_impact_scores(G, current_attractors, max_len, max_num,
             if impact_types == ImpactType.Both:
                 objective /= 2
 
-            print "time taken to build model: {:.2f}".format(time.time() - start)
+            print("time taken to build model: {:.2f}".format(time.time() - start))
             start = time.time()
             if not verbose:
                 model.params.LogToConsole = 0
@@ -801,9 +795,9 @@ def vertex_model_impact_scores(G, current_attractors, max_len, max_num,
             model.setParam('TimeLimit', timeout_seconds)
             model.optimize()
             if model.Status != gurobipy.GRB.OPTIMAL:
-                print "warning, model not solved to optimality."
+                print("warning, model not solved to optimality.")
                 if model.Status == gurobipy.GRB.INFEASIBLE:
-                    # print "writing IIS data to model_iis.ilp"
+                    # print("writing IIS data to model_iis.ilp")
                     # model.computeIIS()
                     # model.write("./model_iis.ilp")
                     raise RuntimeError("Gurobi failed to reach optimal solution")
@@ -813,12 +807,12 @@ def vertex_model_impact_scores(G, current_attractors, max_len, max_num,
                     raise ValueError("Gurobi failed, status code - {}".format(model.Status))
             else:
                 if model.ObjVal != int(round(model.ObjVal)):
-                    print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
-                print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start)
+                    print("warning - model solved with non-integral objective function ({})".format(model.ObjVal))
+                print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start))
             # ilp.print_attractors(model)
             # ilp.print_model_values(model)
             vertex_scores.append(model.objVal)
-            print "score of vertex {}: {:.2f}".format(v.name, vertex_scores[-1])
+            print("score of vertex {}: {:.2f}".format(v.name, vertex_scores[-1]))
     return vertex_scores
 
 
@@ -855,16 +849,16 @@ def vertex_degeneracy_scores(G, current_attractors, relative=False, verbose=True
                 model.addConstr(invalidity_indicator == 0, name="validity_constraint_attractor_{}".format(i))
             model.update()
 
-            print "time taken to build model: {:.2f}".format(time.time() - start)
+            print("time taken to build model: {:.2f}".format(time.time() - start))
             start = time.time()
             if not verbose:
                 model.params.LogToConsole = 0
             model.setParam('TimeLimit', timeout_seconds)
             model.optimize()
             if model.Status != gurobipy.GRB.OPTIMAL:
-                print "warning, model not solved to optimality."
+                print("warning, model not solved to optimality.")
                 if model.Status == gurobipy.GRB.INFEASIBLE:
-                    # print "writing IIS data to model_iis.ilp"
+                    # print("writing IIS data to model_iis.ilp")
                     # model.computeIIS()
                     # model.write("./model_iis.ilp")
                     raise RuntimeError("Gurobi failed to reach optimal solution")
@@ -874,13 +868,13 @@ def vertex_degeneracy_scores(G, current_attractors, relative=False, verbose=True
                     raise ValueError("Gurobi failed, status code - {}".format(model.Status))
             else:
                 if model.ObjVal != int(round(model.ObjVal)):
-                    print "warning - model solved with non-integral objective function ({})".format(model.ObjVal)
-                print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start)
+                    print("warning - model solved with non-integral objective function ({})".format(model.ObjVal))
+                print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start))
             # ilp.print_attractors(model)
             # ilp.print_model_values(model)
             denominator = 1 if not relative else 2 ** len(v.predecessors())
             vertex_scores.append(model.objVal / denominator)
-            print "score of vertex {}: {:.2f}".format(v.name, vertex_scores[-1])
+            print("score of vertex {}: {:.2f}".format(v.name, vertex_scores[-1]))
     return vertex_scores
 
 
@@ -896,12 +890,8 @@ def stochastic_attractor_estimation(G, n_walks, max_walk_len=None):
     average_length = sum(len(attractor) for attractor, _ in attractors) / float(len(attractors))
     average_basin = total_states / float(len(attractors))
     coverage_ratio = float(total_states) / 2**len(G.vertices)
-    print "Time taken:{:.2f} seconds".format(end - start)
-    print "Estimated attractors:{}.\nAverage length:{:.2f}, " \
-          "\nAverage Basin length found:{:.2f}," \
-          "\nAverage Basin length normalized by coverage: {:.2f}".format(len(attractors), average_length,
-                                                                         average_basin,
-                                                                         average_basin / coverage_ratio)
+    print("Time taken:{:.2f} seconds".format(end - start))
+    print("Estimated attractors:{}.\nAverage length:{:.2f},\nAverage Basin length found:{:.2f},\nAverage Basin length normalized by coverage: {:.2f}".format(len(attractors), average_length, average_basin, average_basin / coverage_ratio))
 
 
 def write_random_graph_estimations_sampling(n_graphs, vertices_bounds, indegree_bounds,
@@ -919,7 +909,7 @@ def write_random_graph_estimations_sampling(n_graphs, vertices_bounds, indegree_
         average_length = sum(len(attractor) for attractor, _ in attractors) / float(len(attractors))
         average_basin = total_states / float(len(attractors))
         res.append([n, len(G.edges), input_nodes, len(attractors), total_states, average_length, average_basin])
-        print "done {} graphs".format(i + 1)
+        print("done {} graphs".format(i + 1))
     with open(path, 'w') as output_file:
         writer = csv.writer(output_file)
         writer.writerows(res)
@@ -937,7 +927,7 @@ def write_random_fixed_graph_estimations_sampling(G, n_iter, function_type_restr
         average_length = sum(len(attractor) for attractor, _ in attractors) / float(len(attractors))
         average_basin = total_states / float(len(attractors))
         res.append([n, len(G.edges), input_nodes, len(attractors), total_states, average_length, average_basin])
-        print "done {} graphs".format(i + 1)
+        print("done {} graphs".format(i + 1))
     with open(path, 'w') as output_file:
         writer = csv.writer(output_file)
         writer.writerows(res)
@@ -976,7 +966,7 @@ def find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=False):
         graphs.Network.export_to_cnet(G, temp_network_path)
         env = os.environ.copy()
         env['PATH'] += ";C:/cygwin/bin"  # TODO: less hardcoding (it somehow didn't have the right PATH)
-        # print "calling dubrova with args={}".format([dubrova_path, temp_network_path])
+        # print("calling dubrova with args={}".format([dubrova_path, temp_network_path]))
         process = subprocess.Popen(args=[dubrova_path, temp_network_path],
                                    stderr=subprocess.STDOUT, stdout=subprocess.PIPE, env=env)
         out, _ = process.communicate()
@@ -986,12 +976,12 @@ def find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=False):
         os.remove(temp_network_path)
         # Dubrova's output format has a total of attractors on the one before last line.
         # Attractor lengths are last word of lines starting with "Attractor"
-        num_attractors = int(out.split("\n")[-2].split(" ")[-1])
+        num_attractors = int(out.split(b"\n")[-2].split(b" ")[-1])
 
         cur_attractor = []
-        for line in out.split("\n"):
-            if line.startswith("0") or line.startswith("1"):
-                cur_attractor.append([int(c) for c in line if c != " "])
+        for line in out.split(b"\n"):
+            if line.startswith(b"0") or line.startswith(b"1"):
+                cur_attractor.append([int(c) for c in line if c != b" "])
             elif len(cur_attractor) > 0:
                 attractors.append(cur_attractor[::-1])  # Appearently Dubrova writes attractors reversed! (bottom->top)
                 cur_attractor = []
@@ -1005,7 +995,7 @@ def find_num_steady_states(G, verbose=False, simplify_general_boolean=False):
         model.params.LogToConsole = 0
     model.params.PoolSolutions = 2000000000
     model.params.PoolSearchMode = 2
-    # print model
+    # print(model)
     # model_vars = model.getVars()
     # ilp.print_model_constraints(model)
     start = time.time()
@@ -1013,16 +1003,16 @@ def find_num_steady_states(G, verbose=False, simplify_general_boolean=False):
     model.update()
 
     # ilp.print_opt_solution(model)
-    # print model
+    # print(model)
     if model.Status != gurobipy.GRB.OPTIMAL:
-        # print "warning, model not solved to optimality."
-        # print "writing IIS data to model_iis.ilp"
+        # print("warning, model not solved to optimality.")
+        # print("writing IIS data to model_iis.ilp")
         # model.computeIIS()
         # model.write("./model_iis.ilp")
-        # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start)
+        # print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start))
         return 0
     else:
-        # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time)
+        # print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time))
         # ilp.print_model_values(model)
         # ilp.print_model_constraints(model)
         # model.printStats()
@@ -1037,10 +1027,10 @@ def find_num_steady_states(G, verbose=False, simplify_general_boolean=False):
                 else:
                     steady_state.append(int(v_vars_dict[v].Xn))
             steady_states.append(steady_state)
-        # print "steady states:"
+        # print("steady states:")
         # for ss in steady_states:
-        #     print reduce(lambda x, y: str(x) + ", " + str(y), ss)
-        # print "time taken for ILP solve: {:.2f} seconds".format(time.time() - start)
+        #     print(reduce(lambda x, y: str(x) + ", " + str(y), ss))
+        # print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start))
         return n_steady_states
 
 
