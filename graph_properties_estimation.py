@@ -78,7 +78,7 @@ for graph_name, graph, attractor_basin_pairs, steps_to_attractor in zip(graph_na
 
 with open('graph_properties.csv', 'wb') as f:
     w = csv.DictWriter(f, graph_name_to_attributes[graph_names[0]].keys(),
-                       delimiter="&", lineterminator="\\\\\n")
+                       delimiter="&", lineterminator="\\\\\n", restval=" ")
     w.writeheader()
     for attribute_dict in graph_name_to_attributes.values():
         w.writerow(attribute_dict)
