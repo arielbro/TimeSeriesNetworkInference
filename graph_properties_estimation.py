@@ -32,7 +32,7 @@ for i, graph, name in zip(range(len(graph_list)), graph_list, graph_names):
     size = len(graph.vertices)
     mean_degree = sum([len(v.predecessors()) for v in graph.vertices]) / float(size)
     normaliezd_n_inputs = n_inputs / float(size)
-    graph_name_to_attributes[name] = {"n inputs": n_inputs, "max degree": max_degree,
+    graph_name_to_attributes[name] = {"name": name, "n inputs": n_inputs, "max degree": max_degree,
                                                 "size": size, "mean degree": mean_degree,
                                           "normalized n inputs": normaliezd_n_inputs}
     print("#{}; {} input nodes for graph {} of size {}, mean degree {:.2f} and max degree {}".format(i, n_inputs, name,
