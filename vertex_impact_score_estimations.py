@@ -1,3 +1,4 @@
+import cProfile
 import random
 import time
 import graphs
@@ -172,13 +173,15 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
                                 stochastic_state_impact_scores=stochastic_state_impact_scores,
                                 optimization_model_time=optimization_model_time,
                                 stochastic_model_time=stochastic_model_time,
+                                optimization_model_addition_time=optimization_model_addition_time,
+                                stochastic_model_addition_time=stochastic_model_addition_time,
                                 optimization_state_time=optimization_state_time,
                                 stochastic_state_time=stochastic_state_time
                                 )
     print "time taken for graph {} impact scores function: {:.2f} secs".format(name, time.time() - start)
     return result
 
-if __name__ == "__main__":
+def main():
     # TODO: use grownups' argument parsing library.
     if len(sys.argv) == 1:
         output_path = 'optimization_and_stochastic_impact_scores.csv'
@@ -270,3 +273,6 @@ if __name__ == "__main__":
                     continue
                 writer.writerow(impact_result)
         print "time taken for test #{}: {:.2f} secs".format(test, time.time() - test_start)
+
+if __name__ == "__main__":
+    main()
