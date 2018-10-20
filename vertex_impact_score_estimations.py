@@ -19,10 +19,13 @@ from functools import wraps
 import stat
 import platform
 
-stochastic_n_iter = 100
+stochastic_n_iter = 30
 parallel = True
-n_processes = 49
+n_processes = 48
 timeout_seconds = int(0.5 * 60 * 60)
+n_tests = 1000
+filter_out_timed_out_graphs = True
+candidate_biological_graph_names = os.listdir("cellcollective_models")
 
 VertexImpactResult = namedtuple("VertexImpactResult", "graph_name random_functions random_edges size "
                                                       "maximal_change_bits n_inputs normalized_n_inputs "
@@ -67,7 +70,6 @@ def one_graph_impact_score_estimation_wrapper(args):
     except TimeoutError as e:
         print "warning - timeout on vertex impact score estimation after {} seconds.".format(timeout_seconds)
         return None
-
 
 @timeout(timeout_seconds)
 def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_attributes):
@@ -192,11 +194,10 @@ def main():
     results = []
 
     biological_graphs = []
-    candidate_biological_graph_names = os.listdir("cellcollective_models")
     biological_graph_names = []
     for graph_dir in candidate_biological_graph_names:
         try:
-            G = graphs.Network.parse_boolean_tables(os.path.join("cellcollective_models", graph_dir))
+            G = graphs.Network.parse_boolean_tables(os.path.join(candidate_biological_graph_names, graph_dir))
             biological_graphs.append(G)
             biological_graph_names.append(graph_dir)
         except ValueError as e:
@@ -216,7 +217,7 @@ def main():
         print "#{}; {} input nodes for graph {} of size {} and max degree {}".format(i, n_inputs, name,
                                                                                      size, max_degree)
     results = []
-    for test in range(1000):
+    for test in range(n_tests):
         test_start = time.time()
         print "test #{}".format(test)
         is_biological = (test % 10 == 0)  # TODO: remove redundancy in repeating optimization results...
@@ -257,6 +258,16 @@ def main():
                 args = graph, name, is_biological, graph_name_to_attributes
                 result = one_graph_impact_score_estimation_wrapper(args)
                 results.append(result)
+
+        if filter_out_timed_out_graphs:
+            #  On first iteration, filter out graphs for which a timeout occurred.
+            original_graph_num = len(biological_graphs)
+            good_names = set(result.graph_name for result in results if result is not None)
+            good_graph_indices = [i for i, name in enumerate(biological_graph_names if name in good_names)]
+            biological_graph_names = [name for name in biological_graph_names if name in good_names]
+            biological_graphs = [G for i, G in enumerate(biological_graphs) if i in good_graph_indices]
+            assert len(biological_graph_names) == len(biological_graphs)
+            print "filtered graphs, {} remaining out of {}".format(len(biological_graphs), original_graph_num)
 
         # save on each iteration, why not
         with open(output_path, 'wb') as csv_file:
