@@ -25,7 +25,7 @@ n_processes = 48
 timeout_seconds = int(0.5 * 60 * 60)
 n_tests = 1000
 filter_out_timed_out_graphs = True
-candidate_biological_graph_names = os.listdir("cellcollective_models")
+graph_parent_dir = "cellcollective_models"
 
 VertexImpactResult = namedtuple("VertexImpactResult", "graph_name random_functions random_edges size "
                                                       "maximal_change_bits n_inputs normalized_n_inputs "
@@ -195,9 +195,10 @@ def main():
 
     biological_graphs = []
     biological_graph_names = []
+    candidate_biological_graph_names = os.listdir(graph_parent_dir)
     for graph_dir in candidate_biological_graph_names:
         try:
-            G = graphs.Network.parse_boolean_tables(os.path.join(candidate_biological_graph_names, graph_dir))
+            G = graphs.Network.parse_boolean_tables(os.path.join(graph_parent_dir, graph_dir))
             biological_graphs.append(G)
             biological_graph_names.append(graph_dir)
         except ValueError as e:
@@ -263,7 +264,7 @@ def main():
             #  On first iteration, filter out graphs for which a timeout occurred.
             original_graph_num = len(biological_graphs)
             good_names = set(result.graph_name for result in results if result is not None)
-            good_graph_indices = [i for i, name in enumerate(biological_graph_names if name in good_names)]
+            good_graph_indices = [i for i, name in enumerate(biological_graph_names) if name in good_names]
             biological_graph_names = [name for name in biological_graph_names if name in good_names]
             biological_graphs = [G for i, G in enumerate(biological_graphs) if i in good_graph_indices]
             assert len(biological_graph_names) == len(biological_graphs)
