@@ -26,6 +26,8 @@ timeout_seconds = int(0.5 * 60 * 60)
 n_tests = 1000
 filter_out_timed_out_graphs = True
 graph_parent_dir = "cellcollective_models"
+optimization_max_len = 12
+optimization_max_num = 20
 
 VertexImpactResult = namedtuple("VertexImpactResult", "graph_name random_functions random_edges size "
                                                       "maximal_change_bits n_inputs normalized_n_inputs "
@@ -119,7 +121,7 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
     res_start = time.time()
     optimization_model_impact_scores = attractors. \
         vertex_model_impact_scores(graph_copy, current_attractors=current_attractors,
-                                   max_len=12, max_num=5, verbose=False,
+                                   max_len=50, max_num=50, verbose=False,
                                    impact_types=attractors.ImpactType.Invalidation,
                                    normalize_addition_scores=True,
                                    relative_attractor_basin_sizes=basin_sizes,
@@ -139,7 +141,7 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
     res_start = time.time()
     optimization_model_addition_impact_scores = attractors. \
         vertex_model_impact_scores(graph_copy, current_attractors=current_attractors,
-                                   max_len=12, max_num=5, verbose=False,
+                                   max_len=optimization_max_len, max_num=optimization_max_num, verbose=False,
                                    impact_types=attractors.ImpactType.Addition,
                                    normalize_addition_scores=True,
                                    relative_attractor_basin_sizes=basin_sizes,
