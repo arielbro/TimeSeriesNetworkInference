@@ -24,7 +24,7 @@ VertexStateImpactExperimentParameters = namedtuple("VertexStateImpactExperimentP
                                                                                   "impacts")
 StochasticVertexModelImpactExperimentParameters = namedtuple(
     "StochasticVertexModelImpactExperimentParameters", "G current_attractors "
-    "bits_of_change relative_basins impacts")
+    "bits_of_change relative_basins impact_type impacts")
 
 StochasticVertexStateImpactExperimentParameters = namedtuple(
     "StochasticVertexStateImpactExperimentParameters", "G impacts")
@@ -848,7 +848,6 @@ class TestAttractors(TestCase):
 
     def test_stochastic_vertex_model_impact_scores(self):
         # TODO: also test the resulting models (assure they have the correct number of attractors)
-        # TODO: test stochastic kind
         experiments = []
 
         G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
@@ -859,124 +858,265 @@ class TestAttractors(TestCase):
                                                                  bits_of_change=1,
                                                                  current_attractors=current_attractors,
                                                                  relative_basins=None,
+                                                                 impact_type=ImpactType.Invalidation,
                                                                  impacts=[1]))
         # experiment #1
         experiments.append(StochasticVertexModelImpactExperimentParameters(G=G,
                                                                  bits_of_change=2,
                                                                  current_attractors=current_attractors,
                                                                  relative_basins=None,
+                                                                 impact_type=ImpactType.Invalidation,
                                                                  impacts=[1]))
+        # experiment #2
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G,
+                                                                 bits_of_change=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Addition,
+                                                                 impacts=[1]))
+        # experiment #3
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G,
+                                                                 bits_of_change=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Addition,
+                                                                 impacts=[2]))
+        # experiment #4
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G,
+                                                                 bits_of_change=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Both,
+                                                                 impacts=[1.5]))
 
         G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
                            vertex_functions=[sympy.And])
-        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
-        # experiment #2
-        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=1,
-                                                                 current_attractors=current_attractors,
-                                                                 relative_basins=None,
-                                                                 impacts=[0.5]))
-        # experiment #3
-        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=1,
-                                                                 current_attractors=current_attractors,
-                                                                 relative_basins=[0.1, 0.9],
-                                                                 impacts=[0.5]))
-        # experiment #4
-        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=2,
-                                                                 current_attractors=current_attractors,
-                                                                 relative_basins=None,
-                                                                 impacts=[1]))
-
-        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "A")],
-                           vertex_functions=[sympy.And, None])
         current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
         # experiment #5
         experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=1,
                                                                  current_attractors=current_attractors,
                                                                  relative_basins=None,
-                                                                 impacts=[0.5, np.nan]))
+                                                                 impact_type=ImpactType.Invalidation,
+                                                                 impacts=[0.5]))
         # experiment #6
-        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=2,
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=1,
                                                                  current_attractors=current_attractors,
-                                                                 relative_basins=None,
-                                                                 impacts=[1, np.nan]))
-
-        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
-                           vertex_functions=[sympy.Nand, sympy.Nand, sympy.Nand])
-        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+                                                                 relative_basins=[0.1, 0.9],
+                                                                 impact_type=ImpactType.Invalidation,
+                                                                 impacts=[0.5]))
         # experiment #7
-        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G,bits_of_change=1,
-                                                                 current_attractors=current_attractors,
-                                                                 relative_basins=None,
-                                                                 impacts=[1] * 3))
-        # experiment #8
-        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G,bits_of_change=2,
-                                                                 current_attractors=current_attractors,
-                                                                 relative_basins=None,
-                                                                 impacts=[1] * 3))
-
-        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
-                           vertex_functions=[sympy.Nand, sympy.Nand, sympy.And])
-        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
-        # experiment #9
-        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=1,
-                                                                 current_attractors=current_attractors,
-                                                                 relative_basins=None,
-                                                                 impacts=[3 / 4.0] * 3))
-        # experiment #10
-        basin_sizes = [3 / 8.0 if len(att) > 1 else 1 / 8.0 for att in current_attractors]
-        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=1,
-                                                                 current_attractors=current_attractors,
-                                                                 relative_basins=basin_sizes,
-                                                                 impacts=[7 / 8.0] * 3))
-        # experiment #11
         experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=2,
                                                                  current_attractors=current_attractors,
                                                                  relative_basins=None,
-                                                                 impacts=[1, 1, 1]))
-
-        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
-                           vertex_functions=[sympy.Nand, sympy.Nand, lambda _: True])
-        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
-        # experiment #12
+                                                                 impact_type=ImpactType.Invalidation,
+                                                                 impacts=[1]))
+        # experiment #8
         experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=1,
                                                                  current_attractors=current_attractors,
                                                                  relative_basins=None,
-                                                                 impacts=[0.5] * 3))
+                                                                 impact_type=ImpactType.Addition,
+                                                                 impacts=[0]))
+        # experiment #9
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Addition,
+                                                                 impacts=[0.5]))
+        # experiment #10
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Both,
+                                                                 impacts=[0.75]))
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "A")],
+                           vertex_functions=[sympy.And, None])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # experiment #11
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Invalidation,
+                                                                 impacts=[0.5, np.nan]))
+        # experiment #12
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Invalidation,
+                                                                 impacts=[1, np.nan]))
         # experiment #13
         experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=2,
                                                                  current_attractors=current_attractors,
                                                                  relative_basins=None,
+                                                                 impact_type=ImpactType.Addition,
+                                                                 impacts=[0.5, np.nan]))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand, sympy.Nand, sympy.Nand])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # experiment #14
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G,bits_of_change=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Invalidation,
                                                                  impacts=[1] * 3))
+        # experiment #15
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G,bits_of_change=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Invalidation,
+                                                                 impacts=[1] * 3))
+        # experiment #16
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G,bits_of_change=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Addition,
+                                                                 impacts=[0.5] * 3))
+        # experiment #17
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G,bits_of_change=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Addition,
+                                                                 impacts=[2] * 3))
+        # experiment #18
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G,bits_of_change=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Both,
+                                                                 impacts=[0.75] * 3))
+        # experiment #19
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G,bits_of_change=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Both,
+                                                                 impacts=[1.5] * 3))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand, sympy.Nand, sympy.And])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # experiment #20
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Invalidation,
+                                                                 impacts=[3 / 4.0] * 3))
+        # experiment #21
+        basin_sizes = [3 / 8.0 if len(att) > 1 else 1 / 8.0 for att in current_attractors]
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=basin_sizes,
+                                                                 impact_type=ImpactType.Invalidation,
+                                                                 impacts=[7 / 8.0] * 3))
+        # experiment #22
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Invalidation,
+                                                                 impacts=[1, 1, 1]))
+        # experiment #23
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Addition,
+                                                                 impacts=[0] * 3))
+        # experiment #24
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Addition,
+                                                                 impacts=[0.5, 0.5, 0.5]))
+        # experiment #25
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Both,
+                                                                 impacts=[7 / 16.0] * 3))
+        # experiment #26
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Both,
+                                                                 impacts=[0.75] * 3))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand, sympy.Nand, lambda _: True])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # experiment #27
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Invalidation,
+                                                                 impacts=[0.5] * 3))
+        # experiment #28
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Invalidation,
+                                                                 impacts=[1] * 3))
+        # experiment #29
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Addition,
+                                                                 impacts=[0.5, 0.5, 2.5]))
+        # experiment #30
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Addition,
+                                                                 impacts=[1, 1, 1]))
+        # experiment #31
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact_type=ImpactType.Both,
+                                                                 impacts=[0.5, 0.5, 1.5]))
+
         G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A"), ("B", "B")],
                            vertex_functions=[sympy.And, sympy.And])
         current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
-        # experiment #14
+        # experiment #32
         experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=1,
                                                                            current_attractors=current_attractors,
                                                                            relative_basins=None,
+                                                                           impact_type=ImpactType.Invalidation,
                                                                            impacts=[0.5, 0.25]))
-        # experiment #15
+        # experiment #33
         experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=1,
                                                                            current_attractors=current_attractors,
                                                                            relative_basins=[0.1, 0.9],
+                                                                           impact_type=ImpactType.Invalidation,
                                                                            impacts=[0.5, 0.25]))
-        # experiment #16
+        # experiment #34
         experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=2,
                                                                            current_attractors=current_attractors,
                                                                            relative_basins=None,
+                                                                           impact_type=ImpactType.Invalidation,
                                                                            impacts=[1, 0.5]))
+        # experiment #35
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=1,
+                                                                           current_attractors=current_attractors,
+                                                                           relative_basins=None,
+                                                                           impact_type=ImpactType.Addition,
+                                                                           impacts=[0.25, 1 / 8.0]))
+        # experiment #36
+        experiments.append(StochasticVertexModelImpactExperimentParameters(G=G, bits_of_change=2,
+                                                                           current_attractors=current_attractors,
+                                                                           relative_basins=None,
+                                                                           impact_type=ImpactType.Addition,
+                                                                           impacts=[0.5, 1 / 4.0]))
 
         print "number of experiments (with keys)={}".format(len(experiments))
         for i, experiment in enumerate(experiments):
             print "experiment #{}".format(i)
-            print "n={}, bits_of_change={}, relative_basins={}, expected_impacts={}".\
+            print "n={}, bits_of_change={}, relative_basins={}, impact_type={}, expected_impacts={}".\
                 format(len(experiment.G.vertices),
-                       experiment.bits_of_change, experiment.relative_basins,
+                       experiment.bits_of_change, experiment.relative_basins, experiment.impact_type,
                        experiment.impacts)
             print experiment.current_attractors
 
             for use_dubrova in [False, True]:
-                n_iter = random.randint(300, 320)
+                n_iter = random.randint(200, 220)
                 attractor_estimation_n_iter = random.randint(30, 35)
 
                 estimated_impacts = stochastic_vertex_model_impact_scores(
@@ -984,6 +1124,7 @@ class TestAttractors(TestCase):
                     bits_of_change=experiment.bits_of_change,
                     relative_attractor_basin_sizes=experiment.relative_basins,
                     attractor_estimation_n_iter=attractor_estimation_n_iter,
+                    impact_type=experiment.impact_type,
                     cur_dubrova_path=dubrova_path)
 
                 self.assertTrue(len(experiment.impacts) == len(estimated_impacts))

@@ -274,20 +274,25 @@ def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use
                                           cur_dubrova_path=dubrova_path,
                                           bits_of_change=1,
                                           relative_attractor_basin_sizes=None,
-                                          attractor_estimation_n_iter=500):
+                                          attractor_estimation_n_iter=500,
+                                          impact_type=ImpactType.Invalidation):
     """
     For each vertex in G, returns the mean impact of for uniformly selected bit changes
-    in its function. Impact is defined as the proportion of graph states that will no longer belong to
-    the same attractor in the model, which is equivalent to
+    in its function. If impact_type is "Invalidation", impact is defined as the proportion of graph
+    states that will no longer belong to the same attractor in the model, which is equivalent to
     the invalidated attractors weighted by their basin size, which is what is actually computed.
     If no basin sizes are given, attractors are weighted equally.
-    :param G:
+    If impact_type is "Addition", the new attractors added to the model are counted, equally weighted.
+    Note that this can give an impact score greater than 1.
+    If impact_type is "both", the average of both modes is returned.
+     :param G:
     :param current_attractors:
     :param n_iter:
     :param bits_of_change:
     :param relative_attractor_basin_sizes:
     :return:
     """
+    # TODO: consider weighting new attractors by their basin sizes too.
     if relative_attractor_basin_sizes is None:
         relative_attractor_basin_sizes = [1/float(len(current_attractors))] * len(current_attractors)
     start = time.time()
@@ -333,17 +338,25 @@ def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use
                 # print(current_attractors)
                 # print("new attractors:")
                 # print(new_attractors)
-
-                for attractor, basin_size in zip(current_attractors, relative_attractor_basin_sizes):
-                    # TODO: write a one-time comparison method to avoid multiple Attractor set creation.
-                    is_valid = utility.is_attractor_in_attractor_list(attractor, new_attractors)
-                    if not is_valid:
-                        score += basin_size
+                if (impact_type == ImpactType.Invalidation) or (impact_type == ImpactType.Both):
+                    for attractor, basin_size in zip(current_attractors, relative_attractor_basin_sizes):
+                        # TODO: write a one-time comparison method to avoid multiple Attractor set creation.
+                        is_valid = utility.is_attractor_in_attractor_list(attractor, new_attractors)
+                        if not is_valid:
+                            score += basin_size
+                if (impact_type == ImpactType.Addition) or (impact_type == ImpactType.Both):
+                    for attractor in new_attractors:
+                        # TODO: write a one-time comparison method to avoid multiple Attractor set creation.
+                        exists = utility.is_attractor_in_attractor_list(attractor, current_attractors)
+                        if not exists:
+                            score += 1 / float(len(current_attractors))
 
             v.function = original_function
 
             print("time taken for vertex {}: {:.2f} secs. {} out of {}".format(v.name, time.time() - vertex_start, i, len(G.vertices)))
 
+            if impact_type == ImpactType.Both:
+                score /= 2
             score /= n_iter
             vertex_scores.append(score)
     print("time taken for stochastic impact scores: {:.2f} secs".format(time.time() - start))
@@ -728,7 +741,7 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
 
 
 def vertex_model_impact_scores(G, current_attractors, max_len, max_num,
-                               impact_types=ImpactType.Both, verbose=True,
+                               impact_types=ImpactType.Invalidation, verbose=True,
                                relative_attractor_basin_sizes=None,
                                normalize_addition_scores=False,
                                maximal_bits_of_change=1):

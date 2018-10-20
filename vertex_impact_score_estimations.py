@@ -18,20 +18,24 @@ from functools import wraps
 import stat
 import platform
 
-stochastic_n_iter = 5
+stochastic_n_iter = 100
 parallel = True
 n_processes = 49
-timeout_seconds = 100
+timeout_seconds = int(0.5 * 60 * 60)
 
 VertexImpactResult = namedtuple("VertexImpactResult", "graph_name random_functions random_edges size "
                                                       "maximal_change_bits n_inputs normalized_n_inputs "
                                                       "max_degree mean_degree "
                                                       "optimization_model_impact_scores "
                                                       "stochastic_model_impact_scores "
+                                                      "optimization_model_addition_impact_scores "
+                                                      "stochastic_model_addition_impact_scores "
                                                       "optimization_state_impact_scores "
                                                       "stochastic_state_impact_scores "
                                                       "optimization_model_time "
                                                       "stochastic_model_time "
+                                                      "optimization_model_addition_time "
+                                                      "stochastic_model_addition_time "
                                                       "optimization_state_time "
                                                       "stochastic_state_time"
                                 )
@@ -104,6 +108,7 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
         stochastic_vertex_model_impact_scores(graph_copy, current_attractors,
                                               use_dubrova=True,
                                               n_iter=stochastic_n_iter,
+                                              impact_type=attractors.ImpactType.Invalidation,
                                               bits_of_change=1,
                                               relative_attractor_basin_sizes=basin_sizes)
     stochastic_model_time = time.time() - res_start
@@ -117,6 +122,26 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
                                    relative_attractor_basin_sizes=basin_sizes,
                                    maximal_bits_of_change=1)
     optimization_model_time = time.time() - res_start
+
+    res_start = time.time()
+    stochastic_model_addition_impact_scores = attractors. \
+        stochastic_vertex_model_impact_scores(graph_copy, current_attractors,
+                                              use_dubrova=True,
+                                              n_iter=stochastic_n_iter,
+                                              bits_of_change=1,
+                                              impact_type=attractors.ImpactType.Addition,
+                                              relative_attractor_basin_sizes=basin_sizes)
+    stochastic_model_addition_time = time.time() - res_start
+
+    res_start = time.time()
+    optimization_model_addition_impact_scores = attractors. \
+        vertex_model_impact_scores(graph_copy, current_attractors=current_attractors,
+                                   max_len=12, max_num=5, verbose=False,
+                                   impact_types=attractors.ImpactType.Addition,
+                                   normalize_addition_scores=True,
+                                   relative_attractor_basin_sizes=basin_sizes,
+                                   maximal_bits_of_change=1)
+    optimization_model_addition_time = time.time() - res_start
 
     res_start = time.time()
     stochastic_state_impact_scores = attractors. \
@@ -141,6 +166,8 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
                                 mean_degree=graph_name_to_attributes[name]['mean_degree'],
                                 optimization_model_impact_scores=optimization_model_impact_scores,
                                 stochastic_model_impact_scores=stochastic_model_impact_scores,
+                                optimization_model_addition_impact_scores=optimization_model_addition_impact_scores,
+                                stochastic_model_addition_impact_scores=stochastic_model_addition_impact_scores,
                                 optimization_state_impact_scores=optimization_state_impact_scores,
                                 stochastic_state_impact_scores=stochastic_state_impact_scores,
                                 optimization_model_time=optimization_model_time,

@@ -67,7 +67,7 @@ for graph_name, graph, attractor_basin_pairs, steps_to_attractor in zip(graph_na
     graph_name_to_attributes[graph_name]['max attractor len'] = np.max([len(a) for a in graph_attractors])
     graph_name_to_attributes[graph_name]['min attractor len'] = np.min([len(a) for a in graph_attractors])
     sum_basins = sum(b for b in basins)
-    graph_name_to_attributes[graph_name]['median attractor_relative basin'] = np.median([b for b in basins]) / float(sum_basins)
+    graph_name_to_attributes[graph_name]['median attractor relative basin'] = np.median([b for b in basins]) / float(sum_basins)
     graph_name_to_attributes[graph_name]['max attractor relative basin'] = np.max([b for b in basins]) / float(sum_basins)
     graph_name_to_attributes[graph_name]['min attractor relative basin'] = np.min([b for b in basins]) / float(sum_basins)
 
@@ -78,7 +78,7 @@ for graph_name, graph, attractor_basin_pairs, steps_to_attractor in zip(graph_na
 
 with open('graph_properties.csv', 'wb') as f:
     w = csv.DictWriter(f, graph_name_to_attributes[graph_names[0]].keys(),
-                       delimiter="&", lineterminator="\\\\\n", restval=" ")
+                       delimiter="&", lineterminator=r"\n", restval=" ")
     w.writeheader()
     for attribute_dict in graph_name_to_attributes.values():
         w.writerow(attribute_dict)
