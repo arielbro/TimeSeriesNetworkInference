@@ -249,7 +249,11 @@ def main():
                 except StopIteration:
                     break
                 except TimeoutError as e:
-                    print "Breaking stochastic impact score estimation for timeout after {} seconds".\
+                    print "Breaking impact score estimation for timeout after {} seconds".\
+                        format(timeout_seconds)
+                    results.append(None)
+                except attractors.TimeoutError as e:
+                    print "Breaking impact score estimation (guorbi timeout)".\
                         format(timeout_seconds)
                     results.append(None)
 

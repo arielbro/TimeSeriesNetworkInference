@@ -17,7 +17,7 @@ import stochastic
 import subprocess
 from enum import Enum
 
-timeout_seconds = 30 * 60  # TODO: refactor somewhere?
+timeout_seconds = 6 * 60 * 60  # TODO: refactor somewhere?
 dubrova_path = "bns"
 
 
