@@ -26,10 +26,10 @@ timeout_seconds = int(0.5 * 60 * 60)
 n_tests = 1000
 filter_out_timed_out_graphs = True
 graph_parent_dir = "cellcollective_models"
-optimization_max_len = 12
-optimization_max_num = 20
+optimization_max_len = 1
+optimization_max_num = 50
 
-VertexImpactResult = namedtuple("VertexImpactResult", "graph_name random_functions random_edges size "
+VertexImpactResult = namedtuple("VertexImpactResult", "graph_name is_random size "
                                                       "maximal_change_bits n_inputs normalized_n_inputs "
                                                       "max_degree mean_degree "
                                                       "optimization_model_impact_scores "
@@ -88,7 +88,9 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
     if is_biological:
         randomize_functions, randomize_edges = False, False
     else:
-        randomize_functions, randomize_edges = random.choice([(False, True), (True, False), (True, True)])
+        # randomize_functions, randomize_edges = random.choice([(False, True), (True, False), (True, True)])
+        randomize_functions, randomize_edges = True, True
+
     if randomize_functions:
         graph_copy.randomize_functions(preserve_truth_ratio=True)
     if randomize_edges:
@@ -161,8 +163,7 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
                                    key_slice_size=15)
     optimization_state_time = time.time() - res_start
 
-    result = VertexImpactResult(graph_name=name, random_functions=randomize_functions,
-                                random_edges=randomize_edges,
+    result = VertexImpactResult(graph_name=name, is_random=(randomize_functions and randomize_edges),
                                 size=graph_name_to_attributes[name]['size'],
                                 maximal_change_bits=1,  # TODO: repeat with more?
                                 n_inputs=graph_name_to_attributes[name]['n_inputs'],
@@ -184,6 +185,7 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
                                 )
     print "time taken for graph {} impact scores function: {:.2f} secs".format(name, time.time() - start)
     return result
+
 
 def main():
     # TODO: use grownups' argument parsing library.
@@ -279,11 +281,13 @@ def main():
         # save on each iteration, why not
         with open(output_path, 'wb') as csv_file:
             writer = csv.writer(csv_file)
-            writer.writerow(["graph_name", "random_functions", "random_edges", "size", "maximal_change_bits",
+            writer.writerow(["graph_name", "is_random", "size", "maximal_change_bits",
                             "n_inputs", "normalized_n_inputs", "max_degree", "mean_degree",
                              "optimization_model_impact_scores", "stochastic_model_impact_scores",
+                             "optimization_model_addition_impact_scores", "stochastic_model_addition_impact_scores",
                              "optimization_state_impact_scores", "stochastic_state_impact_scores",
                              "optimization_model_time", "stochastic_model_time",
+                             "optimization_model_addition_time", "stochastic_model_addition_time",
                              "optimization_state_time", "stochastic_state_time"
                              ])
             for impact_result in results:
