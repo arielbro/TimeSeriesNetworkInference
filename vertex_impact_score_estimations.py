@@ -32,6 +32,10 @@ optimization_max_num = 50
 VertexImpactResult = namedtuple("VertexImpactResult", "graph_name is_random size "
                                                       "maximal_change_bits n_inputs normalized_n_inputs "
                                                       "max_degree mean_degree "
+                                                      "num_attractors mean_attractor_length "
+                                                      "median_attractor_length std_attractor_length "
+                                                      "max_attractor_length std_attractor_basin "
+                                                      "median_attractor_basin max_attractor_basin "
                                                       "optimization_model_impact_scores "
                                                       "stochastic_model_impact_scores "
                                                       "optimization_model_addition_impact_scores "
@@ -108,10 +112,18 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
     attractor_basin_tuples = stochastic.estimate_attractors(graph_copy, n_walks=1000, max_walk_len=100,
                                                             with_basins=True)
     current_attractors = [pair[0] for pair in attractor_basin_tuples]
-    # TODO: insert number of current attractors, and maybe average length, as attributes to save
     basin_sizes = [pair[1] for pair in attractor_basin_tuples]
     sum_sizes = sum(basin_sizes)
     basin_sizes = [size / float(sum_sizes) for size in basin_sizes]
+
+    num_attractors = len(current_attractors)
+    mean_attractor_length = numpy.mean([len(a) for a in current_attractors])
+    median_attractor_length = numpy.median([len(a) for a in current_attractors])
+    std_attractor_length = numpy.std([len(a) for a in current_attractors])
+    max_attractor_length = numpy.max([len(a) for a in current_attractors])
+    std_attractor_basin = numpy.std([len(a) for a in basin_sizes])
+    median_attractor_basin = numpy.median([len(a) for a in basin_sizes])
+    max_attractor_basin = numpy.max([len(a) for a in basin_sizes])
     print "time taken for attractor estimation={:.2f} secs".format(time.time() - start)
 
     res_start = time.time()
@@ -174,6 +186,14 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
                                 normalized_n_inputs=graph_name_to_attributes[name]['normalized_n_inputs'],
                                 max_degree=graph_name_to_attributes[name]['max_degree'],
                                 mean_degree=graph_name_to_attributes[name]['mean_degree'],
+                                num_attractors=num_attractors,
+                                mean_attractor_length=mean_attractor_length,
+                                median_attractor_length=median_attractor_length,
+                                std_attractor_length=std_attractor_length,
+                                max_attractor_length=max_attractor_length,
+                                std_attractor_basin=std_attractor_basin,
+                                median_attractor_basin=median_attractor_basin,
+                                max_attractor_basin=max_attractor_basin,
                                 optimization_model_impact_scores=optimization_model_impact_scores,
                                 stochastic_model_impact_scores=stochastic_model_impact_scores,
                                 optimization_model_addition_impact_scores=optimization_model_addition_impact_scores,
@@ -294,8 +314,12 @@ def main():
             writer = csv.writer(csv_file)
             writer.writerow(["graph_name", "is_random", "size", "maximal_change_bits",
                             "n_inputs", "normalized_n_inputs", "max_degree", "mean_degree",
+                             "num_attractors", "mean_attractor_length", "median_attractor_length",
+                             "std_attractor_length", "max_attractor_length", "std_attractor_basin",
+                             "median_attractor_basin", "max_attractor_basin",
                              "optimization_model_impact_scores", "stochastic_model_impact_scores",
-                             "optimization_model_addition_impact_scores", "stochastic_model_addition_impact_scores",
+                             "optimization_model_addition_impact_scores",
+                             "stochastic_model_addition_impact_scores",
                              "optimization_state_impact_scores", "stochastic_state_impact_scores",
                              "optimization_model_time", "stochastic_model_time",
                              "optimization_model_addition_time", "stochastic_model_addition_time",

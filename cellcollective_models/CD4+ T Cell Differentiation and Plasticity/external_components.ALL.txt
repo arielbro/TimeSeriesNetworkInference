@@ -1,6 +1,0 @@
-IFNGe
-TGFBe
-IL10e
-IL21e
-IL2e
-IL4e
