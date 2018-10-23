@@ -72,6 +72,10 @@ def one_graph_impact_score_estimation_wrapper(args):
     except TimeoutError as e:
         print "warning - timeout on vertex impact score estimation after {} seconds.".format(timeout_seconds)
         return None
+    except attractors.TimeoutError as e:
+        print "Breaking impact score estimation (guorbi timeout)". \
+            format(timeout_seconds)
+        return None
 
 @timeout(timeout_seconds)
 def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_attributes):
@@ -188,6 +192,13 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
 
 
 def main():
+    print("stochastic_n_iter={}, parallel={}, n_processes={}, timeout_seconds={}, n_tests={},"
+          "filter_out_timed_out_graphs={}, graph_parent_dir={}, optimization_max_len={}, "
+          "optimization_max_num={}".format(stochastic_n_iter, parallel, n_processes,
+                                               timeout_seconds, n_tests, filter_out_timed_out_graphs,
+                                               graph_parent_dir, optimization_max_len,
+                                               optimization_max_num))
+
     # TODO: use grownups' argument parsing library.
     if len(sys.argv) == 1:
         output_path = 'optimization_and_stochastic_impact_scores.csv'
