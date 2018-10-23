@@ -121,9 +121,9 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
     median_attractor_length = numpy.median([len(a) for a in current_attractors])
     std_attractor_length = numpy.std([len(a) for a in current_attractors])
     max_attractor_length = numpy.max([len(a) for a in current_attractors])
-    std_attractor_basin = numpy.std([len(a) for a in basin_sizes])
-    median_attractor_basin = numpy.median([len(a) for a in basin_sizes])
-    max_attractor_basin = numpy.max([len(a) for a in basin_sizes])
+    std_attractor_basin = numpy.std(basin_sizes)
+    median_attractor_basin = numpy.median(basin_sizes)
+    max_attractor_basin = numpy.max(basin_sizes)
     print "time taken for attractor estimation={:.2f} secs".format(time.time() - start)
 
     res_start = time.time()
