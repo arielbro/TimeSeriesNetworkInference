@@ -19,15 +19,16 @@ from functools import wraps
 import stat
 import platform
 
-stochastic_n_iter = 30
+stochastic_n_iter = 60
 parallel = True
-n_processes = 48
-timeout_seconds = int(0.5 * 60 * 60)
+n_processes = 40
+timeout_seconds = int(4 * 60 * 60)
 n_tests = 1000
 filter_out_timed_out_graphs = True
 graph_parent_dir = "cellcollective_models"
 optimization_max_len = 1
-optimization_max_num = 50
+optimization_max_num = 30
+optimization_max_transient_len = 20
 only_random = False
 
 VertexImpactResult = namedtuple("VertexImpactResult", "graph_name is_random size "
@@ -175,7 +176,7 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
     res_start = time.time()
     optimization_state_impact_scores = attractors. \
         vertex_state_impact_scores(graph_copy, current_attractors=current_attractors,
-                                   max_trainsient_len=40, verbose=False,
+                                   max_transient_len=optimization_max_transient_len, verbose=False,
                                    relative_attractor_basin_sizes=basin_sizes,
                                    key_slice_size=15)
     optimization_state_time = time.time() - res_start

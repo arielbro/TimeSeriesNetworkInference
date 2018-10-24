@@ -504,7 +504,7 @@ class TestAttractors(TestCase):
             print "n={}, relative_basins={}, expected_impacts={}".\
                 format(len(experiment.G.vertices), experiment.relative_basins, experiment.impacts)
             impacts = vertex_state_impact_scores(G=experiment.G, current_attractors=experiment.current_attractors,
-                                                 max_trainsient_len=experiment.max_transient_len,
+                                                 max_transient_len=experiment.max_transient_len,
                                                  relative_attractor_basin_sizes=experiment.relative_basins,
                                                  key_slice_size=15)
 

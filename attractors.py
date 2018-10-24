@@ -463,7 +463,7 @@ def stochastic_vertex_state_impact_scores(G, n_iter=1000):
     return vertex_scores
 
 
-def vertex_state_impact_scores(G, current_attractors, max_trainsient_len=30, verbose=True,
+def vertex_state_impact_scores(G, current_attractors, max_transient_len=30, verbose=True,
                                relative_attractor_basin_sizes=None, key_slice_size=15):
     """
     For each vertex, finds the proportion of attractors, possibly weighted by their basin sizes, that can be
@@ -489,12 +489,12 @@ def vertex_state_impact_scores(G, current_attractors, max_trainsient_len=30, ver
                             for i in range(len(G.vertices))]
             model.update()
             perturbed_state = [1 - var if i == vertex_index else var for i, var in enumerate(source_state)]
-            if max_trainsient_len > 0:
+            if max_transient_len > 0:
                 target_state = [model.addVar(vtype=gurobipy.GRB.BINARY,
                                              name="attractor_{}_second_state_{}".format(attractor_index, i))
                                 for i in range(len(G.vertices))]
                 model.update()
-                ilp.add_path_to_model(G, model, path_len=max_trainsient_len, first_state_vars=perturbed_state,
+                ilp.add_path_to_model(G, model, path_len=max_transient_len, first_state_vars=perturbed_state,
                                       last_state_vars=target_state)
             else:
                 target_state = perturbed_state
