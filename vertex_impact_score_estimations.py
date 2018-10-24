@@ -28,6 +28,7 @@ filter_out_timed_out_graphs = True
 graph_parent_dir = "cellcollective_models"
 optimization_max_len = 1
 optimization_max_num = 50
+only_random = False
 
 VertexImpactResult = namedtuple("VertexImpactResult", "graph_name is_random size "
                                                       "maximal_change_bits n_inputs normalized_n_inputs "
@@ -256,7 +257,7 @@ def main():
     for test in range(n_tests):
         test_start = time.time()
         print "test #{}".format(test)
-        is_biological = (test % 10 == 0)  # TODO: remove redundancy in repeating optimization results...
+        is_biological = (not only_random) and (test == 0)
 
         if parallel:
             os.environ['GRB_LICENSE_FILE'] = \
