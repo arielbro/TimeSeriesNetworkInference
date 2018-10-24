@@ -274,7 +274,7 @@ def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use
                                           cur_dubrova_path=dubrova_path,
                                           bits_of_change=1,
                                           relative_attractor_basin_sizes=None,
-                                          attractor_estimation_n_iter=500,
+                                          attractor_estimation_n_iter=1000,
                                           impact_type=ImpactType.Invalidation):
     """
     For each vertex in G, returns the mean impact of for uniformly selected bit changes

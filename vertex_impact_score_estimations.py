@@ -129,7 +129,7 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
     res_start = time.time()
     stochastic_model_impact_scores = attractors. \
         stochastic_vertex_model_impact_scores(graph_copy, current_attractors,
-                                              use_dubrova=True,
+                                              use_dubrova=False,
                                               n_iter=stochastic_n_iter,
                                               impact_type=attractors.ImpactType.Invalidation,
                                               bits_of_change=1,
@@ -149,7 +149,7 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
     res_start = time.time()
     stochastic_model_addition_impact_scores = attractors. \
         stochastic_vertex_model_impact_scores(graph_copy, current_attractors,
-                                              use_dubrova=True,
+                                              use_dubrova=False,
                                               n_iter=stochastic_n_iter,
                                               bits_of_change=1,
                                               impact_type=attractors.ImpactType.Addition,
