@@ -57,7 +57,7 @@ def find_num_attractors_multistage(G, use_ilp):
             # for model in sat_iterator:
             #     print(model)
 
-        print("time taken for {} check: {:.2f} seconds".format("ILP" if use_ilp else "SAT", time.time() - start_time))
+        # print("time taken for {} check: {:.2f} seconds".format("ILP" if use_ilp else "SAT", time.time() - start_time))
         # print(sat, '\n')
         if sat:
             print("sat")
@@ -99,9 +99,9 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
                                                                     max_walk_len=attractor_sampling_walk_length)
             num_raw_attractors = len(attractor_basin_tuples)
             attractors = [attractor for (attractor, _) in attractor_basin_tuples if len(attractor) <= T]
-            print("sampled {} suitable attractors (and {} total)".format(len(attractors), num_raw_attractors))
+            # print("sampled {} suitable attractors (and {} total)".format(len(attractors), num_raw_attractors))
             # print(attractors)
-            print("time taken for attractor sampling: {:.2f} seconds".format(time.time() - sample_start))
+            # print("time taken for attractor sampling: {:.2f} seconds".format(time.time() - sample_start))
             if len(attractors) >= P:
                 return P
             if not use_sampling_for_mip_start:
@@ -176,7 +176,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
         # ilp.print_model_values(model)
         # ilp.print_model_constraints(model)
         # model.printStats()
-        print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time))
+        # print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time))
         if (sampling_bounds is None) or use_sampling_for_mip_start:
             return int(round(model.objVal))
         else:
@@ -259,7 +259,7 @@ def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_
         # ilp.print_model_values(model)
         # ilp.print_model_constraints(model)
         # model.printStats()
-        print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time))
+        # print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time))
         return int(round(model.objVal))
 
         # for constr in model.getConstrs():
@@ -353,7 +353,7 @@ def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use
 
             v.function = original_function
 
-            print("time taken for vertex {}: {:.2f} secs. {} out of {}".format(v.name, time.time() - vertex_start, i, len(G.vertices)))
+            # print("time taken for vertex {}: {:.2f} secs. {} out of {}".format(v.name, time.time() - vertex_start, i, len(G.vertices)))
 
             if impact_type == ImpactType.Both:
                 score /= 2
@@ -458,7 +458,7 @@ def stochastic_vertex_state_impact_scores(G, n_iter=1000):
                                                                        n_bits=1,
                                                                        bitchange_node_indices=[vertex_index]))
         vertex_scores.append(sum(bitchange_results) / float(n_iter))
-        print("time taken for vertex {}: {:.2f} secs. {} out of {}".format(G.vertices[vertex_index].name, time.time() - vertex_start, vertex_index, len(G.vertices)))
+        # print("time taken for vertex {}: {:.2f} secs. {} out of {}".format(G.vertices[vertex_index].name, time.time() - vertex_start, vertex_index, len(G.vertices)))
 
     return vertex_scores
 
@@ -540,7 +540,7 @@ def vertex_state_impact_scores(G, current_attractors, max_transient_len=30, verb
                 # ilp.print_model_constraints(model)
                 score += is_destructive * relative_attractor_basin_sizes[attractor_index]
         vertex_scores.append(score)
-        print("time taken for vertex {}: {:.2f} seconds".format(G.vertices[vertex_index].name, time.time() - vertex_start))
+        # print("time taken for vertex {}: {:.2f} seconds".format(G.vertices[vertex_index].name, time.time() - vertex_start))
     return vertex_scores
 
 
@@ -596,8 +596,8 @@ def find_attractors_onestage_enumeration(G, max_len=None, verbose=False, simplif
         # ilp.print_model_values(model)
         # ilp.print_model_constraints(model)
         # model.printStats()
-        print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time))
-        print("number of attractors: {}".format(model.SolCount))
+        # print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start_time))
+        # print("number of attractors: {}".format(model.SolCount))
         return ilp.get_model_attractors(model)
 
     # for constr in model.getConstrs():
@@ -800,7 +800,7 @@ def vertex_model_impact_scores(G, current_attractors, max_len, max_num,
             if impact_types == ImpactType.Both:
                 objective /= 2
 
-            print("time taken to build model: {:.2f}".format(time.time() - start))
+            # print("time taken to build model: {:.2f}".format(time.time() - start))
             start = time.time()
             if not verbose:
                 model.params.LogToConsole = 0
@@ -821,11 +821,11 @@ def vertex_model_impact_scores(G, current_attractors, max_len, max_num,
             else:
                 if model.ObjVal != int(round(model.ObjVal)):
                     print("warning - model solved with non-integral objective function ({})".format(model.ObjVal))
-                print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start))
+                # print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start))
             # ilp.print_attractors(model)
             # ilp.print_model_values(model)
             vertex_scores.append(model.objVal)
-            print("score of vertex {}: {:.2f}".format(v.name, vertex_scores[-1]))
+            # print("score of vertex {}: {:.2f}".format(v.name, vertex_scores[-1]))
     return vertex_scores
 
 
@@ -862,7 +862,7 @@ def vertex_degeneracy_scores(G, current_attractors, relative=False, verbose=True
                 model.addConstr(invalidity_indicator == 0, name="validity_constraint_attractor_{}".format(i))
             model.update()
 
-            print("time taken to build model: {:.2f}".format(time.time() - start))
+            # print("time taken to build model: {:.2f}".format(time.time() - start))
             start = time.time()
             if not verbose:
                 model.params.LogToConsole = 0
@@ -882,12 +882,12 @@ def vertex_degeneracy_scores(G, current_attractors, relative=False, verbose=True
             else:
                 if model.ObjVal != int(round(model.ObjVal)):
                     print("warning - model solved with non-integral objective function ({})".format(model.ObjVal))
-                print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start))
+                # print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start))
             # ilp.print_attractors(model)
             # ilp.print_model_values(model)
             denominator = 1 if not relative else 2 ** len(v.predecessors())
             vertex_scores.append(model.objVal / denominator)
-            print("score of vertex {}: {:.2f}".format(v.name, vertex_scores[-1]))
+            # print("score of vertex {}: {:.2f}".format(v.name, vertex_scores[-1]))
     return vertex_scores
 
 
