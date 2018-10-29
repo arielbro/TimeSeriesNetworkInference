@@ -31,6 +31,7 @@ only_random = False
 attractor_estimation_n_iter = 100
 filter_out_timed_out_graphs = False
 graph_size_filter = 35
+n_attractors_filter = 50
 queue_all_tasks = True
 n_tests = 10
 
@@ -221,10 +222,12 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
 def main():
     print("stochastic_n_iter={}, parallel={}, n_processes={}, timeout_seconds={}, n_tests={},"
           "filter_out_timed_out_graphs={}, graph_parent_dir={}, optimization_max_len={}, "
-          "optimization_max_num={},graph_size_filter={}, queue_all_tasks={}".format(stochastic_n_iter, parallel, n_processes,
+          "optimization_max_num={},graph_size_filter={}, queue_all_tasks={},"
+          "n_attractors_filter={}".format(stochastic_n_iter, parallel, n_processes,
                                                timeout_seconds, n_tests, filter_out_timed_out_graphs,
                                                graph_parent_dir, optimization_max_len,
-                                               optimization_max_num, graph_size_filter, queue_all_tasks))
+                                               optimization_max_num, graph_size_filter, queue_all_tasks,
+                                          n_attractors_filter))
 
     # TODO: use grownups' argument parsing library.
     if len(sys.argv) == 1:
@@ -242,8 +245,12 @@ def main():
         try:
             G = graphs.Network.parse_boolean_tables(os.path.join(graph_parent_dir, graph_dir))
             if len(G.vertices) <= graph_size_filter:
-                biological_graphs.append(G)
-                biological_graph_names.append(graph_dir)
+                n_estimated_attractors = stochastic.estimate_attractors(G, n_walks=stochastic_n_iter, max_walk_len=None,
+                                                                        with_basins=False)
+                if n_estimated_attractors <= n_attractors_filter:
+                    biological_graphs.append(G)
+                    biological_graph_names.append(graph_dir)
+
         except ValueError as e:
             if e.message.startswith("Model export from cellcollective failed"):
                 print "warning - did not load graph {}".format(graph_dir)
