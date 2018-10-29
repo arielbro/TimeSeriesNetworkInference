@@ -245,8 +245,8 @@ def main():
         try:
             G = graphs.Network.parse_boolean_tables(os.path.join(graph_parent_dir, graph_dir))
             if len(G.vertices) <= graph_size_filter:
-                n_estimated_attractors = stochastic.estimate_attractors(G, n_walks=stochastic_n_iter, max_walk_len=None,
-                                                                        with_basins=False)
+                n_estimated_attractors = len(stochastic.estimate_attractors(G, n_walks=stochastic_n_iter, max_walk_len=None,
+                                                                        with_basins=False))
                 if n_estimated_attractors <= n_attractors_filter:
                     biological_graphs.append(G)
                     biological_graph_names.append(graph_dir)
@@ -255,6 +255,7 @@ def main():
             if e.message.startswith("Model export from cellcollective failed"):
                 print "warning - did not load graph {}".format(graph_dir)
 
+    print "filtering left {} graphs".format(len(biological_graphs))
 
     graph_name_to_attributes = dict()
     for i, graph, name in zip(range(len(biological_graphs)), biological_graphs, biological_graph_names):
@@ -282,7 +283,7 @@ def main():
             # with ProcessPool() as pool:
             pool = multiprocessing.Pool(processes=n_processes)
             future = pool.map(one_graph_impact_score_estimation_wrapper,
-                               zip((biological_graphs * n_tests) if queue_all_tasks else biological_graphs,
+                               zip(itertools.cycle(biological_graphs), # a bit more memory efficient.
                                    (biological_graph_names * n_tests) if queue_all_tasks else biological_graph_names,
                                    itertools.repeat(is_biological),
                                    itertools.repeat(graph_name_to_attributes)))
