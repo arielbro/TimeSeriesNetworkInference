@@ -241,7 +241,7 @@ def main():
     for graph_dir in candidate_biological_graph_names:
         try:
             G = graphs.Network.parse_boolean_tables(os.path.join(graph_parent_dir, graph_dir))
-            if len(G.vertices <= graph_size_filter):
+            if len(G.vertices) <= graph_size_filter:
                 biological_graphs.append(G)
                 biological_graph_names.append(graph_dir)
         except ValueError as e:
