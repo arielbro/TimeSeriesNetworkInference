@@ -223,11 +223,11 @@ def main():
     print("stochastic_n_iter={}, parallel={}, n_processes={}, timeout_seconds={}, n_tests={},"
           "filter_out_timed_out_graphs={}, graph_parent_dir={}, optimization_max_len={}, "
           "optimization_max_num={},graph_size_filter={}, queue_all_tasks={},"
-          "n_attractors_filter={}".format(stochastic_n_iter, parallel, n_processes,
+          "n_attractors_filter={},optimization_max_transient_len={}".format(stochastic_n_iter, parallel, n_processes,
                                                timeout_seconds, n_tests, filter_out_timed_out_graphs,
                                                graph_parent_dir, optimization_max_len,
                                                optimization_max_num, graph_size_filter, queue_all_tasks,
-                                          n_attractors_filter))
+                                          n_attractors_filter, optimization_max_transient_len))
 
     # TODO: use grownups' argument parsing library.
     if len(sys.argv) == 1:
