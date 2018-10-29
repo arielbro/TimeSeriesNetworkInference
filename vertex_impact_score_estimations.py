@@ -23,13 +23,16 @@ stochastic_n_iter = 60
 parallel = True
 n_processes = 40
 timeout_seconds = int(4 * 60 * 60)
-n_tests = 1000
-filter_out_timed_out_graphs = True
 graph_parent_dir = "cellcollective_models"
 optimization_max_len = 1
 optimization_max_num = 30
 optimization_max_transient_len = 20
 only_random = False
+attractor_estimation_n_iter = 100
+filter_out_timed_out_graphs = False
+graph_size_filter = 35
+queue_all_tasks = True
+n_tests = 10
 
 VertexImpactResult = namedtuple("VertexImpactResult", "graph_name is_random size "
                                                       "maximal_change_bits n_inputs normalized_n_inputs "
@@ -135,6 +138,7 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
                                               n_iter=stochastic_n_iter,
                                               impact_type=attractors.ImpactType.Invalidation,
                                               bits_of_change=1,
+                                              attractor_estimation_n_iter=attractor_estimation_n_iter,
                                               relative_attractor_basin_sizes=basin_sizes)
     stochastic_model_time = time.time() - res_start
 
@@ -152,6 +156,7 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
     stochastic_model_addition_impact_scores = attractors. \
         stochastic_vertex_model_impact_scores(graph_copy, current_attractors,
                                               use_dubrova=False,
+                                              attractor_estimation_n_iter=attractor_estimation_n_iter,
                                               n_iter=stochastic_n_iter,
                                               bits_of_change=1,
                                               impact_type=attractors.ImpactType.Addition,
@@ -255,7 +260,7 @@ def main():
         print "#{}; {} input nodes for graph {} of size {} and max degree {}".format(i, n_inputs, name,
                                                                                      size, max_degree)
     results = []
-    for test in range(n_tests):
+    for test in (range(n_tests) if queue_all_tasks else range(1)):
         test_start = time.time()
         print "test #{}".format(test)
         is_biological = (not only_random) and (test == 0)
@@ -268,7 +273,8 @@ def main():
             # with ProcessPool() as pool:
             pool = multiprocessing.Pool(processes=n_processes)
             future = pool.map(one_graph_impact_score_estimation_wrapper,
-                               zip(biological_graphs, biological_graph_names,
+                               zip((biological_graphs * n_tests) if queue_all_tasks else biological_graphs,
+                                   (biological_graph_names * n_tests) if queue_all_tasks else biological_graph_names,
                                    itertools.repeat(is_biological),
                                    itertools.repeat(graph_name_to_attributes)))
                                # timeout=4000)
