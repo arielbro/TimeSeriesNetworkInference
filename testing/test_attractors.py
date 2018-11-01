@@ -171,11 +171,16 @@ class TestAttractors(TestCase):
         experiments.append(ILPAttractorExperimentParameters(G=G, T=1, P=10, n_attractors=10))
         experiments.append(ILPAttractorExperimentParameters(G=G, T=2, P=10, n_attractors=10))
         # 49, 50, 51
+        # G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+        #        "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
+        # experiments.append(ILPAttractorExperimentParameters(G=G, T=1, P=15, n_attractors=12))
+        # experiments.append(ILPAttractorExperimentParameters(G=G, T=2, P=15, n_attractors=14))
+        # experiments.append(ILPAttractorExperimentParameters(G=G, T=3, P=15, n_attractors=14))
         G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
-               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
-        experiments.append(ILPAttractorExperimentParameters(G=G, T=1, P=15, n_attractors=12))
-        experiments.append(ILPAttractorExperimentParameters(G=G, T=2, P=15, n_attractors=14))
-        experiments.append(ILPAttractorExperimentParameters(G=G, T=3, P=15, n_attractors=14))
+               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\tcr.cnet")
+        experiments.append(ILPAttractorExperimentParameters(G=G, T=1, P=15, n_attractors=8))
+        experiments.append(ILPAttractorExperimentParameters(G=G, T=6, P=15, n_attractors=9))
+        experiments.append(ILPAttractorExperimentParameters(G=G, T=7, P=15, n_attractors=9))
 
         # for _ in range(5):
         #     size = 35
@@ -1116,7 +1121,7 @@ class TestAttractors(TestCase):
             print experiment.current_attractors
 
             for use_dubrova in [False, True]:
-                n_iter = random.randint(200, 220)
+                n_iter = random.randint(400, 440)
                 attractor_estimation_n_iter = random.randint(30, 35)
 
                 estimated_impacts = stochastic_vertex_model_impact_scores(
@@ -1189,8 +1194,8 @@ class TestAttractors(TestCase):
         self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=False), 0)
 
         G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
-               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
-        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=False), 12)
+               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\tcr.cnet")
+        self.assertEqual(find_num_steady_states(G, verbose=False, simplify_general_boolean=False), 8)
 
     def test_find_attractors_dubrova(self):
         experiments = []
@@ -1235,7 +1240,7 @@ class TestAttractors(TestCase):
         experiments.append(DubrovaExperimentParameters(G=G, mutate=False, n_attractors=1))
         experiments.append(DubrovaExperimentParameters(G=G, mutate=True, n_attractors=1))
 
-        # 13
+        # 13, 14
         G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "A"), ("C", "A")],
                            vertex_functions=[logic.SymmetricThresholdFunction.from_function(sympy.Nand, 2),
                                              logic.SymmetricThresholdFunction.from_function(sympy.Nand, 1),
@@ -1243,10 +1248,12 @@ class TestAttractors(TestCase):
         experiments.append(DubrovaExperimentParameters(G=G, mutate=False, n_attractors=1))
         experiments.append(DubrovaExperimentParameters(G=G, mutate=True, n_attractors=4))
 
-        # 14
+        # 15
         G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
-               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large.cnet")
-        experiments.append(DubrovaExperimentParameters(G=G, mutate=False, n_attractors=16))
+               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\tcr.cnet")
+        # G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+        #        "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large.cnet")
+        experiments.append(DubrovaExperimentParameters(G=G, mutate=False, n_attractors=9))
 
         print "number of experiments (with keys)={}".format(len(experiments))
         for i, experiment in enumerate(experiments):
@@ -1254,9 +1261,10 @@ class TestAttractors(TestCase):
             print "n={}, mutate={}, expected_n_attractors={}".format(len(experiment.G.vertices),
                                                                      experiment.mutate, experiment.n_attractors)
             # continue
-            n_attractors = len(find_attractors_dubrova(G=experiment.G,
+            attractors = find_attractors_dubrova(G=experiment.G,
                                                        dubrova_path="../bns_dubrova.exe",
-                                                       mutate_input_nodes=experiment.mutate))
+                                                       mutate_input_nodes=experiment.mutate)
+            n_attractors = len(attractors)
             try:
                 self.assertEqual(n_attractors, experiment.n_attractors)
             except AssertionError as e:
@@ -1273,11 +1281,11 @@ class TestAttractors(TestCase):
         desired_attractor = [[0, 0, 1], [0, 1, 1], [1, 1, 1], [1, 0, 1]]
         # repeat manually, (otherwise there's mutual dependence of tests).
         possible_attractors = [desired_attractor[shift:] + desired_attractor[:shift] for shift in range(4)]
-        print possible_attractors
+        # print possible_attractors
         found_attractors = find_attractors_dubrova(G, dubrova_path="../bns_dubrova.exe", mutate_input_nodes=True)
         self.assertTrue(len(found_attractors) == 1)
         found_attractor = [[int(v) for v in state] for state in found_attractors[0]]
-        print found_attractor
+        # print found_attractor
         self.assertTrue(any(found_attractor == possible_attractors[i] for i in range(len(possible_attractors))))
 
         G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "B"), ("B", "A")],
@@ -1285,11 +1293,11 @@ class TestAttractors(TestCase):
         desired_attractor = [[0, 0], [0, 1], [1, 1], [1, 0]]
         # repeat manually, (otherwise there's mutual dependence of tests).
         possible_attractors = [desired_attractor[shift:] + desired_attractor[:shift] for shift in range(4)]
-        print possible_attractors
+        # print possible_attractors
         found_attractors = find_attractors_dubrova(G, dubrova_path="../bns_dubrova.exe", mutate_input_nodes=True)
         self.assertTrue(len(found_attractors) == 1)
         found_attractor = [[int(v) for v in state] for state in found_attractors[0]]
-        print found_attractor
+        # print found_attractor
         self.assertTrue(any(found_attractor == possible_attractor for possible_attractor in possible_attractors))
 
     def test_find_attractors_enumerate(self):
@@ -1388,12 +1396,13 @@ class TestAttractors(TestCase):
                               sympy.And, sympy.And])
         experiments.append(ILPAttractorExperimentParameters(G=G, T=1, P=None, n_attractors=2**17))
         experiments.append(ILPAttractorExperimentParameters(G=G, T=2, P=None, n_attractors=2**17))
-        # 30, 31, 32
+        # 30, 31, 32, 33
         G = graphs.Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
-               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
-        experiments.append(ILPAttractorExperimentParameters(G=G, T=1, P=None, n_attractors=12))
-        experiments.append(ILPAttractorExperimentParameters(G=G, T=2, P=None, n_attractors=14))
-        experiments.append(ILPAttractorExperimentParameters(G=G, T=3, P=None, n_attractors=14))
+               "\\Attractors - for Ariel\\BNS_Dubrova_2011\\tcr.cnet")
+        experiments.append(ILPAttractorExperimentParameters(G=G, T=1, P=None, n_attractors=8))
+        experiments.append(ILPAttractorExperimentParameters(G=G, T=2, P=None, n_attractors=8))
+        experiments.append(ILPAttractorExperimentParameters(G=G, T=6, P=None, n_attractors=9))
+        experiments.append(ILPAttractorExperimentParameters(G=G, T=8, P=None, n_attractors=9))
 
         print "number of experiments (with keys)={}".format(len(experiments))
         for i, experiment in enumerate(experiments):

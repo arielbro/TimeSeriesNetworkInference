@@ -270,7 +270,7 @@ def main():
         print "#{}; {} input nodes for graph {} of size {} and max degree {}".format(i, n_inputs, name,
                                                                                      size, max_degree)
     results = []
-    for test in (range(n_tests) if queue_all_tasks else range(1)):
+    for test in (range(n_tests) if not queue_all_tasks else range(1)):
         test_start = time.time()
         print "test #{}".format(test)
         is_biological = (not only_random) and (test == 0)

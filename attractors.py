@@ -325,26 +325,26 @@ def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use
                 v.function = logic.BooleanSymbolicFunc(input_names=[u.name for u in v.predecessors()],
                                                        boolean_outputs=boolean_outputs)
 
-                attractors_start = time.time()
-                if use_dubrova:
-                    new_attractors = find_attractors_dubrova(G, cur_dubrova_path, mutate_input_nodes=True)
-                else:
-                    new_attractors = stochastic.estimate_attractors(G, n_walks=attractor_estimation_n_iter,
-                                                                    max_walk_len=100,
-                                                                    with_basins=False)
-                # print("time taken to calculate new attractors: {:.2f} secs".format(time.time() - attractors_start))
-
-                # print("current attractors:")
-                # print(current_attractors)
-                # print("new attractors:")
-                # print(new_attractors)
                 if (impact_type == ImpactType.Invalidation) or (impact_type == ImpactType.Both):
                     for attractor, basin_size in zip(current_attractors, relative_attractor_basin_sizes):
-                        # TODO: write a one-time comparison method to avoid multiple Attractor set creation.
-                        is_valid = utility.is_attractor_in_attractor_list(attractor, new_attractors)
+                        is_valid = utility.is_attractor_valid(attractor, G)
                         if not is_valid:
                             score += basin_size
                 if (impact_type == ImpactType.Addition) or (impact_type == ImpactType.Both):
+                    attractors_start = time.time()
+                    if use_dubrova:
+                        new_attractors = find_attractors_dubrova(G, cur_dubrova_path, mutate_input_nodes=True)
+                    else:
+                        new_attractors = stochastic.estimate_attractors(G, n_walks=attractor_estimation_n_iter,
+                                                                        max_walk_len=100,
+                                                                        with_basins=False)
+                    # print("time taken to calculate new attractors: {:.2f} secs".format(time.time() - attractors_start))
+
+                    # print("current attractors:")
+                    # print(current_attractors)
+                    # print("new attractors:")
+                    # print(new_attractors)
+
                     for attractor in new_attractors:
                         # TODO: write a one-time comparison method to avoid multiple Attractor set creation.
                         exists = utility.is_attractor_in_attractor_list(attractor, current_attractors)

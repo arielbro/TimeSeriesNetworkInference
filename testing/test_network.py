@@ -26,16 +26,16 @@ class TestNetwork(TestCase):
                 G_tag = Network.parse_cnet("./temp_test_network.cnet")
                 self.assertEqual(G, G_tag)
 
+        # Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+        #                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
         Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
-                       "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large2.cnet")
+                                      "\\Attractors - for Ariel\\BNS_Dubrova_2011\\arabidopsis.cnet")
         Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
-                                      "\\Attractors - for Ariel\\BNS_Dubrova_2011\\arabidopsis.cnet.txt")
+                       "\\Attractors - for Ariel\\BNS_Dubrova_2011\\EGFR_man_rand_inputs1.cnet")
+        # Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
+        #                "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large.cnet")
         Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
-                       "\\Attractors - for Ariel\\BNS_Dubrova_2011\\EGFR_man_with_inputs_all_zero.cnet")
-        Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
-                       "\\Attractors - for Ariel\\BNS_Dubrova_2011\\MAPK_large.cnet")
-        Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
-                       "\\Attractors - for Ariel\\BNS_Dubrova_2011\\thelper.cnet.txt")
+                       "\\Attractors - for Ariel\\BNS_Dubrova_2011\\thelper.cnet")
         Network.parse_cnet("C:\\Users\\ariel\\Downloads\\Attractors - for Ariel"
                        "\\Attractors - for Ariel\\BNS_Dubrova_2011\\tcr.cnet")
 

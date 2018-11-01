@@ -332,7 +332,9 @@ class Network:
                 last_v_index = v_index
                 v_n_args = int(v_n_args_str)
                 v_args = [int(arg_str) - 1 for arg_str in v_args_str.split()]
+                sorted_args = sorted(v_args)
                 assert len(v_args) == v_n_args
+                ordering = {i: sorted_args.index(v_args[i]) for i in range(len(v_args))}
                 # for i in range(len(v_args) - 1):  # the logic module assumes inputs are ordered by index
                 #     assert v_args[i] < v_args[i + 1]
                 edges.extend([(names[arg], names[v_index]) for arg in v_args])
@@ -346,14 +348,18 @@ class Network:
                     continue
                 truth_table_dict = dict()
                 # input is stated in bits, with - representing wildcards (/dontcares)
-                for bool_rule_str in re.findall(r"[0-9\-]+[ \t]+[01]", section):
+                # skip the start of the section, since you don't want to capture that as rule strings
+                for bool_rule_str in re.findall(r"[0-9\-]+[ \t]+[01]",
+                                                section[re.search("\.n.*\n", section).span()[1]:]):
                     output = bool(int(bool_rule_str.split()[1]))
-                    ordered_input_bits = [bit for arg_index, bit in zip(v_args, bool_rule_str.split()[0])]
+                    input_bits = [bit for arg_index, bit in zip(v_args, bool_rule_str.split()[0])]
+                    # reorder bits if inputs are given in non-ascending order.
+                    ordered_input_bits = [input_bits[ordering[i]] for i in range(len(v_args))]
                     input_value_lists = [[False, True] if bit == '-' else [bool(int(bit))]
                                          for bit in ordered_input_bits]
                     for input_combination in itertools.product(*input_value_lists):
                         truth_table_dict[tuple(input_combination)] = output
-                ordered_bool_outputs = [truth_table_dict[tuple(input_value)] for input_value in
+                ordered_bool_outputs = [truth_table_dict.get(tuple(input_value), False) for input_value in
                                         itertools.product([False, True], repeat=v_n_args)]
                 input_names = [names[arg] for arg in v_args]
                 func = BooleanSymbolicFunc(input_names=input_names, boolean_outputs=ordered_bool_outputs)

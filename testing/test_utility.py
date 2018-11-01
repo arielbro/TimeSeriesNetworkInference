@@ -5,16 +5,18 @@ import graphs
 import stochastic
 import random
 import sympy
+import os
+import attractors
 
 
 class TestUtility(TestCase):
 
     def test_attractor_sets_equality(self):
         for test in range(100):
-            n = random.randint(1, 10)
+            n = random.randint(1, 7)
             G = graphs.Network.generate_random(n_vertices=n, indegree_bounds=[1, 5])
             first_attractors = list(
-                stochastic.estimate_attractors(G, n_walks=30, max_walk_len=1000, with_basins=False))
+                stochastic.estimate_attractors(G, n_walks=250, max_walk_len=1000, with_basins=False))
 
             if len(first_attractors) == 0:
                 continue
@@ -25,9 +27,30 @@ class TestUtility(TestCase):
             random.shuffle(second_attractors)
             self.assertTrue(utility.attractor_sets_equality(first_attractors, second_attractors))
 
+            # against dubrova
+            second_attractors = attractors.find_attractors_dubrova(G, os.path.join("..", attractors.dubrova_path),
+                                                                   mutate_input_nodes=True)
+            self.assertTrue(utility.attractor_sets_equality(first_attractors, second_attractors))
+            random.shuffle(second_attractors)
+            self.assertTrue(utility.attractor_sets_equality(first_attractors, second_attractors))
+            first_attractors = [utility.rotate(attractor, random.randint(0, 3)) for attractor in first_attractors]
+            self.assertTrue(utility.attractor_sets_equality(first_attractors, second_attractors))
+
+            # no list conversion
+            first_attractors = stochastic.estimate_attractors(G, n_walks=250, max_walk_len=1000, with_basins=False)
+            self.assertTrue(utility.attractor_sets_equality(first_attractors, second_attractors))
+
+            # from basins
+            first_attractors_basin_pairs = list(
+                stochastic.estimate_attractors(G, n_walks=250, max_walk_len=1000, with_basins=True))
+            first_attractors = [p[0] for p in first_attractors_basin_pairs]
+            self.assertTrue(utility.attractor_sets_equality(first_attractors, second_attractors))
+
             if len(first_attractors) == 1:
                 continue
 
+            second_attractors = second_attractors[:-1]
+            self.assertFalse(utility.attractor_sets_equality(first_attractors, second_attractors))
             second_attractors = first_attractors[:-1]
             self.assertFalse(utility.attractor_sets_equality(first_attractors, second_attractors))
             first_attractors = first_attractors[1:]

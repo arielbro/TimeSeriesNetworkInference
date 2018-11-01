@@ -355,10 +355,15 @@ def build_logic_function_vars(formula, model, name_prefix, symbols_to_variables_
                         name="{}_And_res_<=_{}".format(name_prefix, i))
         return orVar
     elif isinstance(formula, sympy.Not):
-        try:
-            return 1 - symbols_to_variables_dict[formula.args[0]]
-        except Exception as e:
-            raise e
+        if formula.args[0] in symbols_to_variables_dict.keys():
+            try:
+                return 1 - symbols_to_variables_dict[formula.args[0]]
+            except Exception as e:
+                raise e
+        else:
+            # Assume the rest is an expression (e.g. sympy.Nand(x1, x2) translate to ~(x1 & x2) in newer sympy version)
+            return 1 - build_logic_function_vars(formula.args[0], model, "{}_not_arg".format(name_prefix),
+                                                 symbols_to_variables_dict)
     elif formula in [sympy.true, sympy.false]:
         return 1 if formula is sympy.true else 0
     else:

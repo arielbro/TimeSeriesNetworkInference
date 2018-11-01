@@ -1,3 +1,4 @@
+import numpy
 import fractions
 import math
 import sympy
@@ -123,10 +124,12 @@ def attractor_sets_equality(first_attractors, second_attractors):
     second_attractors_set = set(Attractor(att) for att in second_attractors)
     return first_attractors_set == second_attractors_set
 
+
 def is_attractor_in_attractor_list(attractor, attractor_list):
     first_attractor = Attractor(attractor)
     second_attractors_set = set(Attractor(att) for att in attractor_list)
     return first_attractor in second_attractors_set
+
 
 def is_same_attractor(a1, a2):
     """
@@ -151,7 +154,8 @@ def is_same_state(s1, s2):
     :return: True if s1 and s2 represent the same state
     """
     if len(s1) != len(s2):
-        return False
+        # return False
+        raise ValueError("Can't compare states from models of different size.")
     for v_state in s1:
         assert v_state in [0, 1, False, True, sympy.false, sympy.true]
     for v_state in s2:
@@ -159,3 +163,17 @@ def is_same_state(s1, s2):
     s1_standard = tuple(1 if v_state else 0 for v_state in s1)
     s2_standard = tuple(1 if v_state else 0 for v_state in s2)
     return s1_standard == s2_standard
+
+
+def is_attractor_valid(attractor, G):
+    """
+    Checks whether an attractor is valid in the model G, regardless of representation.
+    :param attractor:
+    :param G:
+    :return:
+    """
+    # TODO: write tests!
+    for state, next_state in zip(attractor, rotate(attractor, 1)):
+        if not is_same_state(G.next_state(state), next_state):
+            return False
+    return True
