@@ -270,6 +270,81 @@ def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_
         #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
 
 
+def stochastic_graph_model_impact_score(G, current_attractors, n_iter=100,
+                                        use_dubrova=False,
+                                        cur_dubrova_path=dubrova_path,
+                                        bits_of_change=1,
+                                        relative_attractor_basin_sizes=None,
+                                        attractor_estimation_n_iter=1000,
+                                        impact_type=ImpactType.Invalidation):
+    """
+    Returns the mean impact of for uniformly selected bits_of_change bit changes in the functions of nodes
+    (not necessarily same node). If impact_type is "Invalidation", impact is defined as the proportion of graph
+    states that will no longer belong to the same attractor in the model, which is equivalent to
+    the invalidated attractors weighted by their basin size, which is what is actually computed.
+    If no basin sizes are given, attractors are weighted equally.
+    If impact_type is "Addition", the new attractors added to the model are counted, equally weighted.
+    Note that this can give an impact score greater than 1.
+    If impact_type is "both", the average of both modes is returned.
+    :param G:
+    :param current_attractors:
+    :param n_iter:
+    :param bits_of_change:
+    :param relative_attractor_basin_sizes:
+    :return:
+    """
+    # TODO: consider weighting new attractors by their basin sizes too.
+    if relative_attractor_basin_sizes is None:
+        relative_attractor_basin_sizes = [1 / float(len(current_attractors))] * len(current_attractors)
+    for v in G.vertices:
+        assert v.function is not None or len(v.predecessors()) == 0
+    start = time.time()
+    original_functions = [v.function for v in G.vertices]
+
+    score = 0.0
+    degrees = [len(v.predecessors()) for v in G.vertices]
+    for iteration in range(n_iter):
+        if iteration and not iteration % 50:
+            print("iteration #{}".format(iteration))
+        iteration_start = time.time()
+        perturbed_lines_dict = utility.choose_k_bits_from_vertex_functions(degrees, bits_of_change)
+        for v_index, perturbed_lines in perturbed_lines_dict:
+            G.vertices[v_index].function = logic.perturb_line(original_functions[v_index], perturbed_lines)
+
+        if (impact_type == ImpactType.Invalidation) or (impact_type == ImpactType.Both):
+            for attractor, basin_size in zip(current_attractors, relative_attractor_basin_sizes):
+                is_valid = utility.is_attractor_valid(attractor, G)
+                if not is_valid:
+                    score += basin_size
+        if (impact_type == ImpactType.Addition) or (impact_type == ImpactType.Both):
+            attractors_start = time.time()
+            if use_dubrova:
+                new_attractors = find_attractors_dubrova(G, cur_dubrova_path, mutate_input_nodes=True)
+            else:
+                new_attractors = stochastic.estimate_attractors(G, n_walks=attractor_estimation_n_iter,
+                                                                max_walk_len=None,
+                                                                with_basins=False)
+            # print("time taken to calculate new attractors: {:.2f} secs".format(time.time() - attractors_start))
+
+            # print("current attractors:")
+            # print(current_attractors)
+            # print("new attractors:")
+            # print(new_attractors)
+
+            intersection_size = utility.attractor_lists_intersection_size(current_attractors, new_attractors)
+            score += (len(new_attractors) - intersection_size) / float(len(current_attractors))
+
+        for i in range(len(G.vertices)):
+            G.vertices[i].function = original_functions[i]
+
+    if impact_type == ImpactType.Both:
+        score /= 2
+    score /= n_iter
+
+    print("time taken for stochastic impact scores: {:.2f} secs".format(time.time() - start))
+    return score
+
+
 def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use_dubrova=False,
                                           cur_dubrova_path=dubrova_path,
                                           bits_of_change=1,
@@ -305,25 +380,13 @@ def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use
             vertex_scores.append(np.nan)
         else:
             original_function = v.function
-            if isinstance(v.function, logic.BooleanSymbolicFunc):
-                original_outputs = v.function.boolean_outputs
-            else:
-                original_outputs = [v.function(*args) for args in itertools.product([False, True],
-                                                                                    repeat=len(v.predecessors()))]
             score = 0.0
             for iteration in range(n_iter):
                 if iteration and not iteration % 50:
                     print("iteration #{}".format(iteration))
 
-                v.function = None
                 truth_table_row_indices = random.sample(list(range(2 ** len(v.predecessors()))), bits_of_change)
-                # TODO: decide if this version, or building sympy expression without this row and then
-                # TODO: adding it (as I did in another function), is better.
-                boolean_outputs = list(original_outputs)
-                for index in truth_table_row_indices:
-                    boolean_outputs[index] = 1 - bool(boolean_outputs[index])  # to work with sympy's logic
-                v.function = logic.BooleanSymbolicFunc(input_names=[u.name for u in v.predecessors()],
-                                                       boolean_outputs=boolean_outputs)
+                v.function = logic.perturb_line(original_function, truth_table_row_indices)
 
                 if (impact_type == ImpactType.Invalidation) or (impact_type == ImpactType.Both):
                     for attractor, basin_size in zip(current_attractors, relative_attractor_basin_sizes):
@@ -336,7 +399,7 @@ def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use
                         new_attractors = find_attractors_dubrova(G, cur_dubrova_path, mutate_input_nodes=True)
                     else:
                         new_attractors = stochastic.estimate_attractors(G, n_walks=attractor_estimation_n_iter,
-                                                                        max_walk_len=100,
+                                                                        max_walk_len=None,
                                                                         with_basins=False)
                     # print("time taken to calculate new attractors: {:.2f} secs".format(time.time() - attractors_start))
 
@@ -345,13 +408,9 @@ def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use
                     # print("new attractors:")
                     # print(new_attractors)
 
-                    for attractor in new_attractors:
-                        # TODO: write a one-time comparison method to avoid multiple Attractor set creation.
-                        exists = utility.is_attractor_in_attractor_list(attractor, current_attractors)
-                        if not exists:
-                            score += 1 / float(len(current_attractors))
-
-            v.function = original_function
+                    intersection_size = utility.attractor_lists_intersection_size(current_attractors, new_attractors)
+                    score += (len(new_attractors) - intersection_size) / float(len(current_attractors))
+                v.function = original_function
 
             # print("time taken for vertex {}: {:.2f} secs. {} out of {}".format(v.name, time.time() - vertex_start, i, len(G.vertices)))
 
@@ -422,13 +481,35 @@ def single_state_bitchange_experiment(G, state_to_attractor_mapping=None, n_bits
     if bitchange_node_indices is not None:
         perturbed_indices = bitchange_node_indices
     else:
-        perturbed_indices = np.random.choice(range(len(unaltered_state)), n_bits, replace=False)
+        possible_perturbation_indices = [i for i in range(len(G.vertices)) if len(G.vertices[i]) > 0]
+        perturbed_indices = np.random.choice(possible_perturbation_indices, n_bits, replace=False)
     for index in perturbed_indices:
         perturbed_state[index] = 1 - perturbed_state[index]
     perturbed_state = tuple(perturbed_state)  # so it will be hashable
     perturbed_attractor = stochastic.walk_to_attractor(G, perturbed_state, max_walk=None,
                                                        state_to_attractor_mapping=state_to_attractor_mapping)
     return not utility.is_same_attractor(original_attractor, perturbed_attractor)
+
+
+def stochastic_graph_state_impact_score(G, bits_of_change, n_iter=1000):
+    """
+    Stochastically estimate the probability for a flip in the state of bits_of_change random bits
+    in a network's state to move the network from a certain attractor to another attractor
+    (or to the basin of another attractor).
+    States to change are sampled by uniform selection then simulation to corresponding attractor.
+    Input nodes are not considered as flippable.
+    :param G:
+    :param n_iter:
+    :param parallel:
+    :return:
+    """
+    state_to_attractor_mapping = dict()
+    # exploit basin mapping memory
+    bitchange_results = []
+    for _ in range(n_iter):
+        bitchange_results.append(single_state_bitchange_experiment(G, state_to_attractor_mapping,
+                                                                   n_bits=bits_of_change))
+    return sum(bitchange_results) / float(n_iter)
 
 
 def stochastic_vertex_state_impact_scores(G, n_iter=1000):
@@ -461,6 +542,89 @@ def stochastic_vertex_state_impact_scores(G, n_iter=1000):
         # print("time taken for vertex {}: {:.2f} secs. {} out of {}".format(G.vertices[vertex_index].name, time.time() - vertex_start, vertex_index, len(G.vertices)))
 
     return vertex_scores
+
+
+def graph_state_impact_score(G, current_attractors, max_transient_len=30, verbose=True,
+                              relative_attractor_basin_sizes=None, key_slice_size=15,
+                              maximal_bits_of_change=1):
+    """
+    Finds the maximal proportion of attractors, possibly weighted by their basin sizes, that can be
+    switched to the basin of another attractor by flipping a set of maximal_bits_of_change vertices.
+    The same set is assumed to be flipped throughout attractors, at an arbitrary state within it.
+    """
+    if len(current_attractors) == 1:
+        return 0
+    if relative_attractor_basin_sizes is None:
+        relative_attractor_basin_sizes = [1 / float(len(current_attractors))] * len(current_attractors)
+
+    model = gurobipy.Model()
+    perturbed_vertices_indicators = [model.addVar(vtype=gurobipy.GRB.BINARY,
+                                     name="perturbed_indicator".format(i)) for i in range(len(G.vertices))]
+    model.update()
+    model.addConstr(sum(perturbed_vertices_indicators) <= maximal_bits_of_change,
+                    name="maximal_bits_of_change_constraint")
+    objective = 0
+    for attractor_index, relative_basin_size in zip(range(len(current_attractors)), relative_attractor_basin_sizes):
+        source_state = [model.addVar(vtype=gurobipy.GRB.BINARY,
+                                     name="attractor_{}_first_state_{}".format(attractor_index, i))
+                        for i in range(len(G.vertices))]
+        perturbed_state = [model.addVar(vtype=gurobipy.GRB.BINARY,
+                                     name="attractor_{}_perturbed_state_{}".format(attractor_index, i))
+                        for i in range(len(G.vertices))]
+        model.update()
+
+        for i, indicator, source_vertex, perturbed_vertex in zip(range(len(G.vertices)),
+                                                                 perturbed_vertices_indicators,
+                                                                 source_state, perturbed_state):
+            # Only need to constrain that a zero indicator enforces (perturbed = source).
+            model.addConstr(source_vertex - perturbed_vertex <= indicator, name="attractor_{}_perturbed_indicator_"
+                                                                        "constraint_{}>=".format(attractor_index, i))
+            model.addConstr(perturbed_vertex - source_vertex <= indicator, name="attractor_{}_perturbed_indicator_"
+                                                                       "constraint_<={}".format(attractor_index, i))
+        if max_transient_len > 0:
+            target_state = [model.addVar(vtype=gurobipy.GRB.BINARY,
+                                         name="attractor_{}_second_state_{}".format(attractor_index, i))
+                            for i in range(len(G.vertices))]
+            model.update()
+            ilp.add_path_to_model(G, model, path_len=max_transient_len, first_state_vars=perturbed_state,
+                                  last_state_vars=target_state)
+        else:
+            target_state = perturbed_state
+        this_attractor_states = current_attractors[attractor_index]
+        other_attractor_states = []
+        for other_attractor_index in range(len(current_attractors)):
+            if other_attractor_index == attractor_index:
+                continue
+            other_attractor_states.extend(current_attractors[other_attractor_index])
+        first_inclusion_indicator = \
+            ilp.add_state_inclusion_indicator(model, first_state=source_state,
+                                              second_state_set=this_attractor_states,
+                                              slice_size=key_slice_size,
+                                              prefix="attractor_{}_first_state".format(attractor_index))
+        second_inclusion_indicator = \
+            ilp.add_state_inclusion_indicator(model, first_state=target_state,
+                                              second_state_set=other_attractor_states,
+                                              slice_size=key_slice_size,
+                                              prefix="attractor_{}_target_state".format(attractor_index))
+        model.addConstr(first_inclusion_indicator == 1, name="first_state_inclusion_constraint")
+        objective += relative_basin_size * second_inclusion_indicator
+    model.setObjective(objective, sense=GRB.MAXIMIZE)
+    # print("second inclusion indicator - {}".format(second_inclusion_indicator))
+    model.update()
+    if not verbose:
+        model.params.LogToConsole = 0
+    model.optimize()
+    # print("Time taken for ILP solve: {:.2f} (T={}, P={})".format(time.time() - start_time, T, P))
+    if model.Status != gurobipy.GRB.OPTIMAL:
+        print("writing IIS data to model_iis.ilp")
+        model.computeIIS()
+        model.write("model_iis.ilp")
+        model.write("model.mps")
+        raise ValueError("model not solved to optimality.")
+    # print(model.ObjVal)
+    # ilp.print_model_values(model)
+    # ilp.print_model_constraints(model)
+    return model.ObjVal
 
 
 def vertex_state_impact_scores(G, current_attractors, max_transient_len=30, verbose=True,
@@ -738,6 +902,96 @@ def find_max_attractor_model(G, verbose=False, model_type_restriction=graphs.Fun
     if clean_up:
         del model
     return found_attractors, function_vars
+
+
+def graph_model_impact_score(G, current_attractors, max_len, max_num,
+                              impact_types=ImpactType.Invalidation, verbose=True,
+                              relative_attractor_basin_sizes=None,
+                              normalize_addition_scores=False,
+                              maximal_bits_of_change=1):
+    """
+    solves an ILP representing the impact of changing at most maximal_bits_of_change bits in truth tables
+    of the model's vertices (not necessarily same ones) on attractors -
+    impact is defined as either the addition of new attractors to the model, or rendering present attractors
+    invalid, depending on impact_types.
+    The score is either the relative number of attractors invalidated/added,
+    or if supplied a weighted sum with the invalidated attractors' relative basin sizes
+    (given in relative_basin_sizes). If both, divide both by two.
+    Ideally, score should be in range [0-1], but since more new attractors can be created than there currently
+    are, the score isn't actually bound when impact_types is not invalidation.
+    If normalize_addition_scores is True, the addition scores are divided by max_num instead, forcing a score
+    in range [0-1], regardless of number of current attractors.
+    """
+    start = time.time()
+    for v in G.vertices:
+        assert v.function is not None or len(v.predecessors()) == 0
+    slice_size = 15
+    original_functions = [v.function for v in G.vertices]
+    for v in G.vertices:
+        if len(v.predecessors()) > 0:
+            v.function = None
+
+    model, a_matrix, v_matrix, state_keys, vertices_f_vars = ilp.attractors_ilp_with_keys(G,
+        max_len=0 if impact_types == ImpactType.Invalidation else max_len,
+        max_num=0 if impact_types == ImpactType.Invalidation else max_num)
+
+    for i in range(len(G.vertices)):
+        G.vertices[i].function = original_functions[i]
+
+    bits_of_change = 0
+    for i in range(len(G.vertices)):
+        truth_table_lines = [G.vertices[i].function(*line_in) for line_in in
+                            itertools.product([False, True], repeat=len(G.vertices[i].predecessors()))]
+        bits_of_change += sum(1 - f_var if truth_table_line else f_var for
+                             (f_var, truth_table_line) in zip(vertices_f_vars[i], truth_table_lines))
+    model.addConstr(bits_of_change <= maximal_bits_of_change, name="bits_of_change_constraint")
+    objective = 0
+
+    if impact_types == ImpactType.Addition or impact_types == ImpactType.Both:
+        ilp.add_model_invariant_uniqueness_constraints(model, state_keys, current_attractors,
+                                                       upper_bound=2 ** slice_size,
+                                                       a_matrix=a_matrix)
+        denominator = max_num if normalize_addition_scores else len(current_attractors)
+        objective += sum(a_matrix[p, -1] for p in range(max_num)) / denominator
+
+    if impact_types == ImpactType.Invalidation or impact_types == ImpactType.Both:
+        if relative_attractor_basin_sizes is None:
+            relative_attractor_basin_sizes = \
+                [1 / float(len(current_attractors))] * len(current_attractors)
+        assert len(relative_attractor_basin_sizes) == len(current_attractors) and \
+               abs(sum(relative_attractor_basin_sizes) - 1) < 1e-6
+        for attractor, weight in zip(current_attractors, relative_attractor_basin_sizes):
+            objective += weight * ilp.add_indicator_for_attractor_invalidity(
+                                    model, G, attractor, vertices_f_vars, "invalidated_attractors")
+    if impact_types == ImpactType.Both:
+        objective /= 2
+
+    # print("time taken to build model: {:.2f}".format(time.time() - start))
+    start = time.time()
+    if not verbose:
+        model.params.LogToConsole = 0
+    model.setObjective(objective, gurobipy.GRB.MAXIMIZE)
+    model.setParam('TimeLimit', timeout_seconds)
+    model.optimize()
+    if model.Status != gurobipy.GRB.OPTIMAL:
+        print("warning, model not solved to optimality.")
+        if model.Status == gurobipy.GRB.INFEASIBLE:
+            # print("writing IIS data to model_iis.ilp")
+            # model.computeIIS()
+            # model.write("./model_iis.ilp")
+            raise RuntimeError("Gurobi failed to reach optimal solution")
+        elif model.Status == gurobipy.GRB.TIME_LIMIT:
+            raise TimeoutError("Gurobi failed with time_out")
+        else:
+            raise ValueError("Gurobi failed, status code - {}".format(model.Status))
+    else:
+        if model.ObjVal != int(round(model.ObjVal)):
+            print("warning - model solved with non-integral objective function ({})".format(model.ObjVal))
+        # print("time taken for ILP solve: {:.2f} seconds".format(time.time() - start))
+    # ilp.print_attractors(model)
+    # ilp.print_model_values(model)
+    return model.objVal
+    # print("score of vertex {}: {:.2f}".format(v.name, vertex_scores[-1]))
 
 
 def vertex_model_impact_scores(G, current_attractors, max_len, max_num,

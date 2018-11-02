@@ -12,11 +12,11 @@ import attractors
 class TestUtility(TestCase):
 
     def test_attractor_sets_equality(self):
-        for test in range(100):
-            n = random.randint(1, 7)
+        for test in range(50):
+            n = random.randint(1, 6)
             G = graphs.Network.generate_random(n_vertices=n, indegree_bounds=[1, 5])
             first_attractors = list(
-                stochastic.estimate_attractors(G, n_walks=250, max_walk_len=1000, with_basins=False))
+                stochastic.estimate_attractors(G, n_walks=500, max_walk_len=1000, with_basins=False))
 
             if len(first_attractors) == 0:
                 continue
@@ -35,6 +35,8 @@ class TestUtility(TestCase):
             self.assertTrue(utility.attractor_sets_equality(first_attractors, second_attractors))
             first_attractors = [utility.rotate(attractor, random.randint(0, 3)) for attractor in first_attractors]
             self.assertTrue(utility.attractor_sets_equality(first_attractors, second_attractors))
+            first_attractors = [utility.rotate(attractor, random.randint(0, 3)) for attractor in first_attractors]
+            self.assertFalse(utility.attractor_sets_equality(first_attractors, second_attractors[1:]))
 
             # no list conversion
             first_attractors = stochastic.estimate_attractors(G, n_walks=250, max_walk_len=1000, with_basins=False)
@@ -45,6 +47,7 @@ class TestUtility(TestCase):
                 stochastic.estimate_attractors(G, n_walks=250, max_walk_len=1000, with_basins=True))
             first_attractors = [p[0] for p in first_attractors_basin_pairs]
             self.assertTrue(utility.attractor_sets_equality(first_attractors, second_attractors))
+            self.assertFalse(utility.attractor_sets_equality(first_attractors, second_attractors[:-1]))
 
             if len(first_attractors) == 1:
                 continue
@@ -97,3 +100,71 @@ class TestUtility(TestCase):
             perturbed_state = state[:perturbation_index
                               ] + (1 - state[perturbation_index],) + state[perturbation_index + 1:]
             self.assertFalse(utility.is_same_state(state, perturbed_state))
+
+    def test_is_attractor_in_attractor_list(self):
+        for test in range(50):
+            n = random.randint(1, 6)
+            G = graphs.Network.generate_random(n_vertices=n, indegree_bounds=[1, 5])
+            first_attractors = list(
+                stochastic.estimate_attractors(G, n_walks=500, max_walk_len=1000, with_basins=False))
+
+            if len(first_attractors) == 0:
+                continue
+
+            second_attractors = first_attractors
+            for attractor in first_attractors:
+                self.assertTrue(utility.is_attractor_in_attractor_list(attractor, second_attractors))
+            for attractor in second_attractors:
+                self.assertTrue(utility.is_attractor_in_attractor_list(attractor, first_attractors))
+            self.assertFalse(utility.is_attractor_in_attractor_list(first_attractors[0], second_attractors[1:]))
+
+            second_attractors = list(s for s in first_attractors)
+            random.shuffle(second_attractors)
+            for attractor in first_attractors:
+                self.assertTrue(utility.is_attractor_in_attractor_list(attractor, second_attractors))
+            for attractor in second_attractors:
+                self.assertTrue(utility.is_attractor_in_attractor_list(attractor, first_attractors))
+            self.assertFalse(all(utility.is_attractor_in_attractor_list(a, first_attractors[1:])
+                                 for a in second_attractors))
+
+            # against dubrova
+            second_attractors = attractors.find_attractors_dubrova(G, os.path.join("..", attractors.dubrova_path),
+                                                                   mutate_input_nodes=True)
+            for attractor in first_attractors:
+                self.assertTrue(utility.is_attractor_in_attractor_list(attractor, second_attractors))
+            for attractor in second_attractors:
+                self.assertTrue(utility.is_attractor_in_attractor_list(attractor, first_attractors))
+            self.assertFalse(all(utility.is_attractor_in_attractor_list(a, second_attractors[1:])
+                                 for a in first_attractors))
+            random.shuffle(second_attractors)
+            self.assertFalse(all(utility.is_attractor_in_attractor_list(a, second_attractors[1:])
+                                 for a in first_attractors))
+            for attractor in first_attractors:
+                self.assertTrue(utility.is_attractor_in_attractor_list(attractor, second_attractors))
+            for attractor in second_attractors:
+                self.assertTrue(utility.is_attractor_in_attractor_list(attractor, first_attractors))
+            first_attractors = [utility.rotate(attractor, random.randint(0, 3)) for attractor in first_attractors]
+            for attractor in first_attractors:
+                self.assertTrue(utility.is_attractor_in_attractor_list(attractor, second_attractors))
+            for attractor in second_attractors:
+                self.assertTrue(utility.is_attractor_in_attractor_list(attractor, first_attractors))
+
+            # no list conversion
+            first_attractors = stochastic.estimate_attractors(G, n_walks=500, max_walk_len=1000, with_basins=False)
+            for attractor in first_attractors:
+                self.assertTrue(utility.is_attractor_in_attractor_list(attractor, second_attractors))
+            for attractor in second_attractors:
+                self.assertTrue(utility.is_attractor_in_attractor_list(attractor, first_attractors))
+            self.assertFalse(all(utility.is_attractor_in_attractor_list(a, second_attractors[1:])
+                                 for a in first_attractors))
+
+            # from basins
+            first_attractors_basin_pairs = list(
+                stochastic.estimate_attractors(G, n_walks=250, max_walk_len=1000, with_basins=True))
+            first_attractors = [p[0] for p in first_attractors_basin_pairs]
+            for attractor in first_attractors:
+                self.assertTrue(utility.is_attractor_in_attractor_list(attractor, second_attractors))
+            for attractor in second_attractors:
+                self.assertTrue(utility.is_attractor_in_attractor_list(attractor, first_attractors))
+            self.assertFalse(all(utility.is_attractor_in_attractor_list(a, second_attractors[1:])
+                                 for a in first_attractors))

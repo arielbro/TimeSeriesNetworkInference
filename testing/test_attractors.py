@@ -8,7 +8,9 @@ import random
 from attractors import find_num_attractors_onestage, \
     vertex_model_impact_scores, stochastic_vertex_model_impact_scores, find_num_steady_states, \
     find_attractors_dubrova, find_attractors_onestage_enumeration, ImpactType, \
-    vertex_state_impact_scores, stochastic_vertex_state_impact_scores
+    vertex_state_impact_scores, stochastic_vertex_state_impact_scores, graph_model_impact_score, \
+    graph_state_impact_score, stochastic_graph_model_impact_score, stochastic_graph_state_impact_score
+
 import attractors
 
 dubrova_path = "../" + attractors.dubrova_path
@@ -28,6 +30,21 @@ StochasticVertexModelImpactExperimentParameters = namedtuple(
 
 StochasticVertexStateImpactExperimentParameters = namedtuple(
     "StochasticVertexStateImpactExperimentParameters", "G impacts")
+
+GraphModelImpactExperimentParameters = namedtuple("GraphModelImpactExperimentParameters", "G current_attractors T P "
+                                                                                  "impact_types relative_basins "
+                                                                                  "maximal_bits "
+                                                                                  "impact")
+GraphStateImpactExperimentParameters = namedtuple("GraphStateImpactExperimentParameters", "G current_attractors "
+                                                                                  "relative_basins "
+                                                                                  "max_transient_len maximal_bits "
+                                                                                  "impact")
+StochasticGraphModelImpactExperimentParameters = namedtuple(
+    "StochasticGraphModelImpactExperimentParameters", "G current_attractors "
+    "bits_of_change relative_basins impact_type impact")
+
+StochasticGraphStateImpactExperimentParameters = namedtuple(
+    "StochasticGraphStateImpactExperimentParameters", "G bits_of_change impact")
 
 DubrovaExperimentParameters = namedtuple("DubrovaExperimentParameters", "G mutate n_attractors")
 
@@ -281,7 +298,7 @@ class TestAttractors(TestCase):
 
         # print "number of experiments (without keys)={}".format(len(experiments))
         # for i, experiment in enumerate(experiments):
-        #     print "experiment #{}".format(i)
+        #     print "experiment #{}".format(i)h
         #     print "n={}, T={}, P={}, expected_n_attractors={}".format(len(experiment.G.vertices),
         #                                                            experiment.T, experiment.P, experiment.n_attractors)
         #     # continue
@@ -297,6 +314,295 @@ class TestAttractors(TestCase):
 
     def test_vertex_degeneracy_scores(self):
         self.assertTrue(False)  # TODO: write...
+
+    def test_graph_state_impact_scores(self):
+        experiments = []
+
+        G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+                           vertex_functions=[sympy.Nand])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # experiment #0
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 max_transient_len=1,
+                                                                 maximal_bits=1,
+                                                                 impact=0))
+        # experiment #1
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 max_transient_len=0,
+                                                                 maximal_bits=1,
+                                                                 impact=0))
+        # experiment #2
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 max_transient_len=30,
+                                                                 maximal_bits=1,
+                                                                 impact=0))
+        # experiment #3
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 max_transient_len=30,
+                                                                 maximal_bits=10,
+                                                                 impact=0))
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "A")],
+                           vertex_functions=[sympy.Nand, None])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # experiment #4
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 max_transient_len=1,
+                                                                 maximal_bits=1,
+                                                                 impact=0))
+        # experiment #5
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 max_transient_len=0,
+                                                                 maximal_bits=1,
+                                                                 impact=0))
+        # experiment #6
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 max_transient_len=30,
+                                                                 maximal_bits=1,
+                                                                 impact=0))
+        # experiment #7
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 max_transient_len=30,
+                                                                 maximal_bits=10,
+                                                                 impact=0))
+
+        G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+                           vertex_functions=[sympy.And])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # experiment #8
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 max_transient_len=0,
+                                                                 maximal_bits=1,
+                                                                 impact=1))
+        # experiment #9
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 max_transient_len=5,
+                                                                 maximal_bits=1,
+                                                                 impact=1))
+        # experiment #10
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=None,
+                                                                max_transient_len=5,
+                                                                maximal_bits=5,
+                                                                impact=1))
+        # experiment #11
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=[0.1, 0.9],
+                                                                max_transient_len=5,
+                                                                maximal_bits=5,
+                                                                impact=1))
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "A")],
+                           vertex_functions=[sympy.And, None])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # experiment #12
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=[0.1, 0.9],
+                                                                max_transient_len=5,
+                                                                maximal_bits=5,
+                                                                impact=1))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand, sympy.Nand, sympy.Nand])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # experiment #13
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=None,
+                                                                max_transient_len=0,
+                                                                maximal_bits=1,
+                                                                impact=1))
+        # experiment #14
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=[0.1, 0.9],
+                                                                max_transient_len=5,
+                                                                maximal_bits=5,
+                                                                impact=1))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand, sympy.Nand, sympy.And])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # experiment #15
+        experiments.append(VertexStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 max_transient_len=0,
+                                                                 impacts=[1, 1, 1]))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand, sympy.Nand, lambda _: True])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # experiment #16
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=None,
+                                                                max_transient_len=0,
+                                                                maximal_bits=1,
+                                                                impact=0))
+        # experiment #17
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=None,
+                                                                max_transient_len=0,
+                                                                maximal_bits=3,
+                                                                impact=0))
+        # experiment #18
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=None,
+                                                                max_transient_len=5,
+                                                                maximal_bits=2,
+                                                                impact=0))
+
+        G = graphs.Network(vertex_names=["A", "B", "C", "D"], edges=[("B", "A"), ("C", "A"), ("D", "A"),
+                                                                     ("A", "B"), ("C", "B"), ("D", "B"),
+                                                                     ("A", "C"), ("B", "C"), ("D", "C"),
+                                                                     ("A", "D"), ("B", "D"), ("C", "D")],
+                           vertex_functions=[lambda a, b, c: a + b + c > 1 for _ in range(4)])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # 0000 and 1111 are stable points, and attract everything with hamming distance <= 1,
+        # where 2 bits of change land right into another attractor.
+        # Other three two-state attractors are unstable under one bit change, with transient length of 1,
+        # Or they can be switched between eachother/stables with 2 (same as 0000/1111 ones, if needed)
+        # bits of change.
+        # experiment #19
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=None,
+                                                                max_transient_len=0,
+                                                                maximal_bits=1,
+                                                                impact=0))
+        # experiment #20
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=None,
+                                                                max_transient_len=1,
+                                                                maximal_bits=1,
+                                                                impact=3 / 5.0))
+        # experiment #21
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=None,
+                                                                max_transient_len=5,
+                                                                maximal_bits=1,
+                                                                impact=3 / 5.0))
+        # experiment #22
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=None,
+                                                                max_transient_len=0,
+                                                                maximal_bits=2,
+                                                                impact=1))
+        # experiment #23
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=None,
+                                                                max_transient_len=3,
+                                                                maximal_bits=2,
+                                                                impact=1))
+
+        relative_basins = [5 / float(16) if len(attractor) == 1 else 2 / float(16) for
+                           attractor in current_attractors]
+        # experiment #24
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=relative_basins,
+                                                                max_transient_len=5,
+                                                                maximal_bits=1,
+                                                                impact=6 / 16.0))
+        # experiment #25
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=relative_basins,
+                                                                max_transient_len=0,
+                                                                maximal_bits=2,
+                                                                impact=1))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "C")],
+                           vertex_functions=[None, sympy.And, sympy.And])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # experiment #19
+        # 000, 110 and 111 are the steady states. First is stable, other can change on
+        # right vertex change, B with one step and C immediately.
+        # experiment #26
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=None,
+                                                                max_transient_len=0,
+                                                                maximal_bits=1,
+                                                                impact=2 / 3.0))
+        # experiment #27
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=None,
+                                                                max_transient_len=0,
+                                                                maximal_bits=2,
+                                                                impact=2 / 3.0))
+        # experiment #28
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=None,
+                                                                max_transient_len=5,
+                                                                maximal_bits=5,
+                                                                impact=2 / 3.0))
+
+        relative_len_decider = lambda attractor: 0.5 if [
+                                int(s) for s in attractor[0]] == [0, 0, 0] else 3 / float(8) if [
+                                int(s) for s in attractor[0]] == [1, 1, 0] else 1 / float(8)
+        relative_basins = [relative_len_decider(att) for att in current_attractors]
+        # experiment #29
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=relative_basins,
+                                                                max_transient_len=5,
+                                                                maximal_bits=2,
+                                                                impact=0.5))
+        # experiment #30
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=relative_basins,
+                                                                max_transient_len=0,
+                                                                maximal_bits=1,
+                                                                impact=0.5))
+
+        G = graphs.Network(vertex_names=["A", "B", "C", "D"], edges=[("A", "B"), ("B", "C"), ("C", "D"),
+                                                                     ("D", "D")],
+                           vertex_functions=[None, sympy.And, sympy.And, sympy.And])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # Now 0000 is stable, 1110 changes immediently on last vertex change, 1111 can change in 2, 1, or 0
+        # steps on change of second, third or last vertex.
+        # experiment #31
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=None,
+                                                                max_transient_len=0,
+                                                                maximal_bits=1,
+                                                                impact=2 / 3.0))
+        # experiment #31
+        experiments.append(GraphStateImpactExperimentParameters(G=G, current_attractors=current_attractors,
+                                                                relative_basins=None,
+                                                                max_transient_len=3,
+                                                                maximal_bits=3,
+                                                                impact=2 / 3.0))
+
+        print "number of experiments (with keys)={}".format(len(experiments))
+        for i, experiment in enumerate(experiments):
+            print "experiment #{}".format(i)
+            print "attractors:"
+            print experiment.current_attractors
+            print "n={}, relative_basins={}, expected_impacts={}".\
+                format(len(experiment.G.vertices), experiment.relative_basins, experiment.impact)
+            impact = graph_state_impact_score(G=experiment.G, current_attractors=experiment.current_attractors,
+                                                 max_transient_len=experiment.max_transient_len,
+                                                 relative_attractor_basin_sizes=experiment.relative_basins,
+                                                 key_slice_size=15, maximal_bits_of_change=experiment.maximal_bits)
+
+            # (from vertex version) got numeric problems with test #16 regardless of key_slice
+            impact = round(impact, 5)
+            experiment_impact = round(experiment.impact, 5)
+            print "expected impact:"
+            print impact
+            print "got impact:"
+            print experiment_impact
+            try:
+                self.assertEqual(impact, experiment_impact)
+            except AssertionError as e:
+                print e
+                print experiment.G
+                raise e
+
 
     def test_vertex_state_impact_scores(self):
         # TODO: test stochastic kind
@@ -515,7 +821,7 @@ class TestAttractors(TestCase):
 
             # got numeric problems with test #16 regardless of key_slice
             impacts = [round(x, 5) if not np.isnan(x) else x for x in impacts]
-            experiment_impacts = [round(x, 5) if not np.isnan(x) else x for x in impacts]
+            experiment_impacts = [round(x, 5) if not np.isnan(x) else x for x in experiment.impacts]
             print "expected impacts:"
             print impacts
             print "got impacts:"
@@ -526,6 +832,248 @@ class TestAttractors(TestCase):
                 print e
                 print experiment.G
                 raise e
+
+    def test_graph_model_impact_scores(self):
+        # TODO: also test the resulting models (assure they have the correct number of attractors)
+        experiments = []
+
+        G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+                           vertex_functions=[sympy.Nand])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # experiment #0
+        experiments.append(GraphModelImpactExperimentParameters(G=G, T=3, P=3, impact_types=ImpactType.Invalidation,
+                                                                maximal_bits=1,
+                                                                current_attractors=current_attractors,
+                                                                relative_basins=None,
+                                                                impact=1))
+        # experiment #1
+        experiments.append(GraphModelImpactExperimentParameters(G=G, T=3, P=3, impact_types=ImpactType.Both,
+                                                                 maximal_bits=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact=1))
+        # experiment #2
+        experiments.append(GraphModelImpactExperimentParameters(G=G, T=3, P=3, impact_types=ImpactType.Addition,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact=2))
+        # experiment #3
+        experiments.append(GraphModelImpactExperimentParameters(G=G, T=3, P=3, impact_types=ImpactType.Both,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact=1.5))
+        # experiment #4
+        experiments.append(GraphModelImpactExperimentParameters(G=G, T=3, P=1, impact_types=ImpactType.Addition,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact=1))
+        # experiment #5
+        experiments.append(GraphModelImpactExperimentParameters(G=G, T=3, P=3, impact_types=ImpactType.Both,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=[1],
+                                                                 impact=1.5))
+
+        G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+                           vertex_functions=[sympy.And])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # experiment #6
+        experiments.append(GraphModelImpactExperimentParameters(G=G, T=1, P=1, impact_types=ImpactType.Invalidation,
+                                                                 maximal_bits=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact=0.5))
+        # experiment #7
+        experiments.append(GraphModelImpactExperimentParameters(G=G, T=1, P=1, impact_types=ImpactType.Invalidation,
+                                                                 maximal_bits=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=[0.1, 0.9],
+                                                                 impact=0.9))
+        # experiment #8
+        experiments.append(GraphModelImpactExperimentParameters(G=G, T=1, P=1, impact_types=ImpactType.Invalidation,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact=1))
+        # experiment #9
+        experiments.append(GraphModelImpactExperimentParameters(G=G, T=3, P=3, impact_types=ImpactType.Both,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=[0.1, 0.9],
+                                                                 impact=0.75))
+        # experiment #10
+        experiments.append(GraphModelImpactExperimentParameters(G=G, T=3, P=3, impact_types=ImpactType.Addition,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact=0.5))
+        # experiment #11
+        experiments.append(GraphModelImpactExperimentParameters(G=G, T=1, P=1, impact_types=ImpactType.Addition,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact=0))
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "A")],
+                           vertex_functions=[sympy.And, None])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # experiment #12
+        experiments.append(GraphModelImpactExperimentParameters(G=G, T=1, P=1, impact_types=ImpactType.Invalidation,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact=1))
+        # experiment #13
+        experiments.append(GraphModelImpactExperimentParameters(G=G, T=3, P=3, impact_types=ImpactType.Both,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=[0.1, 0.4, 0.4, 0.1],
+                                                                 impact=0.75))
+        # experiment #14
+        experiments.append(GraphModelImpactExperimentParameters(G=G, T=3, P=3, impact_types=ImpactType.Addition,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact=0.5))
+        # experiment #15
+        experiments.append(GraphModelImpactExperimentParameters(G=G, T=3, P=1, impact_types=ImpactType.Addition,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact=0.25))
+        # experiment #16
+        experiments.append(GraphModelImpactExperimentParameters(G=G, T=1, P=1, impact_types=ImpactType.Addition,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impact=0))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand, sympy.Nand, sympy.Nand])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # experiment #17
+        experiments.append(VertexModelImpactExperimentParameters(G=G, T=7, P=5, impact_types=ImpactType.Invalidation,
+                                                                 maximal_bits=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impacts=[1] * 3))
+        # experiment #18
+        experiments.append(VertexModelImpactExperimentParameters(G=G, T=7, P=5, impact_types=ImpactType.Invalidation,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impacts=[1] * 3))
+        # experiment #19
+        experiments.append(VertexModelImpactExperimentParameters(G=G, T=6, P=5, impact_types=ImpactType.Addition,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impacts=[2] * 3))
+        # experiment #20
+        experiments.append(VertexModelImpactExperimentParameters(G=G, T=6, P=3, impact_types=ImpactType.Both,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=[0.1, 0.9],
+                                                                 impacts=[1.25] * 3))
+        # experiment #21
+        experiments.append(VertexModelImpactExperimentParameters(G=G, T=6, P=5, impact_types=ImpactType.Both,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=[0.1, 0.9],
+                                                                 impacts=[1.5] * 3))
+        # experiment #22
+        experiments.append(VertexModelImpactExperimentParameters(G=G, T=6, P=2, impact_types=ImpactType.Addition,
+                                                                 maximal_bits=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impacts=[0.5] * 3))
+        # experiment #23
+        experiments.append(VertexModelImpactExperimentParameters(G=G, T=1, P=1, impact_types=ImpactType.Addition,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impacts=[0.5] * 3))
+        # experiment #24
+        experiments.append(VertexModelImpactExperimentParameters(G=G, T=1, P=5, impact_types=ImpactType.Addition,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impacts=[1] * 3))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand, sympy.Nand, sympy.And])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # experiment #25
+        experiments.append(VertexModelImpactExperimentParameters(G=G, T=7, P=5, impact_types=ImpactType.Invalidation,
+                                                                 maximal_bits=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impacts=[0.75, 0.75, 0.75]))
+        # experiment #26
+        experiments.append(VertexModelImpactExperimentParameters(G=G, T=7, P=5, impact_types=ImpactType.Invalidation,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impacts=[1, 1, 1]))
+        # experiment #27
+        experiments.append(VertexModelImpactExperimentParameters(G=G, T=7, P=5, impact_types=ImpactType.Addition,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impacts=[0.5, 0.5, 0.5]))
+        # experiment #28
+        experiments.append(VertexModelImpactExperimentParameters(G=G, T=7, P=5, impact_types=ImpactType.Both,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impacts=[0.75, 0.75, 0.75]))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand, sympy.Nand, lambda _: True])
+        current_attractors = find_attractors_dubrova(G, dubrova_path, mutate_input_nodes=True)
+        # experiment #29
+        experiments.append(VertexModelImpactExperimentParameters(G=G, T=7, P=5, impact_types=ImpactType.Invalidation,
+                                                                 maximal_bits=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impacts=[1, 1, 1]))
+        # experiment #30
+        experiments.append(VertexModelImpactExperimentParameters(G=G, T=7, P=5, impact_types=ImpactType.Addition,
+                                                                 maximal_bits=1,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impacts=[1, 1, 3]))
+        # experiment #31
+        experiments.append(VertexModelImpactExperimentParameters(G=G, T=7, P=5, impact_types=ImpactType.Addition,
+                                                                 maximal_bits=2,
+                                                                 current_attractors=current_attractors,
+                                                                 relative_basins=None,
+                                                                 impacts=[1, 1, 3]))
+
+        print "number of experiments (with keys)={}".format(len(experiments))
+        for i, experiment in enumerate(experiments):
+            print "experiment #{}".format(i)
+            print "n={}, T={}, P={}, maximal_bits={}, relative_basins={}, expected_impacts={}".\
+                format(len(experiment.G.vertices),
+                       experiment.T, experiment.P, experiment.maximal_bits, experiment.relative_basins,
+                       experiment.impacts)
+            print experiment.current_attractors
+            impacts = vertex_model_impact_scores(G=experiment.G, current_attractors=experiment.current_attractors,
+                                                 max_len=experiment.T,
+                                                 max_num=experiment.P,
+                                                 impact_types=experiment.impact_types,
+                                                 relative_attractor_basin_sizes=experiment.relative_basins,
+                                                 maximal_bits_of_change=experiment.maximal_bits)
+            try:
+                self.assertEqual(impacts, experiment.impacts)
+            except AssertionError as e:
+                print e
+                print experiment.G
+                raise e
+
 
     def test_vertex_model_impact_scores(self):
         # TODO: also test the resulting models (assure they have the correct number of attractors)
@@ -769,8 +1317,108 @@ class TestAttractors(TestCase):
                 print experiment.G
                 raise e
 
+    def test_stochastic_graph_state_impact_scores(self):
+        experiments = []
+
+        G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+                           vertex_functions=[sympy.Nand])
+        # experiment #0
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=1, impact=0))
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "A")],
+                           vertex_functions=[sympy.Nand, None])
+        # experiment #1
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=1, impact=0))
+
+        G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],
+                           vertex_functions=[sympy.And])
+        # experiment #2
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=1, impact=1))
+
+        G = graphs.Network(vertex_names=["A", "B"], edges=[("A", "A")],
+                           vertex_functions=[sympy.And, None])
+        # experiment #3
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=1, impact=0))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand, sympy.Nand, sympy.Nand])
+        # experiment #4
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=1, impact=0.5))
+        # experiment #5
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=2, impact=0.5))
+        # experiment #6
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=3, impact=0))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand, sympy.Nand, sympy.And])
+        # experiment #7
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=1, impact=1))
+        # experiment #8
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=2, impact=0.5))
+        # experiment #9
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=3, impact=1))
+
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "A")],
+                           vertex_functions=[sympy.Nand, sympy.Nand, lambda _: True])
+        # experiment #10
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=1, impact=0))
+        # experiment #11
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=2, impact=0))
+        # experiment #12
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=3, impact=0))
+
+        G = graphs.Network(vertex_names=["A", "B", "C", "D"], edges=[("B", "A"), ("C", "A"), ("D", "A"),
+                                                                     ("A", "B"), ("C", "B"), ("D", "B"),
+                                                                     ("A", "C"), ("B", "C"), ("D", "C"),
+                                                                     ("A", "D"), ("B", "D"), ("C", "D")],
+                           vertex_functions=[lambda a, b, c: a + b + c > 1 for _ in range(4)])
+        # experiment #12
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=1, impact=3 / 8.0))
+        # experiment #13
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=2, impact=1))
+        # experiment #14
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=3, impact=1))
+        # experiment #15
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=4, impact=0))
+
+        G = graphs.Network(vertex_names=["A", "B", "C"], edges=[("A", "B"), ("B", "C"), ("C", "C")],
+                           vertex_functions=[None, sympy.And, sympy.And])
+        # 000, 110 and 111 are the steady states. First is stable, other can change on
+        # right vertex change, B with one step and C immediately.
+        # experiment #16
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=1, impact=5 / 16.0))
+        # experiment #17
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=2, impact=1 / 16.0))
+
+        G = graphs.Network(vertex_names=["A", "B", "C", "D"], edges=[("A", "B"), ("B", "C"), ("C", "D"),
+                                                                     ("D", "D")],
+                           vertex_functions=[None, sympy.And, sympy.And, sympy.And])
+        # Now 0000 is stable, 1110 changes immediently on last vertex change, 1111 can change in 2, 1, or 0
+        # steps on change of second, third or last vertex.
+        # experiment #18
+        experiments.append(StochasticGraphStateImpactExperimentParameters(G=G, bits_of_change=1,
+                                                                          impact=0.20833333333))
+
+        print "number of experiments (with keys)={}".format(len(experiments))
+        for i, experiment in enumerate(experiments):
+            print "experiment #{}".format(i)
+            print "n={}, expected_impacts={}".\
+                format(len(experiment.G.vertices), experiment.impacts)
+
+            for iteration in range(10):
+                n_iter = random.randint(700, 1400)
+                estimated_impacts = stochastic_vertex_state_impact_scores(G=experiment.G, n_iter=n_iter)
+                print "estimated_impacts={}".format(estimated_impacts)
+                self.assertTrue(len(experiment.impacts) == len(estimated_impacts))
+                for calculated_impact, estimated_impact in zip(experiment.impacts, estimated_impacts):
+                    if np.isnan(calculated_impact):
+                        self.assertTrue(np.isnan(estimated_impact))
+                    else:
+                        self.assertTrue(abs(estimated_impact - calculated_impact) < 0.1)
+
+
     def test_stochastic_vertex_state_impact_scores(self):
-        # TODO: test stochastic kind
         experiments = []
 
         G = graphs.Network(vertex_names=["A"], edges=[("A", "A")],

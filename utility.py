@@ -131,6 +131,13 @@ def is_attractor_in_attractor_list(attractor, attractor_list):
     return first_attractor in second_attractors_set
 
 
+def attractor_lists_intersection_size(first_list, second_list):
+    # TODO: write tests? Seems straightforward.
+    first_attractors_set = set(Attractor(att) for att in first_list)
+    second_attractors_set = set(Attractor(att) for att in second_list)
+    return len(first_attractors_set.intersection(second_attractors_set))
+
+
 def is_same_attractor(a1, a2):
     """
     :param a1: an attractor, represented as an ordered iterable of network states
@@ -177,3 +184,30 @@ def is_attractor_valid(attractor, G):
         if not is_same_state(G.next_state(state), next_state):
             return False
     return True
+
+
+def choose_k_bits_from_vertex_functions(degrees, k):
+    """
+    Given a list of vertex degrees and an integer k, choose k different bits to change in the functions of vertices.
+    The choice is uniform over all possible k choices of lines in the collection of truth tables of nodes.
+    Does not choose value for input nodes (degree 0)
+    Returns a dictionary, where keys are node indices and values are indices of lists of lines in their truth tables.
+    :param degrees:
+    :param k:
+    :return:
+    """
+    # TODO: write tests (I experimented by hand)
+    cur_lines = 0
+    cumulative_n_lines = []
+    for degree in degrees:
+        cur_lines += (2 ** degree) if degree != 0 else 0
+        cumulative_n_lines.append(cur_lines)
+    indices = numpy.random.choice(range(cumulative_n_lines[-1]), replace=False, size=k)
+    choices = dict()
+    for index in indices:
+        for degree_index in range(len(cumulative_n_lines)):
+            if index < cumulative_n_lines[degree_index]:
+                choices[degree_index] = choices.get(degree_index, []) + [
+                    index - (cumulative_n_lines[degree_index - 1] if (degree_index > 0) else 0)]
+                break
+    return choices

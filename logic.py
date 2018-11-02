@@ -4,6 +4,7 @@ import math
 import numpy
 from utility import list_repr
 import time
+import random
 
 
 class BooleanSymbolicFunc:
@@ -295,3 +296,42 @@ def get_attractorlb_lengthub_formula(G, P, T):
     ATTRACTORS, activity_formulas = get_attractors_formula(G, P, T)
     ATTRACTORS = sympy.And(*([ATTRACTORS] + activity_formulas))
     return ATTRACTORS  #, a_matrix, v_matrix
+
+
+def perturb_line(f, line_indices, return_symbolic=False, n_inputs=None):
+    """
+    Given a logic function (possibly SymbolicBooleanFunction, but not necessarily), and an index of a truth
+    table row to "perturb" (/flip), returns a function agreeing with the input function on all inputs but the line
+    indices.
+    If return_symbolic is true, creates a new SymbolicBooleanFunction. Otherwise just wraps the original one.
+    :param f:
+    :param line_indices:
+    :param return_symbolic:
+    :param n_inputs: if return_symbolic is true and f is not a symbolic boolean function,
+    this specifies how many inputs f receives.
+    :return:
+    """
+
+    if not return_symbolic:
+        def perturbed_wrapper(*args):
+            line_index = sum(2**i for i, b in enumerate(args) if b)
+            print line_index
+            print f
+            print f.args
+            print f(0)
+            print args
+            print f(*args)
+            return (1 - f(*args)) if line_index in line_indices else f(*args)
+        return perturbed_wrapper
+    else:
+        if isinstance(f, BooleanSymbolicFunc):
+            original_outputs = f.boolean_outputs
+        else:
+            original_outputs = [f(*args) for args in itertools.product([False, True], repeat=n_inputs)]
+        truth_table_row_indices = random.sample(list(range(2 ** n_inputs)), bits_of_change)
+        boolean_outputs = list(original_outputs)
+        for index in truth_table_row_indices:
+            boolean_outputs[index] = 1 - bool(boolean_outputs[index])  # to work with sympy's logic
+        v.function = logic.BooleanSymbolicFunc(input_names=[u.name for u in v.predecessors()],
+                                               boolean_outputs=boolean_outputs)
+
