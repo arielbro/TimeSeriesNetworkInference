@@ -315,13 +315,7 @@ def perturb_line(f, line_indices, return_symbolic=False, n_inputs=None):
     if not return_symbolic:
         def perturbed_wrapper(*args):
             line_index = sum(2**i for i, b in enumerate(args) if b)
-            print line_index
-            print f
-            print f.args
-            print f(0)
-            print args
-            print f(*args)
-            return (1 - f(*args)) if line_index in line_indices else f(*args)
+            return (1 - int(bool(f(*args)))) if line_index in line_indices else int(bool(f(*args)))
         return perturbed_wrapper
     else:
         if isinstance(f, BooleanSymbolicFunc):

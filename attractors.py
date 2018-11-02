@@ -308,7 +308,7 @@ def stochastic_graph_model_impact_score(G, current_attractors, n_iter=100,
             print("iteration #{}".format(iteration))
         iteration_start = time.time()
         perturbed_lines_dict = utility.choose_k_bits_from_vertex_functions(degrees, bits_of_change)
-        for v_index, perturbed_lines in perturbed_lines_dict:
+        for v_index, perturbed_lines in perturbed_lines_dict.items():
             G.vertices[v_index].function = logic.perturb_line(original_functions[v_index], perturbed_lines)
 
         if (impact_type == ImpactType.Invalidation) or (impact_type == ImpactType.Both):
@@ -481,13 +481,16 @@ def single_state_bitchange_experiment(G, state_to_attractor_mapping=None, n_bits
     if bitchange_node_indices is not None:
         perturbed_indices = bitchange_node_indices
     else:
-        possible_perturbation_indices = [i for i in range(len(G.vertices)) if len(G.vertices[i]) > 0]
+        possible_perturbation_indices = [i for i in range(len(G.vertices)) if len(G.vertices[i].predecessors()) > 0]
         perturbed_indices = np.random.choice(possible_perturbation_indices, n_bits, replace=False)
     for index in perturbed_indices:
         perturbed_state[index] = 1 - perturbed_state[index]
     perturbed_state = tuple(perturbed_state)  # so it will be hashable
     perturbed_attractor = stochastic.walk_to_attractor(G, perturbed_state, max_walk=None,
                                                        state_to_attractor_mapping=state_to_attractor_mapping)
+    # print "original vs perturbed - "
+    # print original_attractor
+    # print perturbed_attractor
     return not utility.is_same_attractor(original_attractor, perturbed_attractor)
 
 
@@ -558,8 +561,9 @@ def graph_state_impact_score(G, current_attractors, max_transient_len=30, verbos
         relative_attractor_basin_sizes = [1 / float(len(current_attractors))] * len(current_attractors)
 
     model = gurobipy.Model()
-    perturbed_vertices_indicators = [model.addVar(vtype=gurobipy.GRB.BINARY,
-                                     name="perturbed_indicator".format(i)) for i in range(len(G.vertices))]
+    is_input = lambda i: len(G.vertices[i].predecessors()) == 0
+    perturbed_vertices_indicators = [model.addVar(vtype=gurobipy.GRB.BINARY, name="perturbed_indicator".format(i)
+                                                  ) if not is_input(i) else 0 for i in range(len(G.vertices))]
     model.update()
     model.addConstr(sum(perturbed_vertices_indicators) <= maximal_bits_of_change,
                     name="maximal_bits_of_change_constraint")
@@ -576,11 +580,15 @@ def graph_state_impact_score(G, current_attractors, max_transient_len=30, verbos
         for i, indicator, source_vertex, perturbed_vertex in zip(range(len(G.vertices)),
                                                                  perturbed_vertices_indicators,
                                                                  source_state, perturbed_state):
-            # Only need to constrain that a zero indicator enforces (perturbed = source).
-            model.addConstr(source_vertex - perturbed_vertex <= indicator, name="attractor_{}_perturbed_indicator_"
-                                                                        "constraint_{}>=".format(attractor_index, i))
-            model.addConstr(perturbed_vertex - source_vertex <= indicator, name="attractor_{}_perturbed_indicator_"
-                                                                       "constraint_<={}".format(attractor_index, i))
+            # don't allow flips of input nodes
+            if is_input(i):
+                model.addConstr(source_vertex == perturbed_vertex)
+            else:
+                # Only need to constrain that a zero indicator enforces (perturbed = source).
+                model.addConstr(source_vertex - perturbed_vertex <= indicator, name="attractor_{}_perturbed_indicator_"
+                                                                            "constraint_{}>=".format(attractor_index, i))
+                model.addConstr(perturbed_vertex - source_vertex <= indicator, name="attractor_{}_perturbed_indicator_"
+                                                                           "constraint_<={}".format(attractor_index, i))
         if max_transient_len > 0:
             target_state = [model.addVar(vtype=gurobipy.GRB.BINARY,
                                          name="attractor_{}_second_state_{}".format(attractor_index, i))
@@ -699,9 +707,9 @@ def vertex_state_impact_scores(G, current_attractors, max_transient_len=30, verb
                     raise ValueError("model solved with non-integral objective function ({})".format(model.ObjVal))
             else:
                 is_destructive = int(round(model.ObjVal))
-                # print(model.ObjVal)
-                # ilp.print_model_values(model)
-                # ilp.print_model_constraints(model)
+                print(model.ObjVal)
+                ilp.print_model_values(model)
+                ilp.print_model_constraints(model)
                 score += is_destructive * relative_attractor_basin_sizes[attractor_index]
         vertex_scores.append(score)
         # print("time taken for vertex {}: {:.2f} seconds".format(G.vertices[vertex_index].name, time.time() - vertex_start))
@@ -940,6 +948,8 @@ def graph_model_impact_score(G, current_attractors, max_len, max_num,
 
     bits_of_change = 0
     for i in range(len(G.vertices)):
+        if(len(G.vertices[i].predecessors()) == 0):
+            continue
         truth_table_lines = [G.vertices[i].function(*line_in) for line_in in
                             itertools.product([False, True], repeat=len(G.vertices[i].predecessors()))]
         bits_of_change += sum(1 - f_var if truth_table_line else f_var for
