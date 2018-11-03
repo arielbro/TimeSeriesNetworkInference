@@ -141,13 +141,14 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
                                             impact_type=attractors.ImpactType.Invalidation,
                                             bits_of_change=maximal_bits_of_change,
                                             attractor_estimation_n_iter=attractor_estimation_n_iter,
-                                            relative_attractor_basin_sizes=basin_sizes)
+                                            relative_attractor_basin_sizes=basin_sizes,
+                                            parallel_n_jobs=n_processes if parallel else None)
     stochastic_model_time = time.time() - res_start
 
     res_start = time.time()
     optimization_model_impact_score = attractors. \
         graph_model_impact_score(graph_copy, current_attractors=current_attractors,
-                                 max_len=50, max_num=50, verbose=False,
+                                 max_len=50, max_num=50, verbose=True,
                                  impact_types=attractors.ImpactType.Invalidation,
                                  normalize_addition_scores=True,
                                  relative_attractor_basin_sizes=basin_sizes,
@@ -162,13 +163,14 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
                                             n_iter=stochastic_n_iter,
                                             bits_of_change=maximal_bits_of_change,
                                             impact_type=attractors.ImpactType.Addition,
-                                            relative_attractor_basin_sizes=basin_sizes)
+                                            relative_attractor_basin_sizes=basin_sizes,
+                                            parallel_n_jobs=n_processes if parallel else None)
     stochastic_model_addition_time = time.time() - res_start
 
     res_start = time.time()
     optimization_model_addition_impact_score = attractors. \
-        graph_model_impact_scores(graph_copy, current_attractors=current_attractors,
-                                  max_len=optimization_max_len, max_num=optimization_max_num, verbose=False,
+        graph_model_impact_score(graph_copy, current_attractors=current_attractors,
+                                  max_len=optimization_max_len, max_num=optimization_max_num, verbose=True,
                                   impact_types=attractors.ImpactType.Addition,
                                   normalize_addition_scores=True,
                                   relative_attractor_basin_sizes=basin_sizes,
@@ -177,13 +179,14 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
 
     res_start = time.time()
     stochastic_state_impact_score = attractors. \
-        stochastic_graph_state_impact_score(graph_copy, bits_of_change=maximal_bits_of_change, n_iter=stochastic_n_iter)
+        stochastic_graph_state_impact_score(graph_copy, bits_of_change=maximal_bits_of_change, n_iter=stochastic_n_iter,
+                                            parallel_n_jobs=n_processes if parallel else None)
     stochastic_state_time = time.time() - res_start
 
     res_start = time.time()
     optimization_state_impact_score = attractors. \
         graph_state_impact_score(graph_copy, current_attractors=current_attractors,
-                                   max_transient_len=optimization_max_transient_len, verbose=False,
+                                   max_transient_len=optimization_max_transient_len, verbose=True,
                                    relative_attractor_basin_sizes=basin_sizes,
                                    maximal_bits_of_change=maximal_bits_of_change,
                                    key_slice_size=15)

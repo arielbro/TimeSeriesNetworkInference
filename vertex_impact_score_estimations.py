@@ -140,7 +140,8 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
                                               impact_type=attractors.ImpactType.Invalidation,
                                               bits_of_change=1,
                                               attractor_estimation_n_iter=attractor_estimation_n_iter,
-                                              relative_attractor_basin_sizes=basin_sizes)
+                                              relative_attractor_basin_sizes=basin_sizes,
+                                              parallel_n_jobs=n_processes if parallel else None)
     stochastic_model_time = time.time() - res_start
 
     res_start = time.time()
@@ -161,7 +162,8 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
                                               n_iter=stochastic_n_iter,
                                               bits_of_change=1,
                                               impact_type=attractors.ImpactType.Addition,
-                                              relative_attractor_basin_sizes=basin_sizes)
+                                              relative_attractor_basin_sizes=basin_sizes,
+                                              parallel_n_jobs=n_processes if parallel else None)
     stochastic_model_addition_time = time.time() - res_start
 
     res_start = time.time()
@@ -176,7 +178,8 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
 
     res_start = time.time()
     stochastic_state_impact_scores = attractors. \
-        stochastic_vertex_state_impact_scores(graph_copy, n_iter=stochastic_n_iter)
+        stochastic_vertex_state_impact_scores(graph_copy, n_iter=stochastic_n_iter,
+                                              parallel_n_jobs=n_processes if parallel else None)
     stochastic_state_time = time.time() - res_start
 
     res_start = time.time()

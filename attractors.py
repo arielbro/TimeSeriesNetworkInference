@@ -16,8 +16,11 @@ from gurobipy import GRB
 import stochastic
 import subprocess
 from enum import Enum
+import pickle
+import dill
+from pathos.multiprocessing import ProcessingPool as Pool
 
-timeout_seconds = 6 * 60 * 60  # TODO: refactor somewhere?
+timeout_seconds = int(0.25 * 60 * 60)  # TODO: refactor as arguments.
 dubrova_path = "bns"
 
 
@@ -270,12 +273,56 @@ def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_
         #        if re.match("v_[0-9]*_[0-9]*", v.varName)]
 
 
+def single_model_bitchange_experiment_wrapper(args):
+    return single_model_bitchange_experiment(*args)
+
+
+def single_model_bitchange_experiment(G, perturbed_lines_dict, current_attractors,
+                                      relative_attractor_basin_sizes, impact_type, use_dubrova, cur_dubrova_path,
+                                      attractor_estimation_n_iter):
+    original_functions = [v.function for v in G.vertices]
+    for v_index, perturbed_lines in perturbed_lines_dict.items():
+        G.vertices[v_index].function = logic.perturb_line(original_functions[v_index], perturbed_lines)
+
+    score = 0
+    if (impact_type == ImpactType.Invalidation) or (impact_type == ImpactType.Both):
+        for attractor, basin_size in zip(current_attractors, relative_attractor_basin_sizes):
+            is_valid = utility.is_attractor_valid(attractor, G)
+            if not is_valid:
+                score += basin_size
+    if (impact_type == ImpactType.Addition) or (impact_type == ImpactType.Both):
+        attractors_start = time.time()
+        if use_dubrova:
+            new_attractors = find_attractors_dubrova(G, cur_dubrova_path, mutate_input_nodes=True)
+        else:
+            new_attractors = stochastic.estimate_attractors(G, n_walks=attractor_estimation_n_iter,
+                                                            max_walk_len=None,
+                                                            with_basins=False)
+        # print("time taken to calculate new attractors: {:.2f} secs".format(time.time() - attractors_start))
+
+        # print("current attractors:")
+        # print(current_attractors)
+        # print("new attractors:")
+        # print(new_attractors)
+
+        intersection_size = utility.attractor_lists_intersection_size(current_attractors, new_attractors)
+        score += (len(new_attractors) - intersection_size) / float(len(current_attractors))
+
+    if impact_type == ImpactType.Both:
+        score /= 2
+
+    for i in range(len(G.vertices)):
+        G.vertices[i].function = original_functions[i]
+
+    return score
+
 def stochastic_graph_model_impact_score(G, current_attractors, n_iter=100,
                                         use_dubrova=False,
                                         cur_dubrova_path=dubrova_path,
                                         bits_of_change=1,
                                         relative_attractor_basin_sizes=None,
                                         attractor_estimation_n_iter=1000,
+                                        parallel_n_jobs=None,
                                         impact_type=ImpactType.Invalidation):
     """
     Returns the mean impact of for uniformly selected bits_of_change bit changes in the functions of nodes
@@ -301,47 +348,35 @@ def stochastic_graph_model_impact_score(G, current_attractors, n_iter=100,
     start = time.time()
     original_functions = [v.function for v in G.vertices]
 
-    score = 0.0
     degrees = [len(v.predecessors()) for v in G.vertices]
-    for iteration in range(n_iter):
-        if iteration and not iteration % 50:
-            print("iteration #{}".format(iteration))
-        iteration_start = time.time()
-        perturbed_lines_dict = utility.choose_k_bits_from_vertex_functions(degrees, bits_of_change)
-        for v_index, perturbed_lines in perturbed_lines_dict.items():
-            G.vertices[v_index].function = logic.perturb_line(original_functions[v_index], perturbed_lines)
+    if parallel_n_jobs is not None:
+        perturbed_lines_dicts = [utility.choose_k_bits_from_vertex_functions(degrees, bits_of_change) for _ in
+                                 range(n_iter)]
+        # pool = multiprocessing.Pool(processes=parallel_n_jobs)
+        pool = Pool(parallel_n_jobs)
 
-        if (impact_type == ImpactType.Invalidation) or (impact_type == ImpactType.Both):
-            for attractor, basin_size in zip(current_attractors, relative_attractor_basin_sizes):
-                is_valid = utility.is_attractor_valid(attractor, G)
-                if not is_valid:
-                    score += basin_size
-        if (impact_type == ImpactType.Addition) or (impact_type == ImpactType.Both):
-            attractors_start = time.time()
-            if use_dubrova:
-                new_attractors = find_attractors_dubrova(G, cur_dubrova_path, mutate_input_nodes=True)
-            else:
-                new_attractors = stochastic.estimate_attractors(G, n_walks=attractor_estimation_n_iter,
-                                                                max_walk_len=None,
-                                                                with_basins=False)
-            # print("time taken to calculate new attractors: {:.2f} secs".format(time.time() - attractors_start))
+        score_list = pool.map(single_model_bitchange_experiment_wrapper,
+                              zip(itertools.repeat(G), perturbed_lines_dicts, itertools.repeat(current_attractors),
+                                  itertools.repeat(relative_attractor_basin_sizes), itertools.repeat(impact_type),
+                                  itertools.repeat(use_dubrova), itertools.repeat(cur_dubrova_path),
+                                  itertools.repeat(attractor_estimation_n_iter)))
+        pool.close()
+        pool.join()
+        score = sum(score_list)
+    else:
+        score = 0.0
+        for iteration in range(n_iter):
+            if iteration and not iteration % 25:
+                print("iteration #{}".format(iteration))
+            iteration_start = time.time()
+            perturbed_lines_dict = utility.choose_k_bits_from_vertex_functions(degrees, bits_of_change)
 
-            # print("current attractors:")
-            # print(current_attractors)
-            # print("new attractors:")
-            # print(new_attractors)
+            score += single_model_bitchange_experiment(G, perturbed_lines_dict, current_attractors, relative_attractor_basin_sizes,
+                                              impact_type, use_dubrova, cur_dubrova_path, attractor_estimation_n_iter)
 
-            intersection_size = utility.attractor_lists_intersection_size(current_attractors, new_attractors)
-            score += (len(new_attractors) - intersection_size) / float(len(current_attractors))
-
-        for i in range(len(G.vertices)):
-            G.vertices[i].function = original_functions[i]
-
-    if impact_type == ImpactType.Both:
-        score /= 2
     score /= n_iter
 
-    print("time taken for stochastic impact scores: {:.2f} secs".format(time.time() - start))
+    print("time taken for stochastic model impact scores: {:.2f} secs".format(time.time() - start))
     return score
 
 
@@ -350,7 +385,8 @@ def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use
                                           bits_of_change=1,
                                           relative_attractor_basin_sizes=None,
                                           attractor_estimation_n_iter=1000,
-                                          impact_type=ImpactType.Invalidation):
+                                          impact_type=ImpactType.Invalidation,
+                                          parallel_n_jobs=None):
     """
     For each vertex in G, returns the mean impact of for uniformly selected bit changes
     in its function. If impact_type is "Invalidation", impact is defined as the proportion of graph
@@ -380,42 +416,41 @@ def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use
             vertex_scores.append(np.nan)
         else:
             original_function = v.function
-            score = 0.0
-            for iteration in range(n_iter):
-                if iteration and not iteration % 50:
-                    print("iteration #{}".format(iteration))
 
+            if parallel_n_jobs is not None:
                 truth_table_row_indices = random.sample(list(range(2 ** len(v.predecessors()))), bits_of_change)
-                v.function = logic.perturb_line(original_function, truth_table_row_indices)
 
-                if (impact_type == ImpactType.Invalidation) or (impact_type == ImpactType.Both):
-                    for attractor, basin_size in zip(current_attractors, relative_attractor_basin_sizes):
-                        is_valid = utility.is_attractor_valid(attractor, G)
-                        if not is_valid:
-                            score += basin_size
-                if (impact_type == ImpactType.Addition) or (impact_type == ImpactType.Both):
-                    attractors_start = time.time()
-                    if use_dubrova:
-                        new_attractors = find_attractors_dubrova(G, cur_dubrova_path, mutate_input_nodes=True)
-                    else:
-                        new_attractors = stochastic.estimate_attractors(G, n_walks=attractor_estimation_n_iter,
-                                                                        max_walk_len=None,
-                                                                        with_basins=False)
-                    # print("time taken to calculate new attractors: {:.2f} secs".format(time.time() - attractors_start))
+                perturbed_lines_dicts = [{i: random.sample(list(range(2 ** len(v.predecessors()))), bits_of_change)}
+                                         for _ in range(n_iter)]
+                # pool = multiprocessing.Pool(processes=parallel_n_jobs)
+                pool = Pool(parallel_n_jobs)
 
-                    # print("current attractors:")
-                    # print(current_attractors)
-                    # print("new attractors:")
-                    # print(new_attractors)
+                score_list = pool.map(single_model_bitchange_experiment_wrapper,
+                                      zip(itertools.repeat(G), perturbed_lines_dicts,
+                                          itertools.repeat(current_attractors),
+                                          itertools.repeat(relative_attractor_basin_sizes),
+                                          itertools.repeat(impact_type),
+                                          itertools.repeat(use_dubrova), itertools.repeat(cur_dubrova_path),
+                                          itertools.repeat(attractor_estimation_n_iter)))
+                pool.close()
+                pool.join()
+                score = sum(score_list)
+            else:
+                score = 0.0
+                for iteration in range(n_iter):
+                    if iteration and not iteration % 25:
+                        print("iteration #{}".format(iteration))
 
-                    intersection_size = utility.attractor_lists_intersection_size(current_attractors, new_attractors)
-                    score += (len(new_attractors) - intersection_size) / float(len(current_attractors))
-                v.function = original_function
+                    truth_table_row_indices = random.sample(list(range(2 ** len(v.predecessors()))), bits_of_change)
+                    perturbed_lines_dict = {i: truth_table_row_indices}
+
+                    score += single_model_bitchange_experiment(G, perturbed_lines_dict, current_attractors,
+                                                               relative_attractor_basin_sizes,
+                                                               impact_type, use_dubrova, cur_dubrova_path,
+                                                               attractor_estimation_n_iter)
 
             # print("time taken for vertex {}: {:.2f} secs. {} out of {}".format(v.name, time.time() - vertex_start, i, len(G.vertices)))
 
-            if impact_type == ImpactType.Both:
-                score /= 2
             score /= n_iter
             vertex_scores.append(score)
     print("time taken for stochastic impact scores: {:.2f} secs".format(time.time() - start))
@@ -472,6 +507,9 @@ def find_model_bitchange_probability_for_different_attractors(G, n_iter=100, use
     return float(n_changes) / n_iter
 
 
+def single_state_bitchange_experiment_wrapper(args):
+    return single_state_bitchange_experiment(*args)
+
 def single_state_bitchange_experiment(G, state_to_attractor_mapping=None, n_bits=1, bitchange_node_indices=None):
     initial_state = stochastic.random_state(G)
     original_attractor = stochastic.walk_to_attractor(G, initial_state, max_walk=None,
@@ -494,7 +532,7 @@ def single_state_bitchange_experiment(G, state_to_attractor_mapping=None, n_bits
     return not utility.is_same_attractor(original_attractor, perturbed_attractor)
 
 
-def stochastic_graph_state_impact_score(G, bits_of_change, n_iter=1000):
+def stochastic_graph_state_impact_score(G, bits_of_change, parallel_n_jobs=None, n_iter=1000):
     """
     Stochastically estimate the probability for a flip in the state of bits_of_change random bits
     in a network's state to move the network from a certain attractor to another attractor
@@ -508,14 +546,22 @@ def stochastic_graph_state_impact_score(G, bits_of_change, n_iter=1000):
     """
     state_to_attractor_mapping = dict()
     # exploit basin mapping memory
-    bitchange_results = []
-    for _ in range(n_iter):
-        bitchange_results.append(single_state_bitchange_experiment(G, state_to_attractor_mapping,
-                                                                   n_bits=bits_of_change))
+    if parallel_n_jobs is not None:
+        # pool = multiprocessing.Pool(processes=parallel_n_jobs)
+        pool = Pool(parallel_n_jobs)
+        bitchange_results = pool.map(single_state_bitchange_experiment_wrapper,
+                                     itertools.repeat((G, None, bits_of_change), n_iter))
+        pool.close()
+        pool.join()
+    else:
+        bitchange_results = []
+        for _ in range(n_iter):
+            bitchange_results.append(single_state_bitchange_experiment(G, state_to_attractor_mapping,
+                                                                       n_bits=bits_of_change))
     return sum(bitchange_results) / float(n_iter)
 
 
-def stochastic_vertex_state_impact_scores(G, n_iter=1000):
+def stochastic_vertex_state_impact_scores(G, n_iter=1000, parallel_n_jobs=None):
     """
     Stochastically estimate the probability for a flip in the state of a each vertex a network to move the network
     from a certain attractor to another attractor (or to the basin of another attractor).
@@ -535,12 +581,22 @@ def stochastic_vertex_state_impact_scores(G, n_iter=1000):
             continue
         # print("working on vertex {} ({} of {})".format(G.vertices[vertex_index].name, vertex_index + 1, len(G.vertices)))
 
-        # exploit basin mapping memory
-        bitchange_results = []
-        for _ in range(n_iter):
-            bitchange_results.append(single_state_bitchange_experiment(G, state_to_attractor_mapping,
-                                                                       n_bits=1,
-                                                                       bitchange_node_indices=[vertex_index]))
+        if parallel_n_jobs is not None:
+            # pool = multiprocessing.Pool(processes=parallel_n_jobs)
+            pool = Pool(parallel_n_jobs)
+            bitchange_results = pool.map(single_state_bitchange_experiment_wrapper,
+                                         itertools.repeat((G, None, 1, [vertex_index]), n_iter))
+            pool.close()
+            pool.join()
+        else:
+            # exploit basin mapping memory
+            bitchange_results = []
+            for _ in range(n_iter):
+                bitchange_results.append(single_state_bitchange_experiment(G, state_to_attractor_mapping,
+                                                                           n_bits=1,
+                                                                           bitchange_node_indices=[vertex_index]))
+        return sum(bitchange_results) / float(n_iter)
+
         vertex_scores.append(sum(bitchange_results) / float(n_iter))
         # print("time taken for vertex {}: {:.2f} secs. {} out of {}".format(G.vertices[vertex_index].name, time.time() - vertex_start, vertex_index, len(G.vertices)))
 
@@ -981,8 +1037,9 @@ def graph_model_impact_score(G, current_attractors, max_len, max_num,
     if not verbose:
         model.params.LogToConsole = 0
     model.setObjective(objective, gurobipy.GRB.MAXIMIZE)
-    model.setParam('TimeLimit', timeout_seconds)
+    model.setParam('TimeLimit', timeout_seconds)  # TODO: refactor as an argument (same for other impact variants.)
     model.optimize()
+    print "finished optimizing for model impact score"
     if model.Status != gurobipy.GRB.OPTIMAL:
         print("warning, model not solved to optimality.")
         if model.Status == gurobipy.GRB.INFEASIBLE:

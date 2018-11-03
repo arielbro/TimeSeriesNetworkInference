@@ -1452,8 +1452,10 @@ class TestAttractors(TestCase):
 
             for iteration in range(10):
                 n_iter = random.randint(700, 1400)
+                parallel_n_jobs = random.choice([None, 1, 2, 3])
                 estimated_impact = stochastic_graph_state_impact_score(G=experiment.G, n_iter=n_iter,
-                                                                       bits_of_change=experiment.bits_of_change)
+                                                                       bits_of_change=experiment.bits_of_change,
+                                                                       parallel_n_jobs=parallel_n_jobs)
                 print "estimated_impact={}".format(estimated_impact)
                 self.assertTrue(abs(estimated_impact - experiment.impact) < 0.1)
 
@@ -1530,7 +1532,10 @@ class TestAttractors(TestCase):
 
             for iteration in range(10):
                 n_iter = random.randint(700, 1400)
-                estimated_impacts = stochastic_vertex_state_impact_scores(G=experiment.G, n_iter=n_iter)
+                parallel_n_jobs = random.choice([None, 1, 2, 3])
+
+                estimated_impacts = stochastic_vertex_state_impact_scores(G=experiment.G, n_iter=n_iter,
+                                                                          parallel_n_jobs=parallel_n_jobs)
                 print "estimated_impacts={}".format(estimated_impacts)
                 self.assertTrue(len(experiment.impacts) == len(estimated_impacts))
                 for calculated_impact, estimated_impact in zip(experiment.impacts, estimated_impacts):
@@ -1863,6 +1868,7 @@ class TestAttractors(TestCase):
             for use_dubrova in [False, True]:
                 n_iter = random.randint(800, 880)
                 attractor_estimation_n_iter = random.randint(50, 55)
+                parallel_n_jobs = random.choice([None, 1, 2, 3])
 
                 estimated_impact = stochastic_graph_model_impact_score(
                     G=experiment.G, current_attractors=experiment.current_attractors, n_iter=n_iter, use_dubrova=use_dubrova,
@@ -1870,7 +1876,8 @@ class TestAttractors(TestCase):
                     relative_attractor_basin_sizes=experiment.relative_basins,
                     attractor_estimation_n_iter=attractor_estimation_n_iter,
                     impact_type=experiment.impact_type,
-                    cur_dubrova_path=dubrova_path)
+                    cur_dubrova_path=dubrova_path,
+                    parallel_n_jobs=parallel_n_jobs)
 
                 print "estimated_impact={}".format(estimated_impact)
                 print "expected_impacts={}".format(experiment.impact)
@@ -2148,6 +2155,7 @@ class TestAttractors(TestCase):
             for use_dubrova in [False, True]:
                 n_iter = random.randint(400, 440)
                 attractor_estimation_n_iter = random.randint(30, 35)
+                parallel_n_jobs = random.choice([None, 1, 2, 3])
 
                 estimated_impacts = stochastic_vertex_model_impact_scores(
                     G=experiment.G, current_attractors=experiment.current_attractors, n_iter=n_iter, use_dubrova=use_dubrova,
@@ -2155,7 +2163,8 @@ class TestAttractors(TestCase):
                     relative_attractor_basin_sizes=experiment.relative_basins,
                     attractor_estimation_n_iter=attractor_estimation_n_iter,
                     impact_type=experiment.impact_type,
-                    cur_dubrova_path=dubrova_path)
+                    cur_dubrova_path=dubrova_path,
+                    parallel_n_jobs=parallel_n_jobs)
 
                 self.assertTrue(len(experiment.impacts) == len(estimated_impacts))
                 print "estimated_impacts={}".format(estimated_impacts)
