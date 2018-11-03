@@ -510,6 +510,7 @@ def find_model_bitchange_probability_for_different_attractors(G, n_iter=100, use
 def single_state_bitchange_experiment_wrapper(args):
     return single_state_bitchange_experiment(*args)
 
+
 def single_state_bitchange_experiment(G, state_to_attractor_mapping=None, n_bits=1, bitchange_node_indices=None):
     initial_state = stochastic.random_state(G)
     original_attractor = stochastic.walk_to_attractor(G, initial_state, max_walk=None,
@@ -682,11 +683,14 @@ def graph_state_impact_score(G, current_attractors, max_transient_len=30, verbos
     model.optimize()
     # print("Time taken for ILP solve: {:.2f} (T={}, P={})".format(time.time() - start_time, T, P))
     if model.Status != gurobipy.GRB.OPTIMAL:
-        print("writing IIS data to model_iis.ilp")
-        model.computeIIS()
-        model.write("model_iis.ilp")
-        model.write("model.mps")
-        raise ValueError("model not solved to optimality.")
+        if model.Status == gurobipy.GRB.TIME_LIMIT:
+            raise TimeoutError("Gurobi timeout")
+        else:
+            print("writing IIS data to model_iis.ilp")
+            model.computeIIS()
+            model.write("model_iis.ilp")
+            model.write("model.mps")
+            raise ValueError("model not solved to optimality.")
     # print(model.ObjVal)
     # ilp.print_model_values(model)
     # ilp.print_model_constraints(model)
@@ -753,11 +757,14 @@ def vertex_state_impact_scores(G, current_attractors, max_transient_len=30, verb
             model.optimize()
             # print("Time taken for ILP solve: {:.2f} (T={}, P={})".format(time.time() - start_time, T, P))
             if model.Status != gurobipy.GRB.OPTIMAL:
-                print("writing IIS data to model_iis.ilp")
-                model.computeIIS()
-                model.write("model_iis.ilp")
-                model.write("model.mps")
-                raise ValueError("model not solved to optimality.")
+                if model.Status == gurobipy.GRB.TIME_LIMIT:
+                    raise TimeoutError("Gurobi timeout")
+                else:
+                    print("writing IIS data to model_iis.ilp")
+                    model.computeIIS()
+                    model.write("model_iis.ilp")
+                    model.write("model.mps")
+                    raise ValueError("model not solved to optimality.")
             elif model.ObjVal != int(round(model.ObjVal)):
                 if abs(model.ObjVal - int(round(model.ObjVal))) < 0.0001:
                     print("Warning! Integral model solved with value {}. Ignoring as small numeric error.".format(model.ObjVal))
