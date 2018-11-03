@@ -151,7 +151,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     # for var in model.getVars():
     #     var.Start = 0
 
-    model.setParam('TimeLimit', timeout_seconds)
+    model.Params.timelimit = timeout_seconds
 
     model.optimize()
     model.update()
@@ -233,7 +233,7 @@ def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_
     # for var in model.getVars():
     #     var.Start = 0
 
-    model.setParam('TimeLimit', timeout_seconds)
+    model.Params.timelimit = timeout_seconds
 
     model.optimize()
     model.update()
@@ -376,7 +376,7 @@ def stochastic_graph_model_impact_score(G, current_attractors, n_iter=100,
 
     score /= n_iter
 
-    print("time taken for stochastic model impact scores: {:.2f} secs".format(time.time() - start))
+    # print("time taken for stochastic model impact scores: {:.2f} secs".format(time.time() - start))
     return score
 
 
@@ -453,7 +453,7 @@ def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use
 
             score /= n_iter
             vertex_scores.append(score)
-    print("time taken for stochastic impact scores: {:.2f} secs".format(time.time() - start))
+    # print("time taken for stochastic impact scores: {:.2f} secs".format(time.time() - start))
     return vertex_scores
 
 
@@ -605,7 +605,7 @@ def stochastic_vertex_state_impact_scores(G, n_iter=1000, parallel_n_jobs=None):
 
 def graph_state_impact_score(G, current_attractors, max_transient_len=30, verbose=True,
                               relative_attractor_basin_sizes=None, key_slice_size=15,
-                              maximal_bits_of_change=1):
+                              maximal_bits_of_change=1, timeout_seconds=None):
     """
     Finds the maximal proportion of attractors, possibly weighted by their basin sizes, that can be
     switched to the basin of another attractor by flipping a set of maximal_bits_of_change vertices.
@@ -677,6 +677,8 @@ def graph_state_impact_score(G, current_attractors, max_transient_len=30, verbos
     model.update()
     if not verbose:
         model.params.LogToConsole = 0
+    if timeout_seconds is not None:
+        model.Params.timelimit = timeout_seconds
     model.optimize()
     # print("Time taken for ILP solve: {:.2f} (T={}, P={})".format(time.time() - start_time, T, P))
     if model.Status != gurobipy.GRB.OPTIMAL:
@@ -800,7 +802,7 @@ def find_attractors_onestage_enumeration(G, max_len=None, verbose=False, simplif
     # for var in model.getVars():
     #     var.Start = 0
 
-    model.setParam('TimeLimit', timeout_seconds)
+    model.Params.timelimit = timeout_seconds
 
     model.optimize()
     model.update()
@@ -972,7 +974,8 @@ def graph_model_impact_score(G, current_attractors, max_len, max_num,
                               impact_types=ImpactType.Invalidation, verbose=True,
                               relative_attractor_basin_sizes=None,
                               normalize_addition_scores=False,
-                              maximal_bits_of_change=1):
+                              maximal_bits_of_change=1,
+                              timeout_seconds=None):
     """
     solves an ILP representing the impact of changing at most maximal_bits_of_change bits in truth tables
     of the model's vertices (not necessarily same ones) on attractors -
@@ -1037,7 +1040,8 @@ def graph_model_impact_score(G, current_attractors, max_len, max_num,
     if not verbose:
         model.params.LogToConsole = 0
     model.setObjective(objective, gurobipy.GRB.MAXIMIZE)
-    model.setParam('TimeLimit', timeout_seconds)  # TODO: refactor as an argument (same for other impact variants.)
+    if timeout_seconds is not None:
+        model.Params.timelimit = timeout_seconds
     model.optimize()
     print "finished optimizing for model impact score"
     if model.Status != gurobipy.GRB.OPTIMAL:
@@ -1126,7 +1130,7 @@ def vertex_model_impact_scores(G, current_attractors, max_len, max_num,
             if not verbose:
                 model.params.LogToConsole = 0
             model.setObjective(objective, gurobipy.GRB.MAXIMIZE)
-            model.setParam('TimeLimit', timeout_seconds)
+            model.Params.timelimit = timeout_seconds
             model.optimize()
             if model.Status != gurobipy.GRB.OPTIMAL:
                 print("warning, model not solved to optimality.")
@@ -1187,7 +1191,7 @@ def vertex_degeneracy_scores(G, current_attractors, relative=False, verbose=True
             start = time.time()
             if not verbose:
                 model.params.LogToConsole = 0
-            model.setParam('TimeLimit', timeout_seconds)
+            model.Params.timelimit = timeout_seconds
             model.optimize()
             if model.Status != gurobipy.GRB.OPTIMAL:
                 print("warning, model not solved to optimality.")
