@@ -754,7 +754,9 @@ def vertex_state_impact_scores(G, current_attractors, max_transient_len=30, verb
             model.update()
             if timeout_seconds is not None:
                 model.Params.timelimit = timeout_seconds
-            if not verbose:
+            if verbose:
+                model.params.LogToConsole = 1
+            else:
                 model.params.LogToConsole = 0
             model.optimize()
             # print("Time taken for ILP solve: {:.2f} (T={}, P={})".format(time.time() - start_time, T, P))
@@ -1137,7 +1139,9 @@ def vertex_model_impact_scores(G, current_attractors, max_len, max_num,
 
             # print("time taken to build model: {:.2f}".format(time.time() - start))
             start = time.time()
-            if not verbose:
+            if verbose:
+                model.params.LogToConsole = 1
+            else:
                 model.params.LogToConsole = 0
             model.setObjective(objective, gurobipy.GRB.MAXIMIZE)
             if timeout_seconds is not None:
