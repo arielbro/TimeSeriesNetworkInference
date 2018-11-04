@@ -698,7 +698,7 @@ def graph_state_impact_score(G, current_attractors, max_transient_len=30, verbos
 
 
 def vertex_state_impact_scores(G, current_attractors, max_transient_len=30, verbose=True,
-                               relative_attractor_basin_sizes=None, key_slice_size=15):
+                               relative_attractor_basin_sizes=None, key_slice_size=15, timeout_seconds=None):
     """
     For each vertex, finds the proportion of attractors, possibly weighted by their basin sizes, that can be
     switched to the basin of another attractor by flipping that vertex.
@@ -752,6 +752,8 @@ def vertex_state_impact_scores(G, current_attractors, max_transient_len=30, verb
             model.setObjective(second_inclusion_indicator, sense=GRB.MAXIMIZE)
             # print("second inclusion indicator - {}".format(second_inclusion_indicator))
             model.update()
+            if timeout_seconds is not None:
+                model.Params.timelimit = timeout_seconds
             if not verbose:
                 model.params.LogToConsole = 0
             model.optimize()
@@ -1076,7 +1078,8 @@ def vertex_model_impact_scores(G, current_attractors, max_len, max_num,
                                impact_types=ImpactType.Invalidation, verbose=True,
                                relative_attractor_basin_sizes=None,
                                normalize_addition_scores=False,
-                               maximal_bits_of_change=1):
+                               maximal_bits_of_change=1,
+                               timeout_seconds=None):
     """
     For each vertex in G, solves an ILP representing the impact of changing its function on attractors -
     impact is defined as either the addition of new attractors to the model, or rendering present attractors
@@ -1137,7 +1140,8 @@ def vertex_model_impact_scores(G, current_attractors, max_len, max_num,
             if not verbose:
                 model.params.LogToConsole = 0
             model.setObjective(objective, gurobipy.GRB.MAXIMIZE)
-            model.Params.timelimit = timeout_seconds
+            if timeout_seconds is not None:
+                model.Params.timelimit = timeout_seconds
             model.optimize()
             if model.Status != gurobipy.GRB.OPTIMAL:
                 print("warning, model not solved to optimality.")

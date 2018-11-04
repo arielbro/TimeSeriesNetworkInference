@@ -20,21 +20,21 @@ import stat
 import platform
 
 stochastic_n_iter = 60
-parallel = True
+parallel = False
 n_processes = 40
-timeout_seconds = int(4 * 60 * 60)
+timeout_seconds = int(0.05 * 60 * 60)
 graph_parent_dir = "cellcollective_models"
 optimization_max_len = 1
-optimization_max_num = 30
-optimization_max_transient_len = 20
+optimization_max_num = 10
+optimization_max_transient_len = 10
 only_random = False
 attractor_estimation_n_iter = 100
 filter_out_timed_out_graphs = False
-graph_size_filter = 35
-n_attractors_filter = 50
-queue_all_tasks = True
+graph_size_filter = 25
+n_attractors_filter = 30
+queue_all_tasks = False
 maximal_bits_of_change = 1
-n_tests = 1
+n_tests = 2
 
 GraphImpactResult = namedtuple("GraphImpactResult", "graph_name is_random size "
                                                     "maximal_change_bits n_inputs normalized_n_inputs "
@@ -319,7 +319,7 @@ def main():
                         format(timeout_seconds)
                     results.append(None)
                 except attractors.TimeoutError as e:
-                    print "Breaking impact score estimation (guorbi timeout)".\
+                    print "Breaking impact score estimation (guorbi timeout, {})".\
                         format(timeout_seconds)
                     results.append(None)
 

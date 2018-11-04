@@ -33,6 +33,7 @@ filter_out_timed_out_graphs = False
 graph_size_filter = 35
 n_attractors_filter = 50
 queue_all_tasks = True
+maximal_bits_of_change = 1
 n_tests = 10
 
 VertexImpactResult = namedtuple("VertexImpactResult", "graph_name is_random size "
@@ -42,18 +43,18 @@ VertexImpactResult = namedtuple("VertexImpactResult", "graph_name is_random size
                                                       "median_attractor_length std_attractor_length "
                                                       "max_attractor_length std_attractor_basin "
                                                       "median_attractor_basin max_attractor_basin "
-                                                      "optimization_model_impact_scores "
-                                                      "stochastic_model_impact_scores "
+                                                      # "optimization_model_impact_scores "
+                                                      # "stochastic_model_impact_scores "
                                                       "optimization_model_addition_impact_scores "
                                                       "stochastic_model_addition_impact_scores "
-                                                      "optimization_state_impact_scores "
-                                                      "stochastic_state_impact_scores "
-                                                      "optimization_model_time "
-                                                      "stochastic_model_time "
+                                                      # "optimization_state_impact_scores "
+                                                      # "stochastic_state_impact_scores "
+                                                      # "optimization_model_time "
+                                                      # "stochastic_model_time "
                                                       "optimization_model_addition_time "
                                                       "stochastic_model_addition_time "
-                                                      "optimization_state_time "
-                                                      "stochastic_state_time"
+                                                      # "optimization_state_time "
+                                                      # "stochastic_state_time"
                                 )
 
 
@@ -138,7 +139,7 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
                                               use_dubrova=False,
                                               n_iter=stochastic_n_iter,
                                               impact_type=attractors.ImpactType.Invalidation,
-                                              bits_of_change=1,
+                                              bits_of_change=maximal_bits_of_change,
                                               attractor_estimation_n_iter=attractor_estimation_n_iter,
                                               relative_attractor_basin_sizes=basin_sizes,
                                               parallel_n_jobs=n_processes if parallel else None)
@@ -151,7 +152,8 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
                                    impact_types=attractors.ImpactType.Invalidation,
                                    normalize_addition_scores=True,
                                    relative_attractor_basin_sizes=basin_sizes,
-                                   maximal_bits_of_change=1)
+                                   maximal_bits_of_change=maximal_bits_of_change,
+                                   timeout_seconds=timeout_seconds)
     optimization_model_time = time.time() - res_start
 
     res_start = time.time()
@@ -160,7 +162,7 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
                                               use_dubrova=False,
                                               attractor_estimation_n_iter=attractor_estimation_n_iter,
                                               n_iter=stochastic_n_iter,
-                                              bits_of_change=1,
+                                              bits_of_change=maximal_bits_of_change,
                                               impact_type=attractors.ImpactType.Addition,
                                               relative_attractor_basin_sizes=basin_sizes,
                                               parallel_n_jobs=n_processes if parallel else None)
@@ -173,7 +175,8 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
                                    impact_types=attractors.ImpactType.Addition,
                                    normalize_addition_scores=True,
                                    relative_attractor_basin_sizes=basin_sizes,
-                                   maximal_bits_of_change=1)
+                                   maximal_bits_of_change=maximal_bits_of_change,
+                                   timeout_seconds=timeout_seconds)
     optimization_model_addition_time = time.time() - res_start
 
     res_start = time.time()
@@ -187,7 +190,7 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
         vertex_state_impact_scores(graph_copy, current_attractors=current_attractors,
                                    max_transient_len=optimization_max_transient_len, verbose=False,
                                    relative_attractor_basin_sizes=basin_sizes,
-                                   key_slice_size=15)
+                                   key_slice_size=15, timeout_seconds=timeout_seconds)
     optimization_state_time = time.time() - res_start
 
     result = VertexImpactResult(graph_name=name, is_random=(randomize_functions and randomize_edges),
@@ -205,18 +208,18 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
                                 std_attractor_basin=std_attractor_basin,
                                 median_attractor_basin=median_attractor_basin,
                                 max_attractor_basin=max_attractor_basin,
-                                optimization_model_impact_scores=optimization_model_impact_scores,
-                                stochastic_model_impact_scores=stochastic_model_impact_scores,
+                                # optimization_model_impact_scores=optimization_model_impact_scores,
+                                # stochastic_model_impact_scores=stochastic_model_impact_scores,
                                 optimization_model_addition_impact_scores=optimization_model_addition_impact_scores,
                                 stochastic_model_addition_impact_scores=stochastic_model_addition_impact_scores,
-                                optimization_state_impact_scores=optimization_state_impact_scores,
-                                stochastic_state_impact_scores=stochastic_state_impact_scores,
-                                optimization_model_time=optimization_model_time,
-                                stochastic_model_time=stochastic_model_time,
+                                # optimization_state_impact_scores=optimization_state_impact_scores,
+                                # stochastic_state_impact_scores=stochastic_state_impact_scores,
+                                # optimization_model_time=optimization_model_time,
+                                # stochastic_model_time=stochastic_model_time,
                                 optimization_model_addition_time=optimization_model_addition_time,
                                 stochastic_model_addition_time=stochastic_model_addition_time,
-                                optimization_state_time=optimization_state_time,
-                                stochastic_state_time=stochastic_state_time
+                                # optimization_state_time=optimization_state_time,
+                                # stochastic_state_time=stochastic_state_time
                                 )
     print "time taken for graph {} impact scores function: {:.2f} secs".format(name, time.time() - start)
     return result
@@ -308,7 +311,7 @@ def main():
                         format(timeout_seconds)
                     results.append(None)
                 except attractors.TimeoutError as e:
-                    print "Breaking impact score estimation (guorbi timeout)".\
+                    print "Breaking impact score estimation (guorbi timeout {})".\
                         format(timeout_seconds)
                     results.append(None)
 
@@ -339,13 +342,13 @@ def main():
                              "num_attractors", "mean_attractor_length", "median_attractor_length",
                              "std_attractor_length", "max_attractor_length", "std_attractor_basin",
                              "median_attractor_basin", "max_attractor_basin",
-                             "optimization_model_impact_scores", "stochastic_model_impact_scores",
+                             # "optimization_model_impact_scores", "stochastic_model_impact_scores",
                              "optimization_model_addition_impact_scores",
                              "stochastic_model_addition_impact_scores",
-                             "optimization_state_impact_scores", "stochastic_state_impact_scores",
-                             "optimization_model_time", "stochastic_model_time",
+                             # "optimization_state_impact_scores", "stochastic_state_impact_scores",
+                             # "optimization_model_time", "stochastic_model_time",
                              "optimization_model_addition_time", "stochastic_model_addition_time",
-                             "optimization_state_time", "stochastic_state_time"
+                             # "optimization_state_time", "stochastic_state_time"
                              ])
             for impact_result in results:
                 if impact_result is None:
