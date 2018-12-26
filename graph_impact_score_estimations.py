@@ -256,21 +256,26 @@ def main():
     biological_graphs = []
     biological_graph_names = []
     candidate_biological_graph_names = os.listdir(graph_parent_dir)
+    filter_start = time.time()
     for graph_dir in candidate_biological_graph_names:
         try:
             G = graphs.Network.parse_boolean_tables(os.path.join(graph_parent_dir, graph_dir))
             if len(G.vertices) <= graph_size_filter:
+                model_start = time.time()
                 n_estimated_attractors = len(stochastic.estimate_attractors(G, n_walks=stochastic_n_iter, max_walk_len=None,
                                                                             with_basins=False))
                 if n_estimated_attractors <= n_attractors_filter:
                     biological_graphs.append(G)
                     biological_graph_names.append(graph_dir)
+                print "Estimated {} attractors for model {}. Time taken: {:.2f} secs".format(
+                    n_estimated_attractors, graph_dir, time.time() - model_start)
 
         except ValueError as e:
             if e.message.startswith("Model export from cellcollective failed"):
                 print "warning - did not load graph {}".format(graph_dir)
 
-    print "filtering left {} graphs".format(len(biological_graphs))
+    print "Filtering done, time taken: {:.2f} secs. {} graphs left".format(time.time() - filter_start,
+                                                                           len(biological_graphs))
 
     graph_name_to_attributes = dict()
     for i, graph, name in zip(range(len(biological_graphs)), biological_graphs, biological_graph_names):
