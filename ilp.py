@@ -16,7 +16,7 @@ from utility import order_key_func
 def recursive_logic_to_var(formula, model, formulas_to_variables):
     if formula in formulas_to_variables:
         return formulas_to_variables[formula]
-    assert not formula.is_Atom
+    assert not formula.is_Atom, "composite formula expected"
     arg_vars = [recursive_logic_to_var(arg, model, formulas_to_variables) for arg in formula.args]
     if formula.func == sympy.And:
         new_var = model.addVar(vtype=gurobipy.GRB.BINARY)
@@ -115,7 +115,7 @@ def create_state_keys_comparison_var(model, first_state_keys, second_state_keys,
     # Z_n >= (a_n - b_n) / M (can divide by M + 1 for convenience)
     # Z_n <= (a_n - b_n - 1) / (M + 1) + 1
     # multiply by denominator to avoid float inaccuracies
-    assert len(first_state_keys) == len(second_state_keys)
+    assert len(first_state_keys) == len(second_state_keys), "length of state key lists differ"
     last_var = 0 if not include_equality else 1
     M = upper_bound # M - 1 is actual largest value
     for i in range(len(first_state_keys)):
@@ -187,9 +187,10 @@ def add_indicator_for_attractor_invalidity(model, graph, attractor, vertices_f_v
             if vertices_f_vars_list[i] is None:
                 #  It is assumed that the attractor is originally legal, but we'll still assert it
                 if len(graph.vertices[i].predecessors()) > 0:
-                    assert bool(graph.vertices[i].function(*predecessor_values)) == bool(cur_state[i])
+                    assert bool(graph.vertices[i].function(*predecessor_values)) == bool(cur_state[i]), \
+                        "attractor isn't legal in model"
                 else:  # input nodes should stay constant
-                    assert cur_state[i] == prev_state[i]
+                    assert cur_state[i] == prev_state[i], "input node changed value inside attractor"
             else:
                 truth_table_row_index = sum((2**k) * prev_state[prev_index]
                                             for k, prev_index in enumerate(predecessor_indices))
@@ -465,7 +466,7 @@ def add_path_to_model(G, model, path_len, first_state_vars, last_state_vars, v_f
     """
     start = time.time()
     n = len(G.vertices)
-    assert path_len >= 1
+    assert path_len >= 1, "can't add path constraint with path of length {}".format(path_len)
 
     previous_state_vars = first_state_vars
     for l in range(path_len):
@@ -537,7 +538,7 @@ def attractors_ilp_with_keys(G, max_len=None, max_num=None,
                 if G.vertices[i].function is None:
                     desired_val = v_matrix[i, p, t]
                 else:
-                    assert G.vertices[i].function in [False, True]
+                    assert G.vertices[i].function in [False, True], "expected constant function"
                     desired_val = int(G.vertices[i].function)
                     last_activity = a_matrix[p, t-1] if t > 0 else 0
                     # set initial state, for first active state
@@ -731,7 +732,7 @@ def bitchange_attractor_ilp_with_keys(G, max_len=None, slice_size=15):
                 if G.vertices[i].function is None:
                     desired_val = v_matrix[i, t]
                 else:
-                    assert G.vertices[i].function in [False, True]
+                    assert G.vertices[i].function in [False, True], "expected constant function"
                     desired_val = int(G.vertices[i].function)
                     last_activity = a_list[t-1] if t > 0 else 0
                     # set initial state, for first active state
@@ -816,10 +817,10 @@ def set_mip_start(model, v_matrix, final_states_a_vars, attractors):
 
     # Rotate the attractors to meet the order used in the ILP - last state should be largest.
     ordered_attractors = list()
-    assert len(attractors) <= P
+    assert len(attractors) <= P, "more attractors than attractor number bound".format(len(attractors))
     for p in range(len(attractors)):
         length = len(attractors[p])
-        assert length <= T
+        assert length <= T, "attractor longer than length bound"
         largest_ind = max(range(length), key=lambda t: order_key_func(attractors[p][t]))
         ordered_attractors.append([attractors[p][(t + largest_ind + 1) % length] for t in range(length)])
 
@@ -897,7 +898,7 @@ def print_attractors(model):
     max_p = 0
     max_t = 0
     for name_part_list in v_name_parts:
-        assert len(name_part_list) == 3
+        assert len(name_part_list) == 3, "variable name inconsistent with naming convention"
         i, p, t = name_part_list
         max_i = max(max_i, int(i))
         max_p = max(max_p, int(p))
@@ -933,7 +934,7 @@ def print_attractors_enumeration(model):
     max_i = 0
     max_t = 0
     for name_part_list in v_name_parts:
-        assert len(name_part_list) == 3
+        assert len(name_part_list) == 3, "variable name inconsistent with naming convention"
         i, p, t = name_part_list
         max_i = max(max_i, int(i))
         max_t = max(max_t, int(t))
@@ -966,7 +967,7 @@ def get_model_attractors(model):
     max_i = 0
     max_t = 0
     for name_part_list in v_name_parts:
-        assert len(name_part_list) == 3
+        assert len(name_part_list) == 3, "variable name inconsistent with naming convention"
         i, p, t = name_part_list
         max_i = max(max_i, int(i))
         max_t = max(max_t, int(t))

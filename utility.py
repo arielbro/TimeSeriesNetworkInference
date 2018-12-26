@@ -164,9 +164,9 @@ def is_same_state(s1, s2):
         # return False
         raise ValueError("Can't compare states from models of different size.")
     for v_state in s1:
-        assert v_state in [0, 1, False, True, sympy.false, sympy.true]
+        assert v_state in [0, 1, False, True, sympy.false, sympy.true], "illegal state for a vertex: {}".format(v_state)
     for v_state in s2:
-        assert v_state in [0, 1, False, True, sympy.false, sympy.true]
+        assert v_state in [0, 1, False, True, sympy.false, sympy.true], "illegal state for a vector: {}".format(v_state)
     s1_standard = tuple(1 if v_state else 0 for v_state in s1)
     s2_standard = tuple(1 if v_state else 0 for v_state in s2)
     return s1_standard == s2_standard

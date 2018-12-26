@@ -200,7 +200,7 @@ def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_
 
     # first, find original model's attractors.
     for v in G.vertices:
-        assert (v.function is not None) or len(v.predecessors()) == 0
+        assert (v.function is not None) or len(v.predecessors()) == 0, "input node or undefined function"
     if use_dubrova:
         attractors = find_attractors_dubrova(G=G, dubrova_path=dubrova_path)
         attractors = [att for att in attractors if len(att) <= max_len]
@@ -344,7 +344,7 @@ def stochastic_graph_model_impact_score(G, current_attractors, n_iter=100,
     if relative_attractor_basin_sizes is None:
         relative_attractor_basin_sizes = [1 / float(len(current_attractors))] * len(current_attractors)
     for v in G.vertices:
-        assert v.function is not None or len(v.predecessors()) == 0
+        assert v.function is not None or len(v.predecessors()) == 0, "input node or undefined function"
     start = time.time()
     original_functions = [v.function for v in G.vertices]
 
@@ -408,7 +408,7 @@ def stochastic_vertex_model_impact_scores(G, current_attractors, n_iter=100, use
         relative_attractor_basin_sizes = [1/float(len(current_attractors))] * len(current_attractors)
     start = time.time()
     for v in G.vertices:
-        assert v.function is not None or len(v.predecessors()) == 0
+        assert v.function is not None or len(v.predecessors()) == 0, "input node or undefined function"
     vertex_scores = []
     for i, v in enumerate(G.vertices):
         vertex_start = time.time()
@@ -1002,7 +1002,7 @@ def graph_model_impact_score(G, current_attractors, max_len, max_num,
     """
     start = time.time()
     for v in G.vertices:
-        assert v.function is not None or len(v.predecessors()) == 0
+        assert v.function is not None or len(v.predecessors()) == 0, "input node or undefined function"
     slice_size = 15
     original_functions = [v.function for v in G.vertices]
     for v in G.vertices:
@@ -1039,7 +1039,7 @@ def graph_model_impact_score(G, current_attractors, max_len, max_num,
             relative_attractor_basin_sizes = \
                 [1 / float(len(current_attractors))] * len(current_attractors)
         assert len(relative_attractor_basin_sizes) == len(current_attractors) and \
-               abs(sum(relative_attractor_basin_sizes) - 1) < 1e-6
+               abs(sum(relative_attractor_basin_sizes) - 1) < 1e-6, "number of attractors or relative sizes mismatch"
         for attractor, weight in zip(current_attractors, relative_attractor_basin_sizes):
             objective += weight * ilp.add_indicator_for_attractor_invalidity(
                                     model, G, attractor, vertices_f_vars, "invalidated_attractors")
@@ -1098,7 +1098,7 @@ def vertex_model_impact_scores(G, current_attractors, max_len, max_num,
     """
     start = time.time()
     for v in G.vertices:
-        assert v.function is not None or len(v.predecessors()) == 0
+        assert v.function is not None or len(v.predecessors()) == 0, "input node or undefined function"
     vertex_scores = []
     for i, v in enumerate(G.vertices):
         if len(v.predecessors()) == 0:
@@ -1130,7 +1130,8 @@ def vertex_model_impact_scores(G, current_attractors, max_len, max_num,
                     relative_attractor_basin_sizes = \
                         [1 / float(len(current_attractors))] * len(current_attractors)
                 assert len(relative_attractor_basin_sizes) == len(current_attractors) and \
-                       abs(sum(relative_attractor_basin_sizes) - 1) < 1e-6
+                       abs(sum(relative_attractor_basin_sizes) - 1) < 1e-6, \
+                    "number of attractors or relative size mismatch"
                 for attractor, weight in zip(current_attractors, relative_attractor_basin_sizes):
                     objective += weight * ilp.add_indicator_for_attractor_invalidity(
                                             model, G, attractor, vertices_f_vars, "invalidated_attractors")
@@ -1178,7 +1179,7 @@ def vertex_degeneracy_scores(G, current_attractors, relative=False, verbose=True
     """
     start = time.time()
     for v in G.vertices:
-        assert v.function is not None or len(v.predecessors()) == 0
+        assert v.function is not None or len(v.predecessors()) == 0, "input node or undefined function"
     vertex_scores = []
     for i, v in enumerate(G.vertices):
         if len(v.predecessors()) == 0:

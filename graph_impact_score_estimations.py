@@ -339,7 +339,7 @@ def main():
             good_graph_indices = [i for i, name in enumerate(biological_graph_names) if name in good_names]
             biological_graph_names = [name for name in biological_graph_names if name in good_names]
             biological_graphs = [G for i, G in enumerate(biological_graphs) if i in good_graph_indices]
-            assert len(biological_graph_names) == len(biological_graphs)
+            assert len(biological_graph_names) == len(biological_graphs), "more graph names than graphs"
             print "filtered graphs, {} remaining out of {}".format(len(biological_graphs), original_graph_num)
 
         # save on each iteration, why not
