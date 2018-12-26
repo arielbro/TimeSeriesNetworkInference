@@ -142,7 +142,7 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
                                             bits_of_change=maximal_bits_of_change,
                                             attractor_estimation_n_iter=attractor_estimation_n_iter,
                                             relative_attractor_basin_sizes=basin_sizes,
-                                            parallel_n_jobs=n_processes if parallel else None)
+                                            parallel_n_jobs=None)
     stochastic_model_time = time.time() - res_start
     print("time taken for stochastic model impact scores: {:.2f} secs".format(time.time() - res_start))
 
@@ -167,7 +167,7 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
     #                                         bits_of_change=maximal_bits_of_change,
     #                                         impact_type=attractors.ImpactType.Addition,
     #                                         relative_attractor_basin_sizes=basin_sizes,
-    #                                         parallel_n_jobs=n_processes if parallel else None)
+    #                                         parallel_n_jobs=None)
     # stochastic_model_addition_time = time.time() - res_start
     # print("time taken for stochastic model addition impact scores: {:.2f} secs".format(time.time() - res_start))
 
@@ -186,7 +186,7 @@ def one_graph_impact_score_estimation(graph, name, is_biological, graph_name_to_
     res_start = time.time()
     stochastic_state_impact_score = attractors. \
         stochastic_graph_state_impact_score(graph_copy, bits_of_change=maximal_bits_of_change, n_iter=stochastic_n_iter,
-                                            parallel_n_jobs=n_processes if parallel else None)
+                                            parallel_n_jobs=None)
     stochastic_state_time = time.time() - res_start
     print("time taken for stochastic state impact scores: {:.2f} secs".format(time.time() - res_start))
 
