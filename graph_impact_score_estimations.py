@@ -262,8 +262,10 @@ def main():
             G = graphs.Network.parse_boolean_tables(os.path.join(graph_parent_dir, graph_dir))
             if len(G.vertices) <= graph_size_filter:
                 model_start = time.time()
-                n_estimated_attractors = len(stochastic.estimate_attractors(G, n_walks=stochastic_n_iter, max_walk_len=None,
-                                                                            with_basins=False))
+                # n_estimated_attractors = len(stochastic.estimate_attractors(G, n_walks=stochastic_n_iter, max_walk_len=None,
+                #                                                             with_basins=False))
+                n_estimated_attractors = len(attractors.find_attractors_dubrova(G, attractors.dubrova_path,
+                                                                            mutate_input_nodes=True))
                 if n_estimated_attractors <= n_attractors_filter:
                     biological_graphs.append(G)
                     biological_graph_names.append(graph_dir)
