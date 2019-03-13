@@ -154,7 +154,7 @@ def find_num_attractors_onestage(G, max_len=None, max_num=None, use_sat=False, v
     model.Params.timelimit = timeout_seconds
 
     model.optimize()
-    model.update()
+    # model.update()
     # model.write("./model_mip_start.mst") # that just write sthe final solution as a MIP start...
 
     # ilp.print_opt_solution(model)
@@ -215,7 +215,6 @@ def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_
                                                    upper_bound=2 ** key_slice_size, a_matrix=a_matrix)
 
     model.addConstr(sum(function_bitchange_vars) >= 1) # So Gurobi doesn't work hard proving this.
-    model.update()
     model.setObjective(sum(function_bitchange_vars), gurobipy.GRB.MINIMIZE)
     # model.setParam(gurobipy.GRB.Param.NumericFocus, 3)
     # model.setParam(gurobipy.GRB.Param.OptimalityTol, 1e-6) # gurobi warns against using those for numerical issues
@@ -236,7 +235,7 @@ def find_model_bitchange_for_new_attractor(G, max_len, verbose=False, key_slice_
     model.Params.timelimit = timeout_seconds
 
     model.optimize()
-    model.update()
+    # model.update()
     # model.write("./model_mip_start.mst") # that just write sthe final solution as a MIP start...
 
     # ilp.print_opt_solution(model)
@@ -675,7 +674,6 @@ def graph_state_impact_score(G, current_attractors, max_transient_len=30, verbos
         objective += relative_basin_size * second_inclusion_indicator
     model.setObjective(objective, sense=GRB.MAXIMIZE)
     # print("second inclusion indicator - {}".format(second_inclusion_indicator))
-    model.update()
     if not verbose:
         model.params.LogToConsole = 0
     if timeout_seconds is not None:
@@ -751,7 +749,6 @@ def vertex_state_impact_scores(G, current_attractors, max_transient_len=30, verb
             model.addConstr(first_inclusion_indicator == 1, name="first_state_inclusion_constraint")
             model.setObjective(second_inclusion_indicator, sense=GRB.MAXIMIZE)
             # print("second inclusion indicator - {}".format(second_inclusion_indicator))
-            model.update()
             if timeout_seconds is not None:
                 model.Params.timelimit = timeout_seconds
             if verbose:
@@ -816,7 +813,7 @@ def find_attractors_onestage_enumeration(G, max_len=None, verbose=False, simplif
     model.Params.timelimit = timeout_seconds
 
     model.optimize()
-    model.update()
+    # model.update()
     # model.write("./model_mip_start.mst") # that just write sthe final solution as a MIP start...
 
     # ilp.print_opt_solution(model)
@@ -1201,7 +1198,6 @@ def vertex_degeneracy_scores(G, current_attractors, relative=False, verbose=True
                 invalidity_indicator = ilp.add_indicator_for_attractor_invalidity(
                                         model, G, attractor, vertices_f_vars, "invalidated_attractors")
                 model.addConstr(invalidity_indicator == 0, name="validity_constraint_attractor_{}".format(i))
-            model.update()
 
             # print("time taken to build model: {:.2f}".format(time.time() - start))
             start = time.time()
@@ -1354,7 +1350,7 @@ def find_num_steady_states(G, verbose=False, simplify_general_boolean=False):
     # ilp.print_model_constraints(model)
     start = time.time()
     model.optimize()
-    model.update()
+    # model.update()
 
     # ilp.print_opt_solution(model)
     # print(model)
@@ -1449,10 +1445,11 @@ def learn_model_from_experiment_agreement(G, experiments, relax_experiments, max
                     itertools.product((False, True), repeat=len(G.vertices[i].predecessors()))):
                 f_vars_dict[var_combination] = model.addVar(
                     vtype=gurobipy.GRB.BINARY, name="f_{}_{}".format(i, var_comb_index))
-            model.update()
 
             f = lambda *input_combination: f_vars_dict[input_combination]
             v_funcs[i] = f
+
+    model.update()
 
     # Expect (or require) experiments to belong to attractors
     for exp in range(len(experiments)):
@@ -1469,10 +1466,8 @@ def learn_model_from_experiment_agreement(G, experiments, relax_experiments, max
         else:
             objective += experiment_validity_indicator
             objective_terms += 1
-    model.update()
 
     model.setObjective(objective, sense=GRB.MAXIMIZE)
-    model.update()
     if not verbose:
         model.params.LogToConsole = 0
     if timeout_seconds is not None:

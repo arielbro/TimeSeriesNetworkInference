@@ -23,14 +23,12 @@ def recursive_logic_to_var(formula, model, formulas_to_variables):
         model.update()
         formulas_to_variables[formula] = new_var
         model.addGenConstrAnd(new_var, arg_vars)
-        model.update()
         return new_var
     elif formula.func == sympy.Or:
         new_var = model.addVar(vtype=gurobipy.GRB.BINARY)
         formulas_to_variables[formula] = new_var
         model.update()
         model.addGenConstrOr(new_var, arg_vars)
-        model.update()
         return new_var
     elif formula.func == sympy.Not:
         # some other constraints need an actual var.
@@ -38,7 +36,6 @@ def recursive_logic_to_var(formula, model, formulas_to_variables):
         formulas_to_variables[formula] = new_var
         model.update()
         model.addConstr(new_var == 1 - arg_vars[0])
-        model.update()
         return new_var
     elif formula.func == sympy.Implies:
         new_var = model.addVar(vtype=gurobipy.GRB.BINARY)
@@ -46,7 +43,6 @@ def recursive_logic_to_var(formula, model, formulas_to_variables):
         model.update()
         model.addConstr((new_var == 1) >> (arg_vars[1] >= arg_vars[0]))
         model.addConstr((new_var == 0) >> (arg_vars[1] == arg_vars[0] - 1))
-        model.update()
         return new_var
     elif formula.func == sympy.Equivalent:
         return recursive_logic_to_var((formula.args[0] >> formula.args[1]) & (formula.args[1] >> formula.args[0]),
@@ -207,7 +203,6 @@ def add_indicator_for_attractor_invalidity(model, graph, attractor, vertices_f_v
                     name="attractor_difference_indicator_{}_>".format(name_suffix))
     model.addConstr(indicator_var <= difference_sum,
                     name="attractor_difference_indicator_{}_<".format(name_suffix))
-    model.update()
     return indicator_var
 
 
@@ -465,7 +460,6 @@ def add_state_inclusion_indicator(model, first_state, second_state_set, slice_si
                         name="{}_inclusion_indicator_constraint_>=".format(prefix))
         model.addConstr(diff <= inclusion_indicator * len(second_state_set),
                         name="{}_inclusion_indicator_constraint_<=".format(prefix))
-        model.update()
 
     return inclusion_indicator
 
@@ -507,7 +501,6 @@ def add_path_to_model(G, model, path_len, first_state_vars, last_state_vars=None
             else:
                 add_truth_table_consistency_constraints(model, v_func, next_state_vars[i], predecessor_vars,
                                                         name_prefix="transient_path_step_{}vertex_{}".format(l, i))
-        model.update()
         previous_state_vars = next_state_vars
 
     # print("Time taken to add path constraints:{:.2f} seconds".format(time.time() - start))
@@ -594,7 +587,7 @@ def attractors_ilp_with_keys(G, max_len=None, max_num=None,
                     for var_comb_index, var_combination in enumerate(
                             itertools.product((False, True), repeat=len(G.vertices[i].predecessors()))):
                         find_model_f_vars.append(model.addVar(vtype=gurobipy.GRB.BINARY, name="f_{}_{}".format(i, var_comb_index)))
-                        model.update()
+                    model.update()
                 else:
                     find_model_f_vars = None
                 vertices_f_vars_list[i] = find_model_f_vars
@@ -717,7 +710,6 @@ def attractors_ilp_with_keys(G, max_len=None, max_num=None,
     # Constraint the number of active attractors using 2**#input_nodes, P as lower and upper bounds.
     # lower bound can only be used if the maximal theoretical attractor length is allowed.
     model.addConstr(sum(a_matrix[p, T] for p in range(P)) <= P, name="upper_objective_bound")
-    model.update()
 
     # print("Time taken for unique constraints preparation:{:.2f} seconds".format(time.time() - part_start))
 
@@ -785,10 +777,10 @@ def bitchange_attractor_ilp_with_keys(G, max_len=None, slice_size=15):
             for var_comb_index, var_combination in enumerate(
                     itertools.product((False, True), repeat=len(G.vertices[i].predecessors()))):
                 bitchange_var = model.addVar(vtype=gurobipy.GRB.BINARY, name="f_{}_{}".format(i, var_comb_index))
-                model.update()
                 vertex_bitchange_vars.append(bitchange_var)
                 all_functions_bitchange_vars.append(bitchange_var)
                 find_model_f_vars.append(1 - bitchange_var if G.vertices[i].function(*var_combination) else bitchange_var)
+            model.update()
             for t in range(T):
                 add_truth_table_consistency_constraints(model, G.vertices[i].function, v_matrix[i, t + 1],
                                                        predecessors_vars[i, t],
@@ -815,8 +807,6 @@ def bitchange_attractor_ilp_with_keys(G, max_len=None, slice_size=15):
                                                                name_prefix="simple>_{}".format(t))
         model.addConstr(strictly_larger_ind >= a_list[t],
                         name="simple_{}".format(t))
-
-    model.update()
 
     # print_model_constraints(model)
     # print(model)
