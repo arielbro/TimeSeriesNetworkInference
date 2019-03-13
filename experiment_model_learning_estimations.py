@@ -59,6 +59,7 @@ def perform_graph_learning_tests(G, node_measurement_prob=node_measurement_prob,
 
         # create experiment measurements
         graph_attractors = stochastic.estimate_attractors(G, n_walks=attractor_estimation_n_iter, with_basins=False)
+        # graph_attractors = attractors.find_attractors_dubrova(G, attractors.dubrova_path, mutate_input_nodes=True)
         if limit_experiments_to_short_attractors:
             graph_attractors = [att for att in graph_attractors if len(att) <= max_attractor_length]
             if len(graph_attractors) == 0:
