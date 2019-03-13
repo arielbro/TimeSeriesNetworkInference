@@ -504,10 +504,10 @@ def add_path_to_model(G, model, path_len, first_state_vars, last_state_vars=None
             if len(predecessor_vars) == 0:
                 model.addConstr(previous_state_vars[i] == next_state_vars[i],
                                 name="stable_constraint_{}_node_{}".format(l, i))
-                model.update()
             else:
                 add_truth_table_consistency_constraints(model, v_func, next_state_vars[i], predecessor_vars,
                                                         name_prefix="transient_path_step_{}vertex_{}".format(l, i))
+        model.update()
         previous_state_vars = next_state_vars
 
     # print("Time taken to add path constraints:{:.2f} seconds".format(time.time() - start))

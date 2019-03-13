@@ -19,19 +19,21 @@ import stat
 import platform
 
 attractor_estimation_n_iter = 500
-node_measurement_prob = 0.5
-n_bio_experiments = 10
+node_measurement_prob = 0.8
+n_bio_experiments = 50
 relax_experiments = False
-timeout_seconds = int(0.05 * 60 * 60)
+timeout_seconds = int(0.3 * 60 * 60)
 graph_parent_dir = "cellcollective_models"
-max_attractor_length = 1
+max_attractor_length = 5
 graph_size_filter = 10**6
-tests_per_graph = 2
+tests_per_graph = 1
+limit_experiments_to_short_attractors = False
 
 
 def perform_graph_learning_tests(G, node_measurement_prob=node_measurement_prob, n_experiments=n_bio_experiments,
                                  relax_experiments=relax_experiments, timeout_seconds=timeout_seconds,
-                                 max_attractor_length=max_attractor_length, tests_per_graph=tests_per_graph):
+                                 max_attractor_length=max_attractor_length, tests_per_graph=tests_per_graph,
+                                 limit_experiments_to_short_attractors=limit_experiments_to_short_attractors):
     """
     Given a model G, performs tests_per_graph tests, in each a random node's function is hidden, and a set
     of states in attractors are supplied to an ILP trying to find the function maximizing agreement with
@@ -57,6 +59,11 @@ def perform_graph_learning_tests(G, node_measurement_prob=node_measurement_prob,
 
         # create experiment measurements
         graph_attractors = stochastic.estimate_attractors(G, n_walks=attractor_estimation_n_iter, with_basins=False)
+        if limit_experiments_to_short_attractors:
+            graph_attractors = [att for att in graph_attractors if len(att) <= max_attractor_length]
+            if len(graph_attractors) == 0:
+                print "warning! No attractors for of suitable length found in graph. Experiments cannot reconstruct"
+                return 0, 0, 0
         attractor_states = list(itertools.chain.from_iterable(graph_attractors))
         experiments = []
         for _ in range(n_experiments):
@@ -97,6 +104,9 @@ def perform_graph_learning_tests(G, node_measurement_prob=node_measurement_prob,
 ModelLearningResult = namedtuple("ModelLearningResult", "graph_name size "
                                                     "n_inputs normalized_n_inputs "
                                                     "max_degree mean_degree "
+                                                    "node_measurement_prob n_bio_experiments "
+                                                    "relax_experiments max_attractor_length "
+                                                    "limit_experiments_to_short_attractors "
                                                     "average_model_similarity "
                                                     "average_experiment_agreement "
                                                     "average_test_time"
@@ -119,7 +129,7 @@ def main():
     # filter graphs
     tested_graphs = []
     graph_names = []
-    candidate_graph_names = os.listdir(graph_parent_dir)[:3] # TODO: remove debug slicing!
+    candidate_graph_names = os.listdir(graph_parent_dir)
     filter_start = time.time()
     for graph_dir in candidate_graph_names:
         try:
@@ -151,19 +161,23 @@ def main():
         normaliezd_n_inputs = n_inputs / float(size)
 
         result = ModelLearningResult(graph_name, size, n_inputs, normaliezd_n_inputs, max_degree, mean_degree,
+                                     node_measurement_prob, n_bio_experiments, relax_experiments, max_attractor_length,
                                      average_similarity, average_test_agreement, average_test_time)
         results.append(result)
         print "time taken for graph {}: {:.2f} secs".format(graph_name, time.time() - graph_start)
 
-    with open(output_path, 'wb') as csv_file:
-        writer = csv.writer(csv_file)
-        writer.writerow(["graph_name", "size", "n_inputs", "normalized_n_inputs", "max_degree", "mean_degree",
-                         "average_model_similarity", "average_experiment_agreement", "average_test_time"
-                         ])
-        for result in results:
-            if result is None:
-                continue
-            writer.writerow(result)
+        # Re-save results after each graph is tested.
+        with open(output_path, 'wb') as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(["graph_name", "size", "n_inputs", "normalized_n_inputs", "max_degree", "mean_degree",
+                             "node_measurement_prob", "n_bio_experiments", "relax_experiments", "max_attractor_length",
+                             "average_model_similarity", "average_experiment_agreement", "average_test_time",
+                             "limit_experiments_to_short_attractors"
+                             ])
+            for result in results:
+                if result is None:
+                    continue
+                writer.writerow(result)
 
 
 if __name__ == "__main__":

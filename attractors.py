@@ -1504,10 +1504,10 @@ def learn_model_from_experiment_agreement(G, experiments, relax_experiments, max
             input_names = [v.name for v in G.vertices[i].predecessors()]
             G.vertices[i].function = logic.BooleanSymbolicFunc(input_names=input_names, boolean_outputs=outputs)
 
-    print("printing constraints")
-    ilp.print_model_constraints(model)
-    print("printing values")
-    ilp.print_opt_solution(model)
+    # print("printing constraints")
+    # ilp.print_model_constraints(model)
+    # print("printing values")
+    # ilp.print_opt_solution(model)
 
     return G, (model.objVal / float(objective_terms))
 
