@@ -1388,8 +1388,130 @@ def find_num_steady_states(G, verbose=False, simplify_general_boolean=False):
         return n_steady_states
 
 
+def learn_model_from_experiment_agreement(G, experiments, relax_experiments, max_attractor_len, timeout_seconds=None,
+                                          key_slice_size=15, verbose=True):
+    """
+    Given a set of (partially measured) experiments and a full/partial/unknown model, completes the model
+    and the unobserved values in the experiments such that the experiments are as close as possible
+    representing states in attractors of the model.
+    Args:
+        G: A graph with a model composed on it. Model can be partial or entirely missing, represented as
+        nodes with a None function field.
+        experiments: a set of dictionaries mapping a subset of the indices of vertices in G to their
+        measured values. Index is 0 based. Vertices not represented (can vary between experiments) are
+        free to take any value.
+        relax_experiments: A bool, if true then each bit of the experiment is assigned a variable, and the
+        disagreement is the negative of the total number of bits in experiments that are changed subject
+        to all experiments being a state in the attractors. If false, then bits of the experiments are
+        constants, and the disagreement is the number of experiments that can not be placed in an attractor.
+        max_attractor_len: Represents the maximal number of states (including first state) to be considered in an
+        attractor. If 1, experiments are taken to be steady-states.
+        timeout_seconds: A timeout for the ILP solver, function fails with exception if timeout occurs.
+    Returns:
+        A copy of the graph a completed model, replacing the None functions of vertices.
+        The proportion of agreement with experiments, as a number in range [0,1]
+    """
+    start_time = time.time()
+    n = len(G.vertices)
+    G = G.copy()
+    model = gurobipy.Model()
+    objective = 0
+    objective_terms = 0
+    is_input = lambda i: len(G.vertices[i].predecessors()) == 0
 
-            # TODO: think about asynchronous model?
+    # assert input nodes appear in all experiments
+    for i in range(n):
+        if is_input(i):
+            assert all([i in experiment for experiment in experiments])
+
+    # Create experiment states, indexed by [experiment][node]
+    if relax_experiments:
+        experiment_states = [[model.addVar(vtype=gurobipy.GRB.BINARY, name="experiment_{}_node_{}".format(j, i))
+                            for i in range(n)] for j in range(len(experiments))]
+        for j, experiment in enumerate(experiments):
+            for i, val in experiment.items():
+                objective += experiment_states[j][i] if val else (1 - experiment_states[j][i])
+                objective_terms += 1
+    else:
+        experiment_states = [[experiment.get(i, model.addVar(vtype=gurobipy.GRB.BINARY,
+                                                           name="experiment_{}_node_{}".format(j, i)))
+                            for i in range(n)] for j, experiment in enumerate(experiments)]
+    model.update()
+
+    # Create model variables for missing functions.
+    v_funcs = [None] * n
+    for i in range(n):
+        if G.vertices[i].function is not None:
+            v_funcs[i] = G.vertices[i].function
+        elif len(G.vertices[i].predecessors()) > 0:
+            f_vars_dict = dict()
+            for var_comb_index, var_combination in enumerate(
+                    itertools.product((False, True), repeat=len(G.vertices[i].predecessors()))):
+                f_vars_dict[var_combination] = model.addVar(
+                    vtype=gurobipy.GRB.BINARY, name="f_{}_{}".format(i, var_comb_index))
+            model.update()
+
+            f = lambda *input_combination: f_vars_dict[input_combination]
+            v_funcs[i] = f
+
+    # Expect (or require) experiments to belong to attractors
+    for exp in range(len(experiments)):
+        attractor_states = ilp.add_path_to_model(G, model, max_attractor_len,
+                                                 experiment_states[exp],
+                                                 last_state_vars=None, v_funcs=v_funcs)
+        experiment_validity_indicator = ilp.add_state_inclusion_indicator(
+                                            model, experiment_states[exp],
+                                            attractor_states, slice_size=key_slice_size,
+                                            prefix="experiment_{}_state_inclusion".format(exp),
+                                            assume_uniqueness=False)
+        if relax_experiments:
+            model.addConstr(experiment_validity_indicator == 1, "experiment_{}_validity_enforcement".format(exp))
+        else:
+            objective += experiment_validity_indicator
+            objective_terms += 1
+    model.update()
+
+    model.setObjective(objective, sense=GRB.MAXIMIZE)
+    model.update()
+    if not verbose:
+        model.params.LogToConsole = 0
+    if timeout_seconds is not None:
+        model.Params.timelimit = timeout_seconds
+    model.optimize()
+    print("Time taken for ILP solve: {:.2f} (T={}, #experiments={})".format(time.time() - start_time,
+                                                                            max_attractor_len, len(experiments)))
+    if model.Status != gurobipy.GRB.OPTIMAL:
+        if model.Status == gurobipy.GRB.TIME_LIMIT:
+            raise TimeoutError("Gurobi timeout")
+        else:
+            print("writing IIS data to model_iis.ilp")
+            model.computeIIS()
+            model.write("model_iis.ilp")
+            model.write("model.mps")
+            raise ValueError("model not solved to optimality.")
+    # print(model.ObjVal)
+    # ilp.print_model_values(model)
+    # ilp.print_model_constraints(model)
+
+    # Update the model found
+    for i in range(len(G.vertices)):
+        if G.vertices[i].function is None and len(G.vertices[i].predecessors()) > 0:
+            outputs = []
+            cur_func = v_funcs[i]
+            for var_comb_index, var_combination in enumerate(
+                    itertools.product((False, True), repeat=len(G.vertices[i].predecessors()))):
+                outputs.append(cur_func(*var_combination).X)
+            input_names = [v.name for v in G.vertices[i].predecessors()]
+            G.vertices[i].function = logic.BooleanSymbolicFunc(input_names=input_names, boolean_outputs=outputs)
+
+    print("printing constraints")
+    ilp.print_model_constraints(model)
+    print("printing values")
+    ilp.print_opt_solution(model)
+
+    return G, (model.objVal / float(objective_terms))
+
+# TODO: think about asynchronous model?
 # TODO: problem size analysis.
 # TODO: measure and plot running time versus P, T and |V|
 # TODO: think/discuss implementing monotone symmetric functions in ILP without the long boolean logic version.

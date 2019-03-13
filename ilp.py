@@ -306,6 +306,8 @@ def add_truth_table_consistency_constraints(model, v_func, v_next_state_var, pre
     for var_comb_index, var_combination in enumerate(itertools.product((False, True), repeat=in_degree)):
         if find_model_f_vars is not None:
             desired_val = find_model_f_vars[var_comb_index]
+        elif isinstance(v_func(*var_combination), gurobipy.Var):
+            desired_val = v_func(*var_combination)
         else:
             desired_val = 1 if v_func(*var_combination) else 0  # == because sympy
         # this expression is |in_degree| iff their states agrees with var_combination
@@ -416,11 +418,13 @@ def add_simplified_consistency_constraints(model, v_func, v_next_state_var, pred
                         name="{}_<=".format(activity_part))
 
 
-def add_state_inclusion_indicator(model, first_state, second_state_set, slice_size, prefix=None):
+def add_state_inclusion_indicator(model, first_state, second_state_set, slice_size, prefix=None,
+                                  assume_uniqueness=True):
     """
     Adds and returns a binary indicator for whether one network state is included in a set of others.
     States should be either iterables of constant binary values (False/True/0/1), or model variables.
-    It is assumed that all states in second_state_set are unique
+    If assume_uniqueness, it is assumed that all states in second_state_set are unique, and might not
+    return a binary indicator otherwise.
     Indicator is created with use of state hashing and order indicators for state pairs.
     :param model:
     :param first_state:
@@ -444,18 +448,34 @@ def add_state_inclusion_indicator(model, first_state, second_state_set, slice_si
         indicator_sum += larger_var + smaller_var
         # print("indicator sum post: {}".format(indicator_sum))
     model.update()
+
     # We want an indicator for inclusion of first_state in the second state, which is equivalent to its equality
-    # with exactly one state there (since they're unique), or len(second_state_set) + 1 indicators with value 1.
-    # print("indicator sum - {}".format(indicator_sum))
-    inclusion_indicator = indicator_sum - len(second_state_set)
+    # with at least one state there (exactly one if they are unique), or at least len(second_state_set) + 1
+    # indicators with value 1.
+    diff = indicator_sum - len(second_state_set)
+    if assume_uniqueness:
+        # since each state admits one indicator with value 1, and at most one admits 2. So the difference is binary.
+        inclusion_indicator = diff
+    else:
+        # we want an indicator for whether diff > 0. Note that diff is in range [0, len(second_state_set)]
+        inclusion_indicator = model.addVar(vtype=gurobipy.GRB.BINARY,
+                                           name="{}_inclusion_indicator".format(prefix))
+        model.update()
+        model.addConstr(diff >= inclusion_indicator,
+                        name="{}_inclusion_indicator_constraint_>=".format(prefix))
+        model.addConstr(diff <= inclusion_indicator * len(second_state_set),
+                        name="{}_inclusion_indicator_constraint_<=".format(prefix))
+        model.update()
 
     return inclusion_indicator
 
 
-def add_path_to_model(G, model, path_len, first_state_vars, last_state_vars, v_funcs=None):
+def add_path_to_model(G, model, path_len, first_state_vars, last_state_vars=None, v_funcs=None):
     """
     Adds a path from first_state_vars to last_state_vars to the model, i.e. requires that last_state_vars
-    represents the state resulting after path_len time steps from first_state_vars
+    represents the state resulting after path_len time steps from first_state_vars.
+    Returns the state variables representing the path, excluding the first state and including the last state.
+    If last_state_vars is undefined, creates a new state for it, and return it with the rest.
     :param G:
     :param model:
     :param path_len:
@@ -469,14 +489,16 @@ def add_path_to_model(G, model, path_len, first_state_vars, last_state_vars, v_f
     assert path_len >= 1, "can't add path constraint with path of length {}".format(path_len)
 
     previous_state_vars = first_state_vars
+    new_state_vars_list = []
     for l in range(path_len):
-        next_state_vars = last_state_vars if l == path_len - 1 else [
+        next_state_vars = last_state_vars if ((last_state_vars is not None) and (l == path_len - 1)) else [
             model.addVar(vtype=gurobipy.GRB.BINARY, name="transient_path_state_var_{}_{}".format(l, i))
             for i in range(n)]
         model.update()
+        new_state_vars_list.append(next_state_vars)
 
         for i in range(n):
-            v_func = v_funcs[i] if v_funcs is not None else G.vertices[i].function
+            v_func = v_funcs[i] if (v_funcs is not None) and (v_funcs[i] is not None) else G.vertices[i].function
             predecessor_indices = [u.index for u in G.vertices[i].predecessors()]
             predecessor_vars = [previous_state_vars[index] for index in predecessor_indices]
             if len(predecessor_vars) == 0:
@@ -486,8 +508,10 @@ def add_path_to_model(G, model, path_len, first_state_vars, last_state_vars, v_f
             else:
                 add_truth_table_consistency_constraints(model, v_func, next_state_vars[i], predecessor_vars,
                                                         name_prefix="transient_path_step_{}vertex_{}".format(l, i))
+        previous_state_vars = next_state_vars
 
     # print("Time taken to add path constraints:{:.2f} seconds".format(time.time() - start))
+    return new_state_vars_list
 
 
 # noinspection PyArgumentList
