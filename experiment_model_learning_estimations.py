@@ -25,7 +25,7 @@ relax_experiments = False
 timeout_seconds = int(0.3 * 60 * 60)
 graph_parent_dir = "cellcollective_models"
 max_attractor_length = 5
-graph_size_filter = 10**6
+graph_size_filter = 60
 tests_per_graph = 1
 limit_experiments_to_short_attractors = False
 
@@ -162,7 +162,7 @@ def main():
 
         result = ModelLearningResult(graph_name, size, n_inputs, normaliezd_n_inputs, max_degree, mean_degree,
                                      node_measurement_prob, n_bio_experiments, relax_experiments, max_attractor_length,
-                                     average_similarity, average_test_agreement, average_test_time)
+                                     limit_experiments_to_short_attractors, average_similarity, average_test_agreement, average_test_time)
         results.append(result)
         print "time taken for graph {}: {:.2f} secs".format(graph_name, time.time() - graph_start)
 
