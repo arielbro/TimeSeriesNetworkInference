@@ -1504,7 +1504,7 @@ def learn_model_from_experiment_agreement(G, experiments, relax_experiments, max
     # print("printing values")
     # ilp.print_opt_solution(model)
 
-    return G, (model.objVal / float(objective_terms))
+    return G, (model.objVal / float(objective_terms)), model.Runtime
 
 # TODO: think about asynchronous model?
 # TODO: problem size analysis.
