@@ -90,7 +90,7 @@ def perform_graph_learning_tests(G, node_measurement_prob=node_measurement_prob,
         ilp_start = time.time()
         G_found, agreement, solve_time = attractors.learn_model_from_experiment_agreement(
             G_hidden, experiments, relax_experiments,
-            max_attractor_length, timeout_seconds, allow_suboptimal)
+            max_attractor_length, timeout_seconds, allow_suboptimal=allow_suboptimal)
         solve_times.append(solve_time)
         ilp_times.append(time.time() - ilp_start)
         model_similarity = 0
