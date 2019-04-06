@@ -20,14 +20,15 @@ import platform
 
 attractor_estimation_n_iter = 100
 node_measurement_prob = 0.8
-n_bio_experiments = 10
+n_bio_experiments = 50
 relax_experiments = False
-timeout_seconds = int(0.3 * 60 * 60)
+timeout_seconds = int(0.8 * 60 * 60)
 graph_parent_dir = "cellcollective_models"
-max_attractor_length = 3
+max_attractor_length = 5
 graph_size_filter = 50
-tests_per_graph = 5
+tests_per_graph = 20
 limit_experiments_to_short_attractors = False
+allow_suboptimal = True
 
 
 def perform_graph_learning_tests(G, node_measurement_prob=node_measurement_prob, n_experiments=n_bio_experiments,
@@ -89,7 +90,7 @@ def perform_graph_learning_tests(G, node_measurement_prob=node_measurement_prob,
         ilp_start = time.time()
         G_found, agreement, solve_time = attractors.learn_model_from_experiment_agreement(
             G_hidden, experiments, relax_experiments,
-            max_attractor_length, timeout_seconds)
+            max_attractor_length, timeout_seconds, allow_suboptimal)
         solve_times.append(solve_time)
         ilp_times.append(time.time() - ilp_start)
         model_similarity = 0

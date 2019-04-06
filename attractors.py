@@ -1385,7 +1385,7 @@ def find_num_steady_states(G, verbose=False, simplify_general_boolean=False):
 
 
 def learn_model_from_experiment_agreement(G, experiments, relax_experiments, max_attractor_len, timeout_seconds=None,
-                                          key_slice_size=15, verbose=True):
+                                          key_slice_size=15, verbose=True, allow_suboptimal=False):
     """
     Given a set of (partially measured) experiments and a full/partial/unknown model, completes the model
     and the unobserved values in the experiments such that the experiments are as close as possible
@@ -1476,7 +1476,7 @@ def learn_model_from_experiment_agreement(G, experiments, relax_experiments, max
     print("Time taken for ILP solve: {:.2f} (T={}, #experiments={})".format(time.time() - start_time,
                                                                             max_attractor_len, len(experiments)))
     if model.Status != gurobipy.GRB.OPTIMAL:
-        if model.Status == gurobipy.GRB.TIME_LIMIT:
+        if model.Status == gurobipy.GRB.TIME_LIMIT and not allow_suboptimal:
             raise TimeoutError("Gurobi timeout")
         else:
             print("writing IIS data to model_iis.ilp")
