@@ -1476,8 +1476,11 @@ def learn_model_from_experiment_agreement(G, experiments, relax_experiments, max
     print("Time taken for ILP solve: {:.2f} (T={}, #experiments={})".format(time.time() - start_time,
                                                                             max_attractor_len, len(experiments)))
     if model.Status != gurobipy.GRB.OPTIMAL:
-        if model.Status == gurobipy.GRB.TIME_LIMIT and not allow_suboptimal:
-            raise TimeoutError("Gurobi timeout")
+        if model.Status == gurobipy.GRB.TIME_LIMIT:
+            if allow_suboptimal:
+                print "Warning: Gurobi timeout, suboptimal result for model learning"
+            else:
+                raise TimeoutError("Gurobi timeout")
         else:
             print("writing IIS data to model_iis.ilp")
             model.computeIIS()
