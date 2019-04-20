@@ -9,11 +9,11 @@ import random
 
 class BooleanSymbolicFunc:
     def __init__(self, input_names=None, boolean_outputs=None, formula=None, simplify_boolean_outputs=False):
-        self.boolean_outputs = boolean_outputs  # for easy exporting of truth-tables
+        self._boolean_outputs = boolean_outputs  # for easy exporting of truth-tables
 
         if formula is not None:
-            self.formula = formula
             self.input_vars = sorted(formula.free_symbols, key=lambda x: x.name)
+            self.formula = formula
             return
 
         if len(input_names) != math.frexp(len(boolean_outputs))[1] - 1:
@@ -30,20 +30,42 @@ class BooleanSymbolicFunc:
         # TODO: Karnaugh maps? Sympy simplification?
         positive_row_clauses = [sympy.And(*terms) for b_output, terms in zip(
             boolean_outputs, itertools.product(*[[~var, var] for var in boolean_inputs])) if b_output]
-        self.formula = sympy.Or(*positive_row_clauses)
+        self._formula = sympy.Or(*positive_row_clauses)
         if simplify_boolean_outputs:
             start = time.time()
-            self.formula = sympy.simplify(self.formula)
+            self._formula = sympy.simplify(self.formula)
+        self._lambdified_formula = sympy.lambdify(self.input_vars, self.formula, "numpy")
 
-    def get_truth_table_outputs(self):
-        if self.boolean_outputs is not None:
-            return self.boolean_outputs
-        return [self(*row) for row in itertools.product([False, True], repeat=len(self.input_vars))]
+    @property
+    def boolean_outputs(self):
+        if self._boolean_outputs is None:
+            self._boolean_outputs = tuple(self(*row) for row in itertools.product([False, True],
+                                                                                  repeat=len(self.input_vars)))
+        return self._boolean_outputs
+
+    @property
+    def formula(self):
+        return self._formula
+
+    @formula.setter
+    def formula(self, value):
+        self._boolean_outputs = None
+        self._formula = value
+        # print "set formula value: {}".format(value)
+        # print "formula type: {}".format(type(value))
+        if isinstance(value, sympy.Expr):
+            # print "set lambdified formula"
+            self._lambdified_formula = sympy.lambdify(self.input_vars, self.formula, modules=[])
 
     def __call__(self, *input_values):
         if isinstance(self.formula, bool) or (len(self.input_vars) == 0):
             return self.formula
-        return self.formula.subs(zip(self.input_vars, input_values))
+        # print self.formula
+        # print type(self.formula)
+        if self.formula is not None:
+            return self._lambdified_formula(*input_values)
+        else:
+            return self.boolean_outputs[sum(2**i * val for i, val in range(len(input_values)))]
 
     def __str__(self):
         return " " + str(self.formula)
@@ -60,6 +82,8 @@ class BooleanSymbolicFunc:
                 return bool(self.formula) == bool(other)
             else:
                 return False
+        if isinstance(other, BooleanSymbolicFunc):
+            return self.boolean_outputs == other.boolean_outputs
         try:
             for input_comb in itertools.product([False, True], repeat=len(self.input_vars)):
                 if self(*input_comb) != other(*input_comb):
@@ -69,10 +93,7 @@ class BooleanSymbolicFunc:
         return True
 
     def __hash__(self):
-        output_string = ""
-        for input_comb in itertools.product([False, True], repeat=len(self.input_vars)):
-            output_string += "1" if self(*input_comb) == True else "0"
-        return hash(output_string)
+        return hash(self.boolean_outputs)
 
     def __ne__(self, other):
         return not self == other
@@ -322,10 +343,10 @@ def perturb_line(f, line_indices, return_symbolic=False, n_inputs=None):
             original_outputs = f.boolean_outputs
         else:
             original_outputs = [f(*args) for args in itertools.product([False, True], repeat=n_inputs)]
-        truth_table_row_indices = random.sample(list(range(2 ** n_inputs)), bits_of_change)
         boolean_outputs = list(original_outputs)
-        for index in truth_table_row_indices:
+        for index in line_indices:
             boolean_outputs[index] = 1 - bool(boolean_outputs[index])  # to work with sympy's logic
-        v.function = logic.BooleanSymbolicFunc(input_names=[u.name for u in v.predecessors()],
+        input_names = [x.name for x in f.input_vars] if isinstance(f, BooleanSymbolicFunc) else \
+            ["var_{}".format(i) for i in range(n_inputs)]
+        return BooleanSymbolicFunc(input_names=input_names,
                                                boolean_outputs=boolean_outputs)
-

@@ -42,8 +42,10 @@ class Network:
 
     def get_vertex(self, name):
         matches = [vertex for vertex in self.vertices if vertex.name == name]
-
-        assert len(matches) == 1
+        if len(matches) == 0:
+            raise ValueError("Error: no matches found for vertex name {}".format(name))
+        elif len(matches) > 1:
+            raise ValueError("Error: more than one match foud for vertex name {} ({} found)".format(name, len(matches)))
         return matches[0]
 
     def __len__(self):
@@ -64,7 +66,7 @@ class Network:
     def __repr__(self):
         return str(self)
 
-    def __eq__(self, other):  # TODO: improve from name based matching?
+    def __eq__(self, other):
         """
         Checks equality between two networks.
         Networks are equal if they have the same vertex names, the same edges between vertices,
@@ -116,7 +118,7 @@ class Network:
             in_neighbors = v.predecessors()
             if isinstance(v.function, BooleanSymbolicFunc):
                 v.function = BooleanSymbolicFunc(input_names=[neighbor.name for neighbor in in_neighbors],
-                                                 boolean_outputs=v.function.get_truth_table_outputs())
+                                                 boolean_outputs=v.function.boolean_outputs)
 
     def randomize_incoming_edges(self, include_self_loops=False):
         """
@@ -142,9 +144,10 @@ class Network:
             new_edges.extend([(neighbor, v) for neighbor in in_neighbors])
 
             # BooleanSymbolicFunctions hold input names, so we need to recreate them
+            # TODO: support formula based BooleanSymbolicFunc.
             if isinstance(v.function, BooleanSymbolicFunc):
                 v.function = BooleanSymbolicFunc(input_names=[neighbor.name for neighbor in in_neighbors],
-                                                 boolean_outputs=v.function.get_truth_table_outputs())
+                                                 boolean_outputs=v.function.boolean_outputs)
 
         self.edges = new_edges
 
@@ -224,6 +227,45 @@ class Network:
         union_functions = [v.function for v in sorted_a_vertices] + [v.function for v in sorted_b_vertices]
         return Network(vertex_names=union_vertex_names, edges=union_edges, vertex_functions=union_functions)
 
+    def remove_node_dependency(self, node):
+        """
+        Removes any edge of the form (node, other) from the graph, and removes the Boolean dependency of other nodes
+        on it - Assuming a Boolean rule of other is given as DNF, replaces node and ~node with
+        True.
+        Currently only implemented for others with a BooleanSymbolicFunction with a sympy formula given in DNF.
+        :param node:
+        :return:
+        """
+        assert node in self.vertices
+        others = [v for v in self.vertices if (node, v) in self.edges]
+        for other in others:
+            self.remove_edge_dependency((node, other))
+
+    def remove_edge_dependency(self, edge):
+        """
+        Removes the given edge from the graph, and removes the Boolean dependency of the target node
+        on the source node - Assuming a Boolean rule of (u, v) is given as DNF, replaces u and ~u with
+        True.
+        Currently only implemented for v with a BooleanSymbolicFunction with a sympy formula given in DNF.
+        :param edge: a pair of nodes
+        :return:
+        """
+        u, v = edge
+        assert (u in self.vertices) and (v in self.vertices)
+        assert isinstance(v.function, logic.BooleanSymbolicFunc) and (v.function.formula is not None)
+        assert edge in self.edges
+        self.edges.remove(edge)
+        v.precomputed_predecessors = None
+        u.precomputed_successors = None
+
+        if len(v.predecessors()) == 0:
+            v.function = None
+            return
+
+        v.function.formula = v.function.formula.replace(u.name, True)
+        v.function.formula = v.function.formula.replace("~" + u.name, True)
+        v.function.boolean_outputs = None
+
     # TODO: generate scale-free graphs
     @staticmethod
     def generate_random(n_vertices, indegree_bounds=(1, 5), function_type_restriction=FunctionTypeRestriction.NONE,
@@ -278,7 +320,7 @@ class Network:
                     # Assumption - v.function inputs are ordered by index (not e.g. name).
                     rows = list(itertools.product([False, True], repeat=len(v.predecessors())))
                     if isinstance(v.function, BooleanSymbolicFunc):
-                        row_outputs = v.function.get_truth_table_outputs()
+                        row_outputs = v.function.boolean_outputs
                     else:
                         row_outputs = [v.function(*row) for row in rows]
                     for row, out in zip(rows, row_outputs):
@@ -588,11 +630,13 @@ class Vertex:
         if len(self.predecessors()) == 0:
             if callable(self.function):
                 return self.name, self.function()
-            elif self.function in (False, True, sympy.false, sympy.true, 0 ,1):
-                return bool(self.function)
+            elif self.function in (False, True, sympy.false, sympy.true, 0, 1):
+                return self.name, bool(self.function)
             else:
                 raise ValueError("An input node should not have a non function, "
                                  "non boolean and non None function field.")
+        if isinstance(self.function, BooleanSymbolicFunc):
+            outputs = self.function.boolean_outputs
         outputs = tuple(self.function(*row) for row in itertools.product([False, True],
                                                                          repeat=len(self.predecessors())))
         return self.name, outputs

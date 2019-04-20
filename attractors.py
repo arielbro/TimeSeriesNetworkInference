@@ -315,6 +315,7 @@ def single_model_bitchange_experiment(G, perturbed_lines_dict, current_attractor
 
     return score
 
+
 def stochastic_graph_model_impact_score(G, current_attractors, n_iter=100,
                                         use_dubrova=False,
                                         cur_dubrova_path=dubrova_path,
@@ -352,6 +353,18 @@ def stochastic_graph_model_impact_score(G, current_attractors, n_iter=100,
         perturbed_lines_dicts = [utility.choose_k_bits_from_vertex_functions(degrees, bits_of_change) for _ in
                                  range(n_iter)]
         # pool = multiprocessing.Pool(processes=parallel_n_jobs)
+        pool = Pool(parallel_n_jobs)
+        for v in G.vertices:
+            v.function._lambdified_formula = None
+        for v in G.vertices:
+            v.function = None
+            v._function = None
+        G  = 3
+        print G
+        temp = pool.map(None, [G, G])
+        pool.close()
+        pool.join()
+
         pool = Pool(parallel_n_jobs)
 
         score_list = pool.map(single_model_bitchange_experiment_wrapper,
@@ -485,9 +498,6 @@ def find_model_bitchange_probability_for_different_attractors(G, n_iter=100, use
             else:
                 v.function.formula = sympy.Or(v.function.formula, truth_table_row_expression)
             truth_table_row_index = sum(2**i for i, val in enumerate(truth_table_row))
-            if v.function.boolean_outputs is not None:
-                v.function.boolean_outputs[truth_table_row_index] = \
-                    not v.function.boolean_outputs[truth_table_row_index]
         elif isinstance(v.function, logic.SymmetricThresholdFunction):
             raise NotImplementedError("can't do a bitchange for a SymmetricThresholdFunction")
         elif callable(v.function):
