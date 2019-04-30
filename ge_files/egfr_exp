@@ -1,0 +1,35 @@
+#activated ligands/inhibited proteins | readouts
+| | akt 0 creb 0 erk12 0 gsk3 1 hsp27 0 jnk 0 mek12 0 p38 0 p70s6_1 0 p90rsk 0 stat3 0 # # 
+mek12 0 | | akt 0 creb 0 erk12 0 gsk3 1 hsp27 0 jnk 0 mek12 0 p38 0 p70s6_1 0 p90rsk 0 stat3 0 # #
+p38 0 | | akt 0 creb 0 erk12 0 gsk3 1 hsp27 0 jnk 0 mek12 0 p38 0 p70s6_1 0 p90rsk 0 stat3 0 # #
+pi3k 0 | | akt 0 creb 0 erk12 0 gsk3 1 hsp27 0 jnk 0 mek12 0 p38 0 p70s6_1 0 p90rsk 0 stat3 0 # #
+mtor_rap 0 | | akt 0 creb 0 erk12 0 gsk3 1 hsp27 0 jnk 1 mek12 0 p38 0 p70s6_1 0 p90rsk 0 stat3 0 # #
+gsk3 0 | | akt 0 creb 0 erk12 0 gsk3 0 hsp27 0 jnk 0 mek12 0 p38 0 p70s6_1 0 p90rsk 0 stat3 0 # #
+jnk 0 | | akt 0 creb 0 erk12 0 gsk3 1 hsp27 0 jnk 0 mek12 0 p38 0 p70s6_1 0 p90rsk 0 stat3 0 # #
+tgfa 1 | | akt 1 creb 1 erk12 1 gsk3 0 hsp27 0 jnk 1 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+tgfa 1 mek12 0 | | akt 1 creb 1 erk12 0 gsk3 0 hsp27 0 jnk 1 mek12 0 p38 1 p70s6_1 1 p90rsk 0 stat3 0 # #
+tgfa 1 p38 0 | | akt 1 creb 1 erk12 1 gsk3 0 hsp27 0 jnk 1 mek12 1 p38 0 p70s6_1 1 p90rsk 1 stat3 0 # #
+tgfa 1 pi3k 0 | | akt 0 creb 1 erk12 1 gsk3 0 hsp27 0 jnk 1 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+tgfa 1 mtor_rap 0 | | akt 1 creb 1 erk12 1 gsk3 0 hsp27 1 jnk 1 mek12 1 p38 0 p70s6_1 1 p90rsk 1 stat3 0 # #
+tgfa 1 gsk3 0 | | akt 1 creb 1 erk12 1 gsk3 0 hsp27 0 jnk 1 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+tgfa 1 jnk 0 | | akt 1 creb 1 erk12 1 gsk3 0 hsp27 0 jnk 0 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+egf 1 | | akt 1 creb 1 erk12 1 gsk3 0 hsp27 0 jnk 1 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+egf 1 pi3k 0 | | akt 0 creb 1 erk12 1 gsk3 0 hsp27 0 jnk 1 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+nrg1a 1 | | akt 1 creb 0 erk12 1 gsk3 0 hsp27 0 jnk 1 mek12 0 p38 0 p70s6_1 1 p90rsk 1 stat3 0 # #
+nrg1a 1 pi3k 0 | | akt 0 creb 0 erk12 1 gsk3 0 hsp27 0 jnk 0 mek12 0 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+egf 1 nrg1a 1 | | akt 1 creb 1 erk12 1 gsk3 0 hsp27 0 jnk 1 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+egf 1 nrg1a 1 pi3k 0 | | akt 1 creb 1 erk12 1 gsk3 0 hsp27 0 jnk 1 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+ar 1 | | akt 0 creb 0 erk12 0 gsk3 1 hsp27 0 jnk 0 mek12 0 p38 0 p70s6_1 0 p90rsk 0 stat3 0 # #
+ar 1 pi3k 0 | | akt 0 creb 0 erk12 0 gsk3 1 hsp27 0 jnk 0 mek12 0 p38 0 p70s6_1 1 p90rsk 0 stat3 0 # #
+ar 1 egf 1 | | akt 1 creb 1 erk12 1 gsk3 0 hsp27 0 jnk 1 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+ar 1 egf 1 pi3k 0 | | akt 0 creb 1 erk12 1 gsk3 0 hsp27 0 jnk 1 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+epr 1 | | akt 1 creb 0 erk12 1 gsk3 1 hsp27 0 jnk 0 mek12 0 p38 0 p70s6_1 1 p90rsk 1 stat3 0 # #
+epr 1 pi3k 0 | | akt 0 creb 1 erk12 1 gsk3 0 hsp27 0 jnk 0 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+egf 1 tgfa 1 | | akt 1 creb 1 erk12 1 gsk3 1 hsp27 0 jnk 1 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+egf 1 tgfa 1 pi3k 0 | | akt 0 creb 1 erk12 1 gsk3 0 hsp27 0 jnk 1 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+nrg1a 1 tgfa 1 | | akt 1 creb 1 erk12 1 gsk3 0 hsp27 0 jnk 1 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+nrg1a 1 tgfa 1 pi3k 0 | | akt 1 creb 1 erk12 1 gsk3 0 hsp27 0 jnk 1 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+epr 1 tgfa 1 | | akt 1 creb 1 erk12 1 gsk3 1 hsp27 0 jnk 1 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+epr 1 tgfa 1 pi3k 0 | | akt 0 creb 1 erk12 1 gsk3 0 hsp27 0 jnk 1 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+egf 1 nrg1a 1 ar 1 epr 1 tgfa 1 | | akt 1 creb 1 erk12 1 gsk3 0 hsp27 0 jnk 1 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
+egf 1 nrg1a 1 ar 1 epr 1 tgfa 1 pi3k 0 | | akt 1 creb 1 erk12 1 gsk3 0 hsp27 0 jnk 1 mek12 1 p38 1 p70s6_1 1 p90rsk 1 stat3 0 # #
