@@ -7,6 +7,7 @@ import graphs
 import logic
 import sympy
 import networkx
+import os
 
 
 def to_acyclic(G, cycle_edges):
@@ -19,6 +20,8 @@ def to_acyclic(G, cycle_edges):
     """
     G_copy = G.copy()
     for edge in cycle_edges:
+        # edge actually belongs to the original graph, get the corresponding edge by names
+        edge = G_copy.get_vertex(edge[0].name), G_copy.get_vertex(edge[1].name)
         G_copy.remove_edge_dependency(edge)
     return G_copy
 
@@ -50,6 +53,7 @@ removed_edges.append((IL1_cyclic.get_vertex("nfkb"), IL1_cyclic.get_vertex("ros"
 
 IL1_acyclic = to_acyclic(IL1_cyclic, removed_edges)
 networks["IL1_acyclic"] = IL1_acyclic
+networks["IL1_cyclic"] = IL1_cyclic
 
 """
 IL-6
@@ -63,7 +67,6 @@ edges = [(u.name, v.name) if v.name != "gp130s" else (u.name, "gp130m") for (u, 
 correction_dict = {"gp130s": None, "gp130m": IL6_cyclic.get_vertex("gp130s").function}
 functions = [v.function if v.name not in correction_dict else correction_dict[v.name] for v in IL6_cyclic.vertices]
 IL6_cyclic = graphs.Network(vertex_names, edges, functions)
-networks["IL6_cyclic"] = IL6_cyclic
 
 # Create the acyclic version - some nodes need to be made inputs, other need to have some inputs removed.
 # See justification for the modifications in figure 2 of
@@ -78,6 +81,7 @@ removed_edges.append((IL6_cyclic.get_vertex("socs3"), IL6_cyclic.get_vertex("shp
 removed_edges.append((IL6_cyclic.get_vertex("socs1"), IL6_cyclic.get_vertex("vav")))
 
 IL6_acyclic = to_acyclic(IL6_cyclic, removed_edges)
+networks["IL6_cyclic"] = IL6_cyclic
 networks["IL6_acyclic"] = IL6_acyclic
 
 """
@@ -95,28 +99,17 @@ networks["EGFR_cyclic"] = egfr_cyclic
 # "The Logic of EGFR/ErbB Signaling: Theoretical Properties and Analysis of High-Throughput Data"
 late_nodes_list = [egfr_cyclic.get_vertex("aktd"), egfr_cyclic.get_vertex("endocyt_degrad"),
                    egfr_cyclic.get_vertex("shp1d"), egfr_cyclic.get_vertex("p90rskerk12d")]
-print "late nodes done"
 removed_edges = []
-for u, v in egfr_cyclic.edges:
-    print u, v
-    print len(u.predecessors())
-    if u in late_nodes_list:
-        print "u in there"
+for u in late_nodes_list:
+    for v in u.successors():
         removed_edges.append((u, v))
-    print "check done"
-removed_edges = [(u, v) for (u, v) in egfr_cyclic.edges if u in late_nodes_list]
-print "removed edge"
 removed_edges.append((egfr_cyclic.get_vertex("ptend"), egfr_cyclic.get_vertex("pip3")))
-print "removed edge"
 removed_edges.append((egfr_cyclic.get_vertex("ship2d"), egfr_cyclic.get_vertex("pip3")))
-print "removed edge"
 removed_edges.append((egfr_cyclic.get_vertex("ptend"), egfr_cyclic.get_vertex("pi34p2")))
-print "removed edge"
 removed_edges.append((egfr_cyclic.get_vertex("pip3"), egfr_cyclic.get_vertex("gab1")))
-print "removed edge"
 
 egfr_acyclic = to_acyclic(egfr_cyclic, removed_edges)
-print "acyclic now"
+networks["EGFR_cyclic"] = egfr_cyclic
 networks["EGFR_acyclic"] = egfr_acyclic
 
 print "running tests"
@@ -142,8 +135,13 @@ for name, G in networks.items():
     else:
         raise ValueError("unfamiliar graph name pattern")
 
-print "exporting"
-
 for name, G in networks.items():
     print "exporting {}".format(name)
     graphs.Network.export_to_boolean_tables(G, "cyclic_acyclic_models", name)
+
+print "testing export"
+for name, G in networks.items():
+    print "importing {}".format(name)
+    imported_graph = graphs.Network.parse_boolean_tables(os.path.join("cyclic_acyclic_models", name))
+    assert G == imported_graph
+

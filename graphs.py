@@ -11,6 +11,7 @@ import csv
 
 from logic import BooleanSymbolicFunc, SymmetricThresholdFunction
 from utility import list_repr
+import copy
 
 
 class FunctionTypeRestriction(Enum):
@@ -19,7 +20,7 @@ class FunctionTypeRestriction(Enum):
     SIMPLE_GATES = 3
 
 
-class Network:
+class Network(object):
     def __init__(self, vertex_names=None, edges=None, vertex_functions=None):
         assert vertex_names
         assert len(set(vertex_names)) == len(vertex_names)
@@ -262,9 +263,9 @@ class Network:
             v.function = None
             return
 
-        v.function.formula = v.function.formula.replace(u.name, True)
-        v.function.formula = v.function.formula.replace("~" + u.name, True)
-        v.function.boolean_outputs = None
+        v.function.input_vars = [s for s in v.function.input_vars if s.name != u.name]
+        v.function.formula = logic.expression_without_variable(u.name, v.function.formula)
+        pass
 
     # TODO: generate scale-free graphs
     @staticmethod
@@ -425,8 +426,24 @@ class Network:
         :param model_name:
         :return:
         """
-        os.mkdir(os.path.join(base_path, model_name))
-        open(os.path.join(base_path, model_name, "external_components.ALL.txt"), 'a').close()
+        #  make directory if needed
+        try:
+            os.mkdir(os.path.join(base_path, model_name))
+        except OSError:
+            pass
+        # clear directory if needed
+        for file in os.listdir(os.path.join(base_path, model_name)):
+            file_path = os.path.join(base_path, model_name, file)
+            try:
+                if os.path.isfile(file_path):
+                    os.unlink(file_path)
+            except OSError:
+                pass
+
+        with open(os.path.join(base_path, model_name, "external_components.ALL.txt"), 'w') as inputs_file:
+            for u in self.vertices:
+                if len(u.predecessors()) == 0:
+                    inputs_file.writelines([u.name for u in self.vertices if len(u.predecessors()) == 0])
 
         # create name mapping
         row_tuples = [(v.index + 1, v.name) for v in self.vertices]
@@ -437,6 +454,8 @@ class Network:
 
         # write truth tables
         for v in self.vertices:
+            if len(v.predecessors()) == 0:
+                continue
             row_tuples = [tup + (int(bool(v.function(*tup))),) for tup in itertools.product(
                 [0, 1], repeat=len(v.predecessors()))]
             with open(os.path.join(base_path, model_name, "{}.csv".format(v.index + 1)), 'w') as table_file:
@@ -467,7 +486,7 @@ class Network:
             # print(v_index, v_name)
             truth_table_path = os.path.join(path, "{}.csv".format(v_index))
             if not os.path.exists(truth_table_path):
-                # an external species. For us this eans input node.
+                # an external species. For us this means input node.
                 functions.append(None)
             else:
                 with(open(truth_table_path, 'r')) as truth_table_file:
@@ -542,11 +561,11 @@ class Network:
 
     def copy(self):
         """
-        returns a copy of self, assuming functions are immutable.
+        returns a copy of self, assuming functions can be copied by the copy library.
         :return:
         """
         return Network(vertex_names=[v.name for v in self.vertices], edges=[(u.name, v.name) for (u, v) in self.edges],
-                       vertex_functions=[v.function for v in self.vertices])
+                       vertex_functions=[copy.copy(v.function) for v in self.vertices])
 
     def __mul__(self, other):
         """
@@ -598,7 +617,7 @@ class Network:
             return self * ((self * self) ** ((power - 1) /2))
 
 
-class Vertex:
+class Vertex(object):
     def __init__(self, graph, name, func, index=None):
         self.graph = graph
         self.name = name
@@ -637,8 +656,9 @@ class Vertex:
                                  "non boolean and non None function field.")
         if isinstance(self.function, BooleanSymbolicFunc):
             outputs = self.function.boolean_outputs
-        outputs = tuple(self.function(*row) for row in itertools.product([False, True],
-                                                                         repeat=len(self.predecessors())))
+        else:
+            outputs = tuple(self.function(*row) for row in itertools.product([False, True],
+                                                                             repeat=len(self.predecessors())))
         return self.name, outputs
 
     def __eq__(self, other):

@@ -1416,6 +1416,7 @@ def learn_model_from_experiment_agreement(G, experiments, relax_experiments, max
     Returns:
         A copy of the graph a completed model, replacing the None functions of vertices.
         The proportion of agreement with experiments, as a number in range [0,1]
+        The time took for the ILP model to optimize.
     """
     start_time = time.time()
     n = len(G.vertices)
@@ -1423,12 +1424,12 @@ def learn_model_from_experiment_agreement(G, experiments, relax_experiments, max
     model = gurobipy.Model()
     objective = 0
     objective_terms = 0
-    is_input = lambda i: len(G.vertices[i].predecessors()) == 0
-
-    # assert input nodes appear in all experiments
-    for i in range(n):
-        if is_input(i):
-            assert all([i in experiment for experiment in experiments])
+    # is_input = lambda i: len(G.vertices[i].predecessors()) == 0
+    #
+    # # assert input nodes appear in all experiments
+    # for i in range(n):
+    #     if is_input(i):
+    #         assert all([i in experiment for experiment in experiments])
 
     # Create experiment states, indexed by [experiment][node]
     if relax_experiments:
@@ -1445,10 +1446,10 @@ def learn_model_from_experiment_agreement(G, experiments, relax_experiments, max
     model.update()
 
     # Create model variables for missing functions.
-    v_funcs = [None] * n
+    v_funcs = []
     for i in range(n):
         if G.vertices[i].function is not None:
-            v_funcs[i] = G.vertices[i].function
+            v_funcs.append(G.vertices[i].function)
         elif len(G.vertices[i].predecessors()) > 0:
             f_vars_dict = dict()
             for var_comb_index, var_combination in enumerate(
@@ -1456,9 +1457,13 @@ def learn_model_from_experiment_agreement(G, experiments, relax_experiments, max
                 f_vars_dict[var_combination] = model.addVar(
                     vtype=gurobipy.GRB.BINARY, name="f_{}_{}".format(i, var_comb_index))
 
-            f = lambda *input_combination: f_vars_dict[input_combination]
-            v_funcs[i] = f
-
+            # need to have an enclosing scope so that the current f_vars_dict overrides the last ones in the loop.
+            def build_lambda(var_dict):
+                return lambda *input_combination: var_dict[input_combination]
+            f = build_lambda(f_vars_dict)
+            v_funcs.append(f)
+        else:
+            v_funcs.append(None)
     model.update()
 
     # Expect (or require) experiments to belong to attractors

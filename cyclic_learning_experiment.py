@@ -1,54 +1,56 @@
+import itertools
+import csv
+import attractors
+import utility
+import os
+import graphs
+
 """
 A test for the accuracy of model learning under steady-state and attractor assumptions.
-Done on specific models, IL-6 and MAPK, for which there are specific changes to the model listed in the
-corresponding papers for removing cycles.
+Done on specific models, IL-1 and MAPK, for which there are specific changes to the model listed in the
+corresponding papers for removing cycles, and GE files I got from Roded.
 """
 
-import graphs
-import logic
-import sympy
-import itertools
+time_limit = 3600 * 0.4
 
-IL6_cyclic = graphs.Network.parse_boolean_tables("cellcollective_models/IL-6 Signalling")
-# I found a discrepancy between the description in the paper and the cellcollective version in one vertex.
-# This is the correction.
-vertex_names = [v.name for v in IL6_cyclic.vertices]
-edges = [(u.name, v.name) if v.name != "gp130s" else (u.name, "gp130m") for (u, v) in IL6_cyclic.edges]
-gp130_func = IL6_cyclic.get_vertex("gp130s")
-# Intentionally leave the new input node with its function, it will be deleted with a warning in model construction.
-functions = [v.function if v.name != "gp130m" else gp130_func for v in IL6_cyclic.vertices]
-IL6_cyclic = graphs.Network(vertex_names, edges, functions)
+names = ["IL_1", "EGFR"]
+GE_expressions = {"IL_1": utility.parse_ge_file(os.path.join("ge_files", "il1_exp")),
+                  "EGFR": utility.parse_ge_file(os.path.join("ge_files", "egfr_exp"))}
+acyclic_models = {"IL_1": graphs.Network.parse_boolean_tables(os.path.join("cyclic_acyclic_models", "IL1_acyclic")),
+                  "EGFR": graphs.Network.parse_boolean_tables(os.path.join("cyclic_acyclic_models", "EGFR_acyclic"))}
+cyclic_models = {"IL_1": graphs.Network.parse_boolean_tables(os.path.join("cyclic_acyclic_models", "IL1_cyclic")),
+                  "EGFR": graphs.Network.parse_boolean_tables(os.path.join("cyclic_acyclic_models", "EGFR_cyclic"))}
 
-# Create the acyclic version - some nodes need to be made inputs, other need to have some inputs removed.
-# Justification for the changes in plan_for_making_IL6_acyclic.png
-vertex_names = [v.name for v in IL6_cyclic.vertices]
-new_input_vertex_names = ["gp130m", "ras_gap", "jak1"]
-removed_edges = [("gab1_mem_p", "pi3k"), ("shp2_a", "pi3k"),
-                 ("shp2", "il6rc_p"), ("shp2_a", "il6rc_p"),
-                 ("socs3", "shp2"),
-                 ("socs1", "vav")]
-ras, jak1, il6rc, il6rc_p, ros, sirp1a, dum = \
-    sympy.symbols(["ras", "jak1", "il6rc", "il6rc_p", "ros", "sirp1a", "dum_il6rc_p_or_grb2_vav"])
-new_functions = {"pi3k": logic.BooleanSymbolicFunc(input_names=["ras"], formula=ras),
-                 "il6rc_p": logic.BooleanSymbolicFunc(input_names=["jak1", "il6rc"], formula=jak1 & il6rc),
-                 "shp2": logic.BooleanSymbolicFunc(input_names=["il6rc_p", "jak1", "ros", "sirp1a"],
-                                                   formula=il6rc_p & jak1 & ~ros & ~sirp1a),
-                 "vav": logic.BooleanSymbolicFunc(input_names=["dum_il6rc_p_or_grb2_vav"], formula=dum)}
-edges = [(u.name, v.name) for (u, v) in IL6_cyclic.edges if (v.name not in new_input_vertex_names) and
-                                                            ((u.name, v.name) not in removed_edges)]
-functions = []
-for v in IL6_cyclic.vertices:
-    if v.name in new_input_vertex_names:
-        functions.append(None)
-    elif v.name in new_functions:
-        functions.append(new_functions[v.name])
-    else:
-        functions.append(v.function)
-IL6_acyclic = graphs.Network(vertex_names, edges, functions)
+results = []
+parameter_grid = itertools.product(names, [False, True], [False, True], [False, True], [1, 5])
+for name, relax_experiments, is_cyclic, is_learnt, T in parameter_grid:
+    if not is_cyclic and T != 1:
+        continue
+    print "name: {}, is_cyclic: {}, is_learnt: {}, relax_experiments: {}, T: {}". \
+        format(name, is_cyclic, is_learnt, relax_experiments, T)
+    G = cyclic_models[name] if is_cyclic else acyclic_models[name]
+    expression_data = GE_expressions[name]
+    expression_data = [{G.get_vertex(v_name).index: state for v_name, state in exp.items()} for exp in expression_data]
+    if is_learnt:
+        G = G.copy()
+        for v in G.vertices:
+            v.function = None
 
-# Make sure no cycles remain?
-print IL6_cyclic
-print "\n\n"
-print IL6_acyclic
+    _, agreement, runtime = \
+        attractors.learn_model_from_experiment_agreement(G, expression_data,
+                                                         relax_experiments=relax_experiments,
+                                                         max_attractor_len=T,
+                                                         timeout_seconds=time_limit,
+                                                         allow_suboptimal=True)
+    print "name: {}, is_cyclic: {}, is_learnt: {}, relax_experiments: {}, T: {}, agreement: {:.2f}, time: {:.2f}".\
+        format(name, is_cyclic, is_learnt, relax_experiments, T, agreement, runtime)
+    results.append([name, is_cyclic, is_learnt, T, relax_experiments, agreement, runtime])
 
-# Now we take gene expression data for IL-6
+    with open("cyclic_learning_results.csv", 'wb') as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(["model name", "is_cyclic", "is_learnt", "T", "relax_experiments", "agreement", "time"])
+        for impact_result in results:
+            if impact_result is None:
+                continue
+            writer.writerow(impact_result)
+

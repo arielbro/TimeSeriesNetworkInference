@@ -7,12 +7,13 @@ import time
 import random
 
 
-class BooleanSymbolicFunc:
+class BooleanSymbolicFunc(object):
     def __init__(self, input_names=None, boolean_outputs=None, formula=None, simplify_boolean_outputs=False):
-        self._boolean_outputs = boolean_outputs  # for easy exporting of truth-tables
+        # make all fields immutable, so the function can be shallow copied safely.
+        self._boolean_outputs = None if boolean_outputs is None else tuple(boolean_outputs)
 
         if formula is not None:
-            self.input_vars = sorted(formula.free_symbols, key=lambda x: x.name)
+            self.input_vars = tuple(sorted(formula.free_symbols, key=lambda x: x.name))
             self.formula = formula
             return
 
@@ -21,7 +22,7 @@ class BooleanSymbolicFunc:
         # self.truth_table_outputs = boolean_outputs
         # assumes boolean_outputs is a power of 2
         n_inputs = len(input_names)
-        boolean_inputs = [sympy.symbols(name) for name in input_names]
+        boolean_inputs = tuple(sympy.symbols(name) for name in input_names)
         self.input_vars = boolean_inputs
         if n_inputs == 0:
             assert len(boolean_outputs) == 1
@@ -30,11 +31,10 @@ class BooleanSymbolicFunc:
         # TODO: Karnaugh maps? Sympy simplification?
         positive_row_clauses = [sympy.And(*terms) for b_output, terms in zip(
             boolean_outputs, itertools.product(*[[~var, var] for var in boolean_inputs])) if b_output]
-        self._formula = sympy.Or(*positive_row_clauses)
+        self.formula = sympy.Or(*positive_row_clauses)
         if simplify_boolean_outputs:
             start = time.time()
-            self._formula = sympy.simplify(self.formula)
-        self._lambdified_formula = sympy.lambdify(self.input_vars, self.formula, "numpy")
+            self.formula = sympy.simplify(self.formula)
 
     @property
     def boolean_outputs(self):
@@ -53,9 +53,9 @@ class BooleanSymbolicFunc:
         self._formula = value
         # print "set formula value: {}".format(value)
         # print "formula type: {}".format(type(value))
-        if isinstance(value, sympy.Expr):
+        if isinstance(value, sympy.Basic):
             # print "set lambdified formula"
-            self._lambdified_formula = sympy.lambdify(self.input_vars, self.formula, modules=[])
+            self._lambdified_formula = sympy.lambdify(self.input_vars, self.formula, modules=['numpy'])
 
     def __call__(self, *input_values):
         if isinstance(self.formula, bool) or (len(self.input_vars) == 0):
@@ -147,7 +147,7 @@ class BooleanSymbolicFunc:
         return BooleanSymbolicFunc(formula=expr)
 
 
-class SymmetricThresholdFunction:
+class SymmetricThresholdFunction(object):
     # TODO: implement in ILP model finding (threshold is not boolean, not supported there ATM)
     def __init__(self, signs, threshold):
         # translate signs to bool values, if not already
@@ -350,3 +350,20 @@ def perturb_line(f, line_indices, return_symbolic=False, n_inputs=None):
             ["var_{}".format(i) for i in range(n_inputs)]
         return BooleanSymbolicFunc(input_names=input_names,
                                                boolean_outputs=boolean_outputs)
+
+
+def expression_without_variable(var_name, expression):
+    """
+    Removes any use of the variable name in the sympy expression. This is done by recursively removing the variable
+    from every argument in the expression and its sub-expressions, and removing empty expressions that result.
+    If the entire expression is empty, returns None (note this also converts sympy.false and sympy.true to None)
+    :param expression:
+    :return:
+    """
+    if expression.is_symbol:
+        return expression if expression.name != var_name else None
+    new_args = [expression_without_variable(var_name, arg) for arg in expression.args]
+    new_args = [arg for arg in new_args if arg is not None]
+    if len(new_args) == 0:
+        return None
+    return expression.func(*new_args)

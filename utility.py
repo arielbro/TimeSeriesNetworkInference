@@ -211,3 +211,26 @@ def choose_k_bits_from_vertex_functions(degrees, k):
                     index - (cumulative_n_lines[degree_index - 1] if (degree_index > 0) else 0)]
                 break
     return choices
+
+
+def parse_ge_file(path):
+    """
+    Given the path of a GE readout file and a corresponding model, returns a list of partial model state such that
+    each partial state is a dict mapping measured node names to their Boolean value.
+    File is formatted with first line as the header #activated ligands/inhibited proteins | readouts,
+    then each line has (in regex syntax) (NODE_NAME BINARY_VALUE)* | | (NODE_NAME BINARY_VALUE)* # #,
+    the first half corresponding to input nodes.
+    :param path:
+    :return:
+    """
+    with open(path, "r") as ge_file:
+        lines = ge_file.readlines()[1:]
+    readouts = []
+    for line in lines:
+        if line == "\n":
+            continue  # probably last line
+        clean_line = line.replace("|", "").replace("#", "")  # we don't distinguish input nodes
+        tokens = clean_line.split()
+        values_dict = {tokens[2 * i]: bool(int(tokens[2 * i + 1])) for i in range(len(tokens) / 2)}
+        readouts.append(values_dict)
+    return readouts
