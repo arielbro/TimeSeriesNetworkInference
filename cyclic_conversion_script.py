@@ -32,7 +32,7 @@ networks = dict()
 IL-1
 """
 print "IL-1"
-IL1_cyclic = graphs.Network.parse_boolean_tables("cellcollective_models/IL-1 Signalling")
+IL1_cyclic = graphs.Network.parse_boolean_tables("cellcollective_models/IL-1 Signaling")
 
 # Create the acyclic version - most nodes here should be labeled "late" and have all their outgoing edges removed,
 # but there are dummies depending on them.
@@ -59,7 +59,7 @@ networks["IL1_cyclic"] = IL1_cyclic
 IL-6
 """
 print "IL-6"
-IL6_cyclic = graphs.Network.parse_boolean_tables("cellcollective_models/IL-6 Signalling")
+IL6_cyclic = graphs.Network.parse_boolean_tables("cellcollective_models/IL-6 Signaling")
 # I found a discrepancy between the description in the paper and the cellcollective version in one vertex.
 # This is the correction.
 vertex_names = [v.name for v in IL6_cyclic.vertices]
