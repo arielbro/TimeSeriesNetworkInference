@@ -464,12 +464,15 @@ def add_state_inclusion_indicator(model, first_state, second_state_set, slice_si
     return inclusion_indicator
 
 
-def add_path_to_model(G, model, path_len, first_state_vars, last_state_vars=None, v_funcs=None):
+def add_path_to_model(G, model, path_len, first_state_vars, v_funcs, last_state_vars=None,
+                      v_funcs_restrictions=None):
     """
     Adds a path from first_state_vars to last_state_vars to the model, i.e. requires that last_state_vars
     represents the state resulting after path_len time steps from first_state_vars.
     Returns the state variables representing the path, excluding the first state and including the last state.
     If last_state_vars is undefined, creates a new state for it, and return it with the rest.
+    If v_funcs_restrictions is not None, assumes it gives each function a possible restriction to symmetric threshold
+    or a simple gate, with a given representation in v_funcs.
     :param G:
     :param model:
     :param path_len:
@@ -492,15 +495,51 @@ def add_path_to_model(G, model, path_len, first_state_vars, last_state_vars=None
         new_state_vars_list.append(next_state_vars)
 
         for i in range(n):
-            v_func = v_funcs[i] if (v_funcs is not None) and (v_funcs[i] is not None) else G.vertices[i].function
-            predecessor_indices = [u.index for u in G.vertices[i].predecessors()]
-            predecessor_vars = [previous_state_vars[index] for index in predecessor_indices]
             if len(predecessor_vars) == 0:
                 model.addConstr(previous_state_vars[i] == next_state_vars[i],
                                 name="stable_constraint_{}_node_{}".format(l, i))
             else:
-                add_truth_table_consistency_constraints(model, v_func, next_state_vars[i], predecessor_vars,
-                                                        name_prefix="transient_path_step_{}vertex_{}".format(l, i))
+                predecessor_indices = [u.index for u in G.vertices[i].predecessors()]
+                predecessor_vars = [previous_state_vars[index] for index in predecessor_indices]
+
+                if (v_funcs_restrictions is not None) and (
+                        v_funcs_restrictions[i] == FunctionTypeRestriction.SYMMETRIC_THRESHOLD):
+                    signs, threshold = v_funcs[i]
+                    threshold_expression = sum(sign * var for sign, var in zip(signs, predecessor_vars)) - threshold
+                    model.addConstr(len(predecessor_vars) * next_state_vars[i] - threshold_expression
+                        name="{}_<=_{}".format(name_prefix, var_comb_index))
+
+
+next_state_vars[i]
+                    add_truth_table_consistency_constraints(model, v_func, next_state_vars[i], predecessor_vars,
+                                                            name_prefix="transient_path_step_{}vertex_{}".format(l, i))
+
+
+
+
+for input_index in range(in_degree):
+                        sign_var = model.addVar(vtype=gurobipy.GRB.BINARY, name="f_{}_signs_{}".format(i, input_index))
+                        signs.append(sign_var)
+                    if model_type_restriction == FunctionTypeRestriction.SYMMETRIC_THRESHOLD:
+                        threshold_expression = model.addVar(vtype=gurobipy.GRB.INTEGER, lb=0, ub=in_degree + 1,
+                                                            name="f_{}_threshold".format(i))
+                    else:
+                        threshold_indicator = model.addVar(
+                            vtype=gurobipy.GRB.BINARY, name="f_{}_gate_indicator".format(i))
+                        threshold_expression = 1 + threshold_indicator * (in_degree - 1)
+                elif (v_funcs_restrictions is not None) and (
+                        v_funcs_restrictions[i] == FunctionTypeRestriction.SIMPLE_GATES):
+                    pass
+                else:
+                    assert (v_funcs_restrictions is None) or (v_funcs_restrictions[i] == FunctionTypeRestriction.None)
+                    v_func = v_funcs[i] if (v_funcs is not None) and (v_funcs[i] is not None) else G.vertices[i].function
+                    predecessor_indices = [u.index for u in G.vertices[i].predecessors()]
+                    predecessor_vars = [previous_state_vars[index] for index in predecessor_indices]
+
+                    add_truth_table_consistency_constraints(model, v_func, next_state_vars[i], predecessor_vars,
+                                                            name_prefix="transient_path_step_{}vertex_{}".format(l, i))
+            model.update()
+
         previous_state_vars = next_state_vars
 
     # print("Time taken to add path constraints:{:.2f} seconds".format(time.time() - start))

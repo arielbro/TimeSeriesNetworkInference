@@ -441,9 +441,7 @@ class Network(object):
                 pass
 
         with open(os.path.join(base_path, model_name, "external_components.ALL.txt"), 'w') as inputs_file:
-            for u in self.vertices:
-                if len(u.predecessors()) == 0:
-                    inputs_file.writelines([u.name for u in self.vertices if len(u.predecessors()) == 0])
+            inputs_file.writelines([u.name + "\n" for u in self.vertices if len(u.predecessors()) == 0])
 
         # create name mapping
         row_tuples = [(v.index + 1, v.name) for v in self.vertices]
