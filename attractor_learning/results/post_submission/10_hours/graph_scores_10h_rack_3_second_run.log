@@ -1,0 +1,100 @@
+stochastic_n_iter=500, parallel=True, n_processes=40, timeout_seconds=36000, n_tests=100,filter_out_timed_out_graphs=True, graph_parent_dir=cellcollective_models, optimization_max_len=1, optimization_max_num=10,graph_size_filter=500, queue_all_tasks=False,n_attractors_filter=2000,optimization_max_transient_len=10, only_random=True
+saving output to results/post_submission/graph_scores_10h_rack_3_second_run.csv
+Reading model Trichostrongylus retortaeformis
+size: 26. Maximal in-degree: 5
+Estimated 11 attractors for model Trichostrongylus retortaeformis of size 26. Time taken: 5.32 secs
+Reading model FA BRCA pathway
+size: 28. Maximal in-degree: 9
+Estimated 1 attractors for model FA BRCA pathway of size 28. Time taken: 10.43 secs
+Reading model Apoptosis Network
+size: 41. Maximal in-degree: 4
+Estimated 21 attractors for model Apoptosis Network of size 41. Time taken: 11.32 secs
+Reading model Arabidopsis thaliana Cell Cycle
+size: 14. Maximal in-degree: 8
+Estimated 1 attractors for model Arabidopsis thaliana Cell Cycle of size 14. Time taken: 3.21 secs
+Reading model Aurora Kinase A in Neuroblastoma
+size: 23. Maximal in-degree: 7
+Estimated 44 attractors for model Aurora Kinase A in Neuroblastoma of size 23. Time taken: 4.75 secs
+Reading model B bronchiseptica and T retortaeformis coinfection
+size: 53. Maximal in-degree: 8
+Estimated 14 attractors for model B bronchiseptica and T retortaeformis coinfection of size 53. Time taken: 15.83 secs
+Reading model B cell differentiation
+size: 22. Maximal in-degree: 7
+Estimated 55 attractors for model B cell differentiation of size 22. Time taken: 2.49 secs
+Reading model Body Segmentation in Drosophila 2013
+size: 17. Maximal in-degree: 4
+Estimated 9 attractors for model Body Segmentation in Drosophila 2013 of size 17. Time taken: 1.70 secs
+Reading model Bordetella bronchiseptica
+size: 33. Maximal in-degree: 6
+Estimated 4 attractors for model Bordetella bronchiseptica of size 33. Time taken: 4.86 secs
+Reading model Bortezomib Responses in U266 Human Myeloma Cells
+size: 67. Maximal in-degree: 5
+Estimated 33 attractors for model Bortezomib Responses in U266 Human Myeloma Cells of size 67. Time taken: 31.02 secs
+Reading model BT474 Breast Cell Line Long-term ErbB Network
+size: 25. Maximal in-degree: 6
+Estimated 257 attractors for model BT474 Breast Cell Line Long-term ErbB Network of size 25. Time taken: 4.77 secs
+Reading model BT474 Breast Cell Line Short-term ErbB Network
+size: 16. Maximal in-degree: 6
+Estimated 64 attractors for model BT474 Breast Cell Line Short-term ErbB Network of size 16. Time taken: 1.52 secs
+Reading model Budding Yeast Cell Cycle
+size: 20. Maximal in-degree: 6
+Estimated 33 attractors for model Budding Yeast Cell Cycle of size 20. Time taken: 2.78 secs
+Reading model Budding Yeast Cell Cycle 2009
+size: 18. Maximal in-degree: 6
+Estimated 1 attractors for model Budding Yeast Cell Cycle 2009 of size 18. Time taken: 2.54 secs
+Reading model Cardiac development
+size: 15. Maximal in-degree: 7
+Estimated 5 attractors for model Cardiac development of size 15. Time taken: 1.60 secs
+Reading model CD4+ T cell Differentiation
+size: 38. Maximal in-degree: 8
+Estimated 374 attractors for model CD4+ T cell Differentiation of size 38. Time taken: 15.01 secs
+Reading model Glucose Repression Signaling 2009
+size: 73. Maximal in-degree: 5
+Estimated 499 attractors for model Glucose Repression Signaling 2009 of size 73. Time taken: 22.72 secs
+Reading model Cell Cycle Transcription by Coupled CDK and Network Oscillators
+size: 9. Maximal in-degree: 4
+Estimated 2 attractors for model Cell Cycle Transcription by Coupled CDK and Network Oscillators of size 9. Time taken: 0.45 secs
+Reading model Cholesterol Regulatory Pathway
+size: 34. Maximal in-degree: 3
+Estimated 15 attractors for model Cholesterol Regulatory Pathway of size 34. Time taken: 9.99 secs
+Reading model Cortical Area Development
+size: 5. Maximal in-degree: 4
+Estimated 2 attractors for model Cortical Area Development of size 5. Time taken: 0.28 secs
+Reading model Death Receptor Signaling
+size: 28. Maximal in-degree: 4
+Estimated 40 attractors for model Death Receptor Signaling of size 28. Time taken: 5.97 secs
+Reading model Fanconi anemia and checkpoint recovery
+size: 15. Maximal in-degree: 8
+Estimated 1 attractors for model Fanconi anemia and checkpoint recovery of size 15. Time taken: 2.25 secs
+Reading model Toll Pathway of Drosophila Signaling Pathway
+size: 11. Maximal in-degree: 2
+Estimated 4 attractors for model Toll Pathway of Drosophila Signaling Pathway of size 11. Time taken: 0.51 secs
+Reading model Guard Cell Abscisic Acid Signaling
+size: 44. Maximal in-degree: 5
+Estimated 81 attractors for model Guard Cell Abscisic Acid Signaling of size 44. Time taken: 11.07 secs
+Reading model HCC1954 Breast Cell Line Long-term ErbB Network
+size: 25. Maximal in-degree: 6
+Estimated 218 attractors for model HCC1954 Breast Cell Line Long-term ErbB Network of size 25. Time taken: 5.36 secs
+Reading model HCC1954 Breast Cell Line Short-term ErbB Network
+size: 16. Maximal in-degree: 6
+Estimated 68 attractors for model HCC1954 Breast Cell Line Short-term ErbB Network of size 16. Time taken: 1.95 secs
+Reading model HGF Signaling in Keratinocytes
+size: 68. Maximal in-degree: 4
+Estimated 73 attractors for model HGF Signaling in Keratinocytes of size 68. Time taken: 26.95 secs
+Reading model Human Gonadal Sex Determination
+size: 19. Maximal in-degree: 10
+Estimated 2 attractors for model Human Gonadal Sex Determination of size 19. Time taken: 3.50 secs
+Reading model Iron acquisition and oxidative stress response in aspergillus fumigatus
+size: 22. Maximal in-degree: 6
+Estimated 4 attractors for model Iron acquisition and oxidative stress response in aspergillus fumigatus of size 22. Time taken: 2.44 secs
+Reading model Lac Operon
+size: 13. Maximal in-degree: 4
+Estimated 8 attractors for model Lac Operon of size 13. Time taken: 0.75 secs
+Reading model Mammalian Cell Cycle
+size: 20. Maximal in-degree: 5
+Estimated 2 attractors for model Mammalian Cell Cycle of size 20. Time taken: 1.79 secs
+Reading model Mammalian Cell Cycle 2006
+size: 10. Maximal in-degree: 6
+Estimated 2 attractors for model Mammalian Cell Cycle 2006 of size 10. Time taken: 0.84 secs
+Reading model MAPK Cancer Cell Fate Network
+size: 53. Maximal in-degree: 5

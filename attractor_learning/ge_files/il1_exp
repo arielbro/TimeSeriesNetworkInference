@@ -1,0 +1,16 @@
+#activated ligands/inhibited proteins | readouts
+| | akt 0 erk12 0 gsk3 1 hsp27_ps 0 ikba 1 irs1_ps 0 jnk 0 mek1 0 nuc_p38 0 # #
+mek1 0 | | akt 0 erk12 0 gsk3 1 hsp27_ps 0 ikba 1 irs1_ps 0 jnk 0 mek1 0 nuc_p38 0 # #
+nuc_p38 0 | | akt 0 erk12 0 gsk3 1 hsp27_ps 0 ikba 1 irs1_ps 0 jnk 0 mek1 0 nuc_p38 0 # #
+pi3k 0 | | akt 0 erk12 0 gsk3 1 hsp27_ps 0 ikba 0 irs1_ps 0 jnk 0 mek1 0 nuc_p38 0 # #
+ikkb 0 | | akt 1 erk12 0 gsk3 1 hsp27_ps 0 ikba 1 irs1_ps 0 jnk 0 mek1 0 nuc_p38 0 # #
+gsk3 0 | | akt 0 erk12 0 gsk3 0 hsp27_ps 0 ikba 1 irs1_ps 0 jnk 0 mek1 0 nuc_p38 0 # #
+jnk 0 | | akt 0 erk12 0 gsk3 1 hsp27_ps 0 ikba 1 irs1_ps 0 jnk 0 mek1 0 nuc_p38 0 # #
+il1a 1 | |  akt 1 erk12 1 gsk3 1 hsp27_ps 1 ikba 0 irs1_ps 1 jnk 1 mek1 1 nuc_p38 1 # #
+il1a 1 mek1 0 | |  akt 1 erk12 0 gsk3 0 hsp27_ps 1 ikba 0 irs1_ps 1 jnk 1 mek1 0 nuc_p38 1 # #
+il1a 1 nuc_p38 0 | |  akt 1 erk12 0 gsk3 1 hsp27_ps 1 ikba 0 irs1_ps 1 jnk 1 mek1 1 nuc_p38 0 # #
+il1a 1 pi3k 0 | |  akt 1 erk12 1 gsk3 0 hsp27_ps 1 ikba 0 irs1_ps 1 jnk 1 mek1 1 nuc_p38 1 # #
+il1a 1 ikkb 0 | |  akt 1 erk12 0 gsk3 0 hsp27_ps 0 ikba 0 irs1_ps 1 jnk 1 mek1 1 nuc_p38 1 # #
+il1a 1 gsk3 0 | |  akt 1 erk12 0 gsk3 0 hsp27_ps 1 ikba 0 irs1_ps 1 jnk 1 mek1 1 nuc_p38 0 # #
+il1a 1 jnk 0 | |  akt 1 erk12 0 gsk3 0 hsp27_ps 1 ikba 0 irs1_ps 1 jnk 0 mek1 1 nuc_p38 0 # #
+

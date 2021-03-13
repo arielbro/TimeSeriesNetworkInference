@@ -1,0 +1,5 @@
+11/8/17 - first version with git support. Got SAT based least-P-most-T learning, and ILP counterpart.
+
+11/8/17 - following Roded's comments, reduced redundancy in formulas (e.g. active <-> a_p,T-1
+        Added stability constraints for input nodes, instead of adding a loop, because of variable boolean funcs.
+
