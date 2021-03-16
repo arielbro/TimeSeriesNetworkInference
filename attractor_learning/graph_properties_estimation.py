@@ -1,11 +1,11 @@
 import csv
 import os
 import sys
-import graphs
+from . import graphs
 import attractors
 import numpy as np
 from multiprocessing import Pool
-import stochastic
+from . import stochastic
 
 graph_names = []
 graph_list = []

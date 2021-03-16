@@ -1,5 +1,5 @@
 import random
-import utility
+from . import utility
 import numpy
 
 def estimate_path_len_to_attractor(G, n_iter=1000):
@@ -62,7 +62,7 @@ def walk_to_attractor(G, initial_state, max_walk=None, state_to_attractor_mappin
         # for state in attractor:
         #     print("source: {}. next: {}".format(state, G.next_state(state)))
         for state in visited_states:
-            state_to_attractor_mapping[state] = attractor
+            state_to_attractor_mapping[tuple(state)] = attractor
         return attractor
     else:
         raise ValueError("Reached impossible case after network simulation")

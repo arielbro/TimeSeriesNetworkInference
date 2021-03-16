@@ -1,4 +1,3 @@
-import logic
 import itertools
 import random
 import re
@@ -9,8 +8,8 @@ import sympy
 import os
 import csv
 
-from logic import BooleanSymbolicFunc, SymmetricThresholdFunction
-from utility import list_repr
+from .logic import BooleanSymbolicFunc, SymmetricThresholdFunction
+from .utility import list_repr
 import copy
 
 

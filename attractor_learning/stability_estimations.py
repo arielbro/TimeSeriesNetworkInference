@@ -1,11 +1,12 @@
 import random
 import time
-import graphs
-import attractors
+from . import graphs
+from . import attractors
 from shutil import copyfile
 from collections import namedtuple
 import csv
 import numpy
+from . import stochastic
 from stochastic import estimate_probability_to_reroll_attractor
 import os
 import sys

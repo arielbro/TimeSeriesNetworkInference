@@ -1,14 +1,14 @@
 import cProfile
 import random
 import time
-import graphs
-import attractors
+from . import graphs
+from . import attractors
 from shutil import copyfile
 # from pebble import ProcessPool
 from concurrent.futures import TimeoutError
 from collections import namedtuple
 import csv
-import stochastic
+from . import stochastic
 import multiprocessing
 import itertools
 import numpy

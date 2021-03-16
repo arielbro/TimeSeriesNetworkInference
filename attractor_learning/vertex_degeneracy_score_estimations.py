@@ -1,11 +1,11 @@
 import random
 import time
-import graphs
-import attractors
+from . import graphs
+from . import attractors
 from shutil import copyfile
 from collections import namedtuple
 import csv
-import stochastic
+from . import stochastic
 import numpy
 import os
 import sys

@@ -2,7 +2,9 @@ import gurobipy
 import sympy
 import numpy
 import itertools
-import logic
+from . import logic
+from . import graphs
+from . import utility
 import time
 import math
 from graphs import FunctionTypeRestriction

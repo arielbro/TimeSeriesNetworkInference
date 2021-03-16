@@ -2,7 +2,7 @@ import sympy
 import itertools
 import math
 import numpy
-from utility import list_repr
+from .utility import list_repr
 import time
 import random
 
