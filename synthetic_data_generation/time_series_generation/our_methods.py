@@ -4,7 +4,6 @@ from attractor_learning.stochastic import walk_to_attractor
 import numpy as np
 
 import logging
-logger = logging.getLogger(__name__)
 
 StateSampleType = enum.Enum("StateSampleType", "stable perturbed")
 FrequencyHandling = enum.Enum("FrequencyHandling", "random floor")
@@ -16,14 +15,9 @@ sample_to_model_freq_ratio = 1.0
 state_noise_chance = 0.0
 frequency_noise_std = 0.0
 
-logger.info("timepoints_per_experiment={}".format(timepoints_per_experiment))
-logger.info("sample_to_model_freq_ratio={}".format(sample_to_model_freq_ratio))
-logger.info("state_noise_chance={}".format(state_noise_chance))
-logger.info("state_sample_type={}".format(state_sample_type))
-logger.info("frequency_handling={}".format(frequency_handling))
+have_logged = False
 
-
-def generate_one_experiment_data(model):
+def generate_one_experiment_data(model, log=not have_logged):
     """
     Given a model, generate one matrix of time-series data from the model. Data starts
     at some state (either a basin-weighted attractor state, or a perturbation of one),
@@ -89,3 +83,17 @@ def generate_one_experiment_data(model):
                 data[t, i] = 1 - data[t, i]
 
     return data
+
+
+def generate_experiments_data(model, n_experiments):
+    for _ in range(n_experiments):
+        yield generate_one_experiment_data(model)
+
+
+def log_params():
+    logger = logging.getLogger(__name__)
+    logger.info("timepoints_per_experiment={}".format(timepoints_per_experiment))
+    logger.info("sample_to_model_freq_ratio={}".format(sample_to_model_freq_ratio))
+    logger.info("state_noise_chance={}".format(state_noise_chance))
+    logger.info("state_sample_type={}".format(state_sample_type))
+    logger.info("frequency_handling={}".format(frequency_handling))

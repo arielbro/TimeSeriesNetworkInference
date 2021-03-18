@@ -212,6 +212,15 @@ class Network(object):
                 assert state in [False, True, sympy.false, sympy.true, 0, 1]
             return tuple(1 if s else 0 for s in v_next_states)
 
+    def next_states(self, initial_state, num_steps_from_initial, return_as_string=False):
+        if return_as_string:
+            raise NotImplementedError("next_states unimplemented for string outputs (will have to "
+                                      "restructure state format conversions to a separate method)")
+        states = [np.array(initial_state)]
+        for t in range(num_steps_from_initial):
+            states.append(self.next_state(states[-1]))
+        return states
+
     @staticmethod
     def union(a, b):
         assert isinstance(a, Network)
@@ -311,7 +320,7 @@ class Network(object):
                     cnet_file.write(" {}".format(u.index + 1))
                 cnet_file.write("\n")
                 if (len(v.predecessors()) != 0) and v.function is None:
-                    raise NotImplementedError("Can't export a graph with a non-fixed function.")
+                    raise NotImplementedError("Can't export a graph with a non-fixed (undefined) function.")
                 if (len(v.predecessors()) == 0) and v.function is not None:
                     is_true = v.function == True or (isinstance(v.function, type(lambda _:_)) and v.function() == True)
                     out = 1 if is_true else 0

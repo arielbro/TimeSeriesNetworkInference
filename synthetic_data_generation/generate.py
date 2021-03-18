@@ -1,8 +1,10 @@
 import os
 import shutil
 from attractor_learning import graphs
-from graph_generation.our_methods import generate_random_graphs
-from time_series_generation.our_methods import generate_one_experiment_data
+from graph_generation.our_methods import generate_random_graphs, generate_scaffold_network
+from graph_generation.our_methods import log_params as graph_generation_log_params
+from time_series_generation.our_methods import generate_experiments_data
+from time_series_generation.our_methods import log_params as time_series_generation_log_params
 import time
 import numpy as np
 import logging
@@ -16,35 +18,34 @@ if os.path.exists(data_dir_path):
     shutil.rmtree(data_dir_path)
 os.makedirs(data_dir_path)
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 logging.basicConfig(filename=os.path.join(data_dir_path, "log"),
-                            filemode='a',
-                            format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-                            datefmt='%H:%M:%S',
-                            level=logging.DEBUG)
+                    filemode='a',
+                    format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
+                    datefmt='%H:%M:%S',
+                    level=logging.DEBUG)
 
 
 logger.info("experiments_per_network={}".format(experiments_per_network))
+graph_generation_log_params()
+time_series_generation_log_params()
 
 
 def main():
-
-    data = []
 
     random_graphs = generate_random_graphs()
 
     for graph_index, random_graph in enumerate(random_graphs):
         graph_path = os.path.join(data_dir_path, "network_{}".format(graph_index))
         os.makedirs(graph_path)
-        for experiment_index in range(experiments_per_network):
-            matrix = generate_one_experiment_data(random_graph)
-            matrix = np.array(matrix, dtype=bool)
-            np.savetxt(os.path.join(graph_path, str(experiment_index)), matrix, delimiter=",",
-                       fmt="%i")
-
-    for i, matrix in enumerate(data):
-        matrix = np.array(matrix)
-        np.savetxt(os.path.join(data_dir_path, i), matrix, delimeter=",")
+        random_graph.export_to_cnet(os.path.join(graph_path, "true_network.cnet"))
+        random_scaffold = generate_scaffold_network(random_graph)
+        for vertex in random_scaffold.vertices:
+            vertex.function = lambda *x: False  # so it can fit cnet format.
+        random_scaffold.export_to_cnet(os.path.join(graph_path, "scaffold_network.cnet"))
+        matrices = generate_experiments_data(random_graph, experiments_per_network)
+        named_matrices = dict((str(i), mat) for (i, mat) in enumerate(matrices))
+        np.savez(os.path.join(graph_path, "matrices"), **named_matrices)
 
 
 if __name__ == "__main__":
