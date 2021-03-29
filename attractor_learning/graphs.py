@@ -417,7 +417,7 @@ class Network(object):
                 bool_funcs.append(func)
         assert len(bool_funcs) == n
         G = Network(vertex_names=names, edges=edges, vertex_functions=bool_funcs)
-        print("time taken for graph import: {:.2f} seconds".format(time.time() - start))
+        # print("time taken for graph import: {:.2f} seconds".format(time.time() - start))
         return G
 
     def export_to_boolean_tables(self, base_path, model_name):

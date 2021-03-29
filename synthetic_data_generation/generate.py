@@ -9,7 +9,7 @@ import time
 import numpy as np
 import logging
 
-experiments_per_network = 40
+experiments_per_network = 10
 data_output_parent_dir = "../data/generated"
 
 timestr = time.strftime("%Y%m%d-%H%M%S")

@@ -1470,7 +1470,7 @@ def learn_model_from_experiment_agreement(G, experiments, relax_experiments, max
     for exp in range(len(experiments)):
         attractor_states = ilp.add_path_to_model(G, model, max_attractor_len,
                                                  experiment_states[exp],
-                                                 last_state_vars=None, v_funcs=v_funcs)
+                                                 last_state_vars=None, model_f_vars=v_funcs)
         experiment_validity_indicator = ilp.add_state_inclusion_indicator(
                                             model, experiment_states[exp],
                                             attractor_states, slice_size=key_slice_size,

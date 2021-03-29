@@ -8,7 +8,7 @@ import logging
 StateSampleType = enum.Enum("StateSampleType", "stable perturbed")
 FrequencyHandling = enum.Enum("FrequencyHandling", "random floor")
 
-timepoints_per_experiment = 10
+timepoints_per_experiment = 15
 state_sample_type = StateSampleType.stable
 frequency_handling = FrequencyHandling.floor
 sample_to_model_freq_ratio = 1.0
@@ -16,6 +16,7 @@ state_noise_chance = 0.0
 frequency_noise_std = 0.0
 
 have_logged = False
+
 
 def generate_one_experiment_data(model, log=not have_logged):
     """

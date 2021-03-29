@@ -2,14 +2,14 @@ import gurobipy
 import sympy
 import numpy
 import itertools
-from . import logic
-from . import graphs
-from . import utility
+from attractor_learning import logic
+from attractor_learning import graphs
+from attractor_learning import utility
 import time
 import math
-from graphs import FunctionTypeRestriction
+from attractor_learning.graphs import FunctionTypeRestriction
 from gurobipy import GRB
-from utility import order_key_func
+from attractor_learning.utility import order_key_func
 
 # TODO: find good upper bound again, why didn't 29 work on MAPK_large2?
 # http://files.gurobi.com/Numerics.pdf a good resource on numerical issues, high values cause them.
@@ -115,7 +115,7 @@ def create_state_keys_comparison_var(model, first_state_keys, second_state_keys,
     # multiply by denominator to avoid float inaccuracies
     assert len(first_state_keys) == len(second_state_keys), "length of state key lists differ"
     last_var = 0 if not include_equality else 1
-    M = upper_bound # M - 1 is actual largest value
+    M = upper_bound  # M - 1 is actual largest value
     for i in range(len(first_state_keys)):
         a = first_state_keys[-i - 1]
         b = second_state_keys[-i - 1]
@@ -370,6 +370,57 @@ def build_logic_function_vars(formula, model, name_prefix, symbols_to_variables_
         raise NotImplementedError
 
 
+def add_function_variables(G, model, function_type_restriction):
+    """
+    Add function variables for G's vertices to a model, and return them as a list indexed as G.vertices.
+    Vertices that have a defined function will get a variable-like representation (or actual variable represenation,
+    in the case of symmetric threshold functions).
+    :param G:
+    :param model:
+    :param function_type_restriction:
+    :return:
+    """
+    # TODO: testing (this is adapted from the attractors_ilp_with_keys function after a long time of not visiting code)
+    # TODO: adapt other ilp formulation functions to call this instead of reimplement variable definition.
+    n = len(G)
+    vertices_f_vars_list = [None] * n
+    for i in range(n):
+        # assert consistent
+        in_degree = len(G.vertices[i].predecessors())
+        if in_degree != 0:
+            find_model = G.vertices[i].function is None
+            if (find_model and function_type_restriction == FunctionTypeRestriction.NONE) \
+                or (not find_model and not isinstance(G.vertices[i].function,
+                                                      logic.SymmetricThresholdFunction)):
+                if find_model:
+                    find_model_f_vars = []
+                    for var_comb_index, var_combination in enumerate(
+                            itertools.product((False, True), repeat=len(G.vertices[i].predecessors()))):
+                        find_model_f_vars.append(model.addVar(vtype=gurobipy.GRB.BINARY, name="f_{}_{}".format(i, var_comb_index)))
+                    model.update()
+                    vertices_f_vars_list[i] = find_model_f_vars
+                else:
+                    raise ValueError("Unexpected kind of vertex function {}".format(type(G.vertices[i].function)))
+            else:  # symmetric threshold / logic gate
+                assert function_type_restriction in [FunctionTypeRestriction.SYMMETRIC_THRESHOLD,
+                                                  FunctionTypeRestriction.SIMPLE_GATES]
+                if find_model:
+                    signs = []
+                    for input_index in range(in_degree):
+                        sign_var = model.addVar(vtype=gurobipy.GRB.BINARY, name="f_{}_signs_{}".format(i, input_index))
+                        signs.append(sign_var)
+                    if function_type_restriction == FunctionTypeRestriction.SYMMETRIC_THRESHOLD:
+                        threshold_expression = model.addVar(vtype=gurobipy.GRB.INTEGER, lb=0, ub=in_degree + 1,
+                                                            name="f_{}_threshold".format(i))
+                    else:
+                        threshold_indicator = model.addVar(
+                            vtype=gurobipy.GRB.BINARY, name="f_{}_gate_indicator".format(i))
+                        threshold_expression = 1 + threshold_indicator * (in_degree - 1)
+                    model.update()
+                    vertices_f_vars_list[i] = (signs, threshold_expression)
+    return vertices_f_vars_list
+
+
 def add_simplified_consistency_constraints(model, v_func, v_next_state_var, predecessors_cur_vars,
                                            name_prefix, activity_variable=None):
     """
@@ -466,21 +517,21 @@ def add_state_inclusion_indicator(model, first_state, second_state_set, slice_si
     return inclusion_indicator
 
 
-def add_path_to_model(G, model, path_len, first_state_vars, v_funcs, last_state_vars=None,
-                      v_funcs_restrictions=None):
+def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, last_state_vars=None,
+                      v_funcs_restrictions=None, name_prefix=""):
     """
     Adds a path from first_state_vars to last_state_vars to the model, i.e. requires that last_state_vars
     represents the state resulting after path_len time steps from first_state_vars.
     Returns the state variables representing the path, excluding the first state and including the last state.
     If last_state_vars is undefined, creates a new state for it, and return it with the rest.
     If v_funcs_restrictions is not None, assumes it gives each function a possible restriction to symmetric threshold
-    or a simple gate, with a given representation in v_funcs.
+    or a simple gate, with a given representation in model_f_vars.
     :param G:
     :param model:
     :param path_len:
     :param first_state_vars:
     :param last_state_vars:
-    :param v_funcs:
+    :param model_f_vars:
     :return:
     """
     start = time.time()
@@ -497,7 +548,7 @@ def add_path_to_model(G, model, path_len, first_state_vars, v_funcs, last_state_
         new_state_vars_list.append(next_state_vars)
 
         for i in range(n):
-            if len(predecessor_vars) == 0:
+            if len(G.vertices[i].predecessors()) == 0:
                 model.addConstr(previous_state_vars[i] == next_state_vars[i],
                                 name="stable_constraint_{}_node_{}".format(l, i))
             else:
@@ -506,40 +557,28 @@ def add_path_to_model(G, model, path_len, first_state_vars, v_funcs, last_state_
 
                 if (v_funcs_restrictions is not None) and (
                         v_funcs_restrictions[i] == FunctionTypeRestriction.SYMMETRIC_THRESHOLD):
-                    signs, threshold = v_funcs[i]
-                    threshold_expression = sum(sign * var for sign, var in zip(signs, predecessor_vars)) - threshold
-                    model.addConstr(len(predecessor_vars) * next_state_vars[i] - threshold_expression
-                        name="{}_<=_{}".format(name_prefix, var_comb_index))
+                    signs, threshold = model_f_vars[i]
+                    threshold_expression = sum(sign * var for sign, var in zip(signs, predecessor_vars)) - threshold + 1
+                    model.addConstr((len(predecessor_vars) + 1) * next_state_vars[i] >= threshold_expression,
+                        name="{}_threshold_function_path_constraint_>=".format(name_prefix))
+                    model.addConstr((len(predecessor_vars) + 1) * next_state_vars[i] <=
+                                    (len(predecessor_vars) + 1) + threshold_expression,
+                                    name="{}_threshold_function_path_constraint_<=".format(name_prefix))
 
-
-next_state_vars[i]
-                    add_truth_table_consistency_constraints(model, v_func, next_state_vars[i], predecessor_vars,
-                                                            name_prefix="transient_path_step_{}vertex_{}".format(l, i))
-
-
-
-
-for input_index in range(in_degree):
-                        sign_var = model.addVar(vtype=gurobipy.GRB.BINARY, name="f_{}_signs_{}".format(i, input_index))
-                        signs.append(sign_var)
-                    if model_type_restriction == FunctionTypeRestriction.SYMMETRIC_THRESHOLD:
-                        threshold_expression = model.addVar(vtype=gurobipy.GRB.INTEGER, lb=0, ub=in_degree + 1,
-                                                            name="f_{}_threshold".format(i))
-                    else:
-                        threshold_indicator = model.addVar(
-                            vtype=gurobipy.GRB.BINARY, name="f_{}_gate_indicator".format(i))
-                        threshold_expression = 1 + threshold_indicator * (in_degree - 1)
                 elif (v_funcs_restrictions is not None) and (
                         v_funcs_restrictions[i] == FunctionTypeRestriction.SIMPLE_GATES):
-                    pass
+                    raise NotImplementedError()
                 else:
-                    assert (v_funcs_restrictions is None) or (v_funcs_restrictions[i] == FunctionTypeRestriction.None)
-                    v_func = v_funcs[i] if (v_funcs is not None) and (v_funcs[i] is not None) else G.vertices[i].function
+                    assert (v_funcs_restrictions is None) or (v_funcs_restrictions[i] == FunctionTypeRestriction.NONE) \
+                        or (v_funcs_restrictions[i] is None)
+                    find_model_f_vars = model_f_vars[i] if (model_f_vars is not None) else None
+                    v_func = None if ((model_f_vars is not None) and (model_f_vars[i]) is not None) \
+                        else G.vertices[i].function
                     predecessor_indices = [u.index for u in G.vertices[i].predecessors()]
                     predecessor_vars = [previous_state_vars[index] for index in predecessor_indices]
-
                     add_truth_table_consistency_constraints(model, v_func, next_state_vars[i], predecessor_vars,
-                                                            name_prefix="transient_path_step_{}vertex_{}".format(l, i))
+                                                            name_prefix="transient_path_step_{}vertex_{}".format(l, i),
+                                                            activity_variable=None, find_model_f_vars=find_model_f_vars)
             model.update()
 
         previous_state_vars = next_state_vars

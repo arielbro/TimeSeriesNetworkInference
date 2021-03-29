@@ -17,6 +17,10 @@ class BooleanSymbolicFunc(object):
             self.formula = formula
             return
 
+        if input_names is None:
+            n_inputs = int(math.log(len(boolean_outputs), 2))
+            input_names = ['input_{}'.format(i) for i in range(n_inputs)]
+
         if len(input_names) != math.frexp(len(boolean_outputs))[1] - 1:
             raise ValueError("non-matching length for variable names list and boolean outputs list")
         # self.truth_table_outputs = boolean_outputs

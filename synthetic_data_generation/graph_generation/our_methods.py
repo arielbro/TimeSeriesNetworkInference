@@ -6,11 +6,11 @@ import itertools
 import logging
 import random
 
-random_networks_per_reference = 5
-graphs_dir = "../attractor_learning/cellcollective_models"
+random_networks_per_reference = 20
+graphs_dir = "../data/cellcollective_sample"
 mutate_input_nodes = True
 preserve_truth_ratio = True
-scaffold_network_added_edge_fraction = 0.10
+scaffold_network_added_edge_fraction = 0.0
 
 reference_graphs = []
 for graph_dir in os.listdir(graphs_dir):
