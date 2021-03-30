@@ -8,10 +8,10 @@ from inference import dummy_inference, binary_inference_ideas
 from sklearn.model_selection import train_test_split
 import time
 
-# inference_methwod = dummy_inference.dummy_inference_method
+# inference_method = dummy_inference.dummy_inference_method
 # inference_method = binary_inference_ideas.infer_known_topology_general
 inference_method = binary_inference_ideas.infer_known_topology_symmetric
-data_dir = "../data/generated/20210327-170631"
+data_dir = "../data/generated/20210329-214112"
 timestr = time.strftime("%Y%m%d-%H%M%S")
 output_parent_dir = os.path.join("../inferred_models", "{}_on_{}_time_{}".format(
     inference_method.__name__, os.path.split(data_dir)[-1], timestr))

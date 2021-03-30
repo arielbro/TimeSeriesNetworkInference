@@ -91,8 +91,6 @@ class Network(object):
         :param n_attempts:
         :return:
         """
-        for v in self.vertices:
-            v.precomputed_predecessors = None
         if n_attempts is None:
             n_attempts = 10 * len(self.edges)
         if len(self.edges) < 2:
@@ -115,6 +113,7 @@ class Network(object):
         self.edges = list(self.edges)  # just to be careful with other methods' assumptions.
         # BooleanSymbolicFunctions hold input names, so we need to recreate them
         for v in self.vertices:
+            v.precomputed_predecessors = None
             in_neighbors = v.predecessors()
             if isinstance(v.function, BooleanSymbolicFunc):
                 v.function = BooleanSymbolicFunc(input_names=[neighbor.name for neighbor in in_neighbors],
@@ -150,6 +149,9 @@ class Network(object):
                                                  boolean_outputs=v.function.boolean_outputs)
 
         self.edges = new_edges
+        for v in self.vertices:
+            v.precomputed_predecessors = None
+
 
     def randomize_functions(self, function_type_restriction=FunctionTypeRestriction.NONE,
                             mutate_input_nodes=False, preserve_truth_ratio=False):
@@ -369,7 +371,7 @@ class Network(object):
                            line in section.split("\n")[1:]]
                 # noinspection PyUnboundLocalVariable
                 assert set(indices) == set(range(1, n + 1))
-                names = [re.search(r"=[ \t]*([0-9a-zA-Z_\-\\ ]+)", line).group(1) for
+                names = [re.search(r"=[ \t]*([0-9a-zA-Z_/;\-\\ ]+)", line).group(1) for
                          line in section.split("\n")[1:]]
                 # names with spaces cause troubles when making sympy vars
                 names = [name.replace(" ", "_") for name in names]

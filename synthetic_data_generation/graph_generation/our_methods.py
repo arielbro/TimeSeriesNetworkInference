@@ -6,7 +6,7 @@ import itertools
 import logging
 import random
 
-random_networks_per_reference = 20
+random_networks_per_reference = 3
 graphs_dir = "../data/cellcollective_sample"
 mutate_input_nodes = True
 preserve_truth_ratio = True
@@ -46,6 +46,9 @@ def generate_scaffold_network(G, added_edge_frac=scaffold_network_added_edge_fra
     added_edges = random.sample(optional_edges, n_added_edges)  # without replacement
     # TODO: edge (haha) cases (e.g. not enough edges to choose from)
     scaffold.edges.extend(added_edges)
+    for node in scaffold.vertices:
+        node.precomputed_predecessors = None
+        node.precomputed_successors = None
     return scaffold
 
 
