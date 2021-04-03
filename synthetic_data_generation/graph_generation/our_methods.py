@@ -5,11 +5,14 @@ import numpy as np
 import itertools
 import logging
 import random
+from attractor_learning.ilp import FunctionTypeRestriction
 
 random_networks_per_reference = 3
 graphs_dir = "../data/cellcollective_sample"
 mutate_input_nodes = True
 preserve_truth_ratio = True
+function_type_restriction = FunctionTypeRestriction.SYMMETRIC_THRESHOLD
+
 scaffold_network_added_edge_fraction = 0.0
 
 reference_graphs = []
@@ -24,7 +27,8 @@ def generate_random_graphs():
             random_graph = G.copy()
             random_graph.randomize_edges_by_switching(n_attempts=1000)
             random_graph.randomize_functions(mutate_input_nodes=mutate_input_nodes,
-                                                            preserve_truth_ratio=preserve_truth_ratio)
+                                             preserve_truth_ratio=preserve_truth_ratio,
+                                             function_type_restriction=function_type_restriction)
             assert random_graph != G
             yield random_graph
 

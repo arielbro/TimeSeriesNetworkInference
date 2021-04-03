@@ -7,7 +7,7 @@ from enum import Enum
 import sympy
 import os
 import csv
-
+from scipy.stats import binom
 from .logic import BooleanSymbolicFunc, SymmetricThresholdFunction
 from .utility import list_repr
 import copy
@@ -171,14 +171,23 @@ class Network(object):
                 input_names = [u.name for u in v.predecessors()]
                 v.function = BooleanSymbolicFunc(input_names=input_names, boolean_outputs=boolean_outputs)
             elif function_type_restriction == FunctionTypeRestriction.SYMMETRIC_THRESHOLD:
-                signs = [random.choice([False, True]) for _ in range(n)]
                 if preserve_truth_ratio and isinstance(v.function, SymmetricThresholdFunction):
+                    signs = random.shuffle(v.function.signs)
                     threshold = v.function.threshold
                 elif preserve_truth_ratio:
-                    raise NotImplementedError("Preserving truth ratio in threhsold "
-                                              "function when origin is generic isn't supported.")
+                    signs = [random.choice([False, True]) for _ in range(n)]
+                    # bias: fraction of truth table rows that output True
+                    truth_ratio = len([x for x in itertools.product([False, True], repeat=n)
+                                       if v.function(*x)]) / np.exp2(len(signs))
+                    # divide signs to S_+ and S_-. The output is 1 iff \sum_{s\in S_+}s - \sum_{s\in S_-}(1-s) >= k
+                    # equate truth table rows with values of a binomial random variable with parameters (n, 1/2)
+                    # CDF^-1( 1 - bias ) = k s.t. Pr[\sum vars with signs <= k] = 1 - bias,
+                    # or Pr[\sum vars... > k] = bias
+                    # therefore we should choose CDF^-1( 1 - bias ) + 1 as threshold
+                    threshold = binom.ppf(1 - truth_ratio, n, 0.5) + 1
                 else:
-                    threshold = random.randint(1, n)
+                    signs = [random.choice([False, True]) for _ in range(n)]
+                    threshold = random.randint(0, n + 1)  # allow constant false or true functions.
                 v.function = SymmetricThresholdFunction(signs, threshold)
             elif function_type_restriction == FunctionTypeRestriction.SIMPLE_GATES:
                 raise NotImplementedError("randomizing simple gates funntions not yet implemented")
