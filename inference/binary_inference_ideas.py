@@ -23,6 +23,7 @@ def infer_known_topology(data_matrices, scaffold_network, function_type_restrict
     """
     Find a model with best fit to data_matrices, assuming that each node's inputs are defined by the scaffold network
     topology.
+    :param function_type_restriction:
     :param data_matrices:
     :param scaffold_network:
     :return:

@@ -1,15 +1,15 @@
 import os
 import shutil
 from attractor_learning import graphs
-from graph_generation.our_methods import generate_random_graphs, generate_scaffold_network
-from graph_generation.our_methods import log_params as graph_generation_log_params
-from time_series_generation.our_methods import generate_experiments_data
-from time_series_generation.our_methods import log_params as time_series_generation_log_params
+from synthetic_data_generation.graph_generation.our_methods import generate_random_graphs, generate_scaffold_network
+from synthetic_data_generation.graph_generation.our_methods import log_params as graph_generation_log_params
+from synthetic_data_generation.time_series_generation.our_methods import generate_experiments_data
+from synthetic_data_generation.time_series_generation.our_methods import log_params as time_series_generation_log_params
 import time
 import numpy as np
 import logging
 
-experiments_per_network = 3
+experiments_per_network = 50
 data_output_parent_dir = "../data/generated"
 
 timestr = time.strftime("%Y%m%d-%H%M%S")

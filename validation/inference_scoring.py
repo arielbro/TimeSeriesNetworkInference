@@ -56,11 +56,15 @@ def model_dirs_to_timeseries_vectors(reference_dir, inference_dir):
 
         assert(set(ref_matrices.keys()) ==
                (set(pred_train_matrices.keys()) | set(pred_test_matrices.keys())))
+        assert((set(pred_train_matrices.keys()) & set(pred_test_matrices.keys())) == set())
 
-        ref_train_vecs.append(np.concatenate([mat[1:, ].flatten() for mat in ref_train_matrices.values()]))
-        ref_test_vecs.append(np.concatenate([mat[1:, ].flatten() for mat in ref_test_matrices.values()]))
-        pred_train_vecs.append(np.concatenate([mat[1:, ].flatten() for mat in pred_train_matrices.values()]))
-        pred_test_vecs.append(np.concatenate([mat[1:, ].flatten() for mat in pred_test_matrices.values()]))
+        # iterate in a consistent way over train and test matrices
+        train_keys = list(pred_train_matrices.keys())
+        test_keys = list(pred_test_matrices.keys())
+        ref_train_vecs.append(np.concatenate([ref_train_matrices[i][1:, ].flatten() for i in train_keys]))
+        ref_test_vecs.append(np.concatenate([ref_test_matrices[i][1:, ].flatten() for i in test_keys]))
+        pred_train_vecs.append(np.concatenate([pred_train_matrices[i][1:, ].flatten() for i in train_keys]))
+        pred_test_vecs.append(np.concatenate([pred_test_matrices[i][1:, ].flatten() for i in test_keys]))
     return {'ref_train': ref_train_vecs, 'ref_test': ref_test_vecs,
             'pred_train': pred_train_vecs, 'pred_test': pred_test_vecs}
 

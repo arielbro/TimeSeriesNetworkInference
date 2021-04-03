@@ -9,9 +9,9 @@ from sklearn.model_selection import train_test_split
 import time
 
 # inference_method = dummy_inference.dummy_inference_method
-# inference_method = binary_inference_ideas.infer_known_topology_general
-inference_method = binary_inference_ideas.infer_known_topology_symmetric
-data_dir = "../data/generated/20210329-214112"
+inference_method = binary_inference_ideas.infer_known_topology_general
+# inference_method = binary_inference_ideas.infer_known_topology_symmetric
+data_dir = "../data/generated/edge_noise"
 timestr = time.strftime("%Y%m%d-%H%M%S")
 output_parent_dir = os.path.join("../inferred_models", "{}_on_{}_time_{}".format(
     inference_method.__name__, os.path.split(data_dir)[-1], timestr))
@@ -62,6 +62,8 @@ def main():
             inferred_matrices = {i: inferred_model.next_states(data_matrix[0, :], data_matrix.shape[0] - 1)
                                  for i, data_matrix in data.items()}
             inferred_matrices = {i: np.array(mat) for (i, mat) in inferred_matrices.items()}
+            assert len(inferred_matrices) == len(data)
+            assert all(pred_mat.shape[0] == data[i].shape[0] for i, pred_mat in inferred_matrices.items())
             np.savez(os.path.join(output_parent_dir, network_name, "{}_matrices".format(group)), **inferred_matrices)
         np.save(os.path.join(output_parent_dir, network_name, "inference_time"), time_taken)
 
