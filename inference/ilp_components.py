@@ -30,8 +30,8 @@ def add_matrices_as_model_paths(graph, model, data_matrices, function_vars, mode
                 next_step_vars = ilp.add_path_to_model(graph, model, path_len=1, first_state_vars=matrix[t],
                                       last_state_vars=None, v_funcs_restrictions=function_type_restrictions,
                                       model_f_vars=function_vars)[0]
-                indicator = ilp.add_state_inclusion_indicator(
-                                      model, next_step_vars, [matrix[t+1]], slice_size=slice_size,
+                # note that it's a weak constraint indicator, i.e. indicator -> constraint
+                indicator = ilp.add_state_equality_indicator(model, next_step_vars, matrix[t + 1], force_equal=False,
                                       prefix="add_matrices_matrix_index_{}_row_{}".format(matrix_index, t))
                 indicators.append(indicator)
             else:

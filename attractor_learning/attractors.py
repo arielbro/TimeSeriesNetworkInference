@@ -671,15 +671,15 @@ def graph_state_impact_score(G, current_attractors, max_transient_len=30, verbos
                 continue
             other_attractor_states.extend(current_attractors[other_attractor_index])
         first_inclusion_indicator = \
-            ilp.add_state_inclusion_indicator(model, first_state=source_state,
-                                              second_state_set=this_attractor_states,
-                                              slice_size=key_slice_size,
-                                              prefix="attractor_{}_first_state".format(attractor_index))
+            ilp.add_hashed_state_inclusion_indicator(model, first_state=source_state,
+                                                     second_state_set=this_attractor_states,
+                                                     slice_size=key_slice_size,
+                                                     prefix="attractor_{}_first_state".format(attractor_index))
         second_inclusion_indicator = \
-            ilp.add_state_inclusion_indicator(model, first_state=target_state,
-                                              second_state_set=other_attractor_states,
-                                              slice_size=key_slice_size,
-                                              prefix="attractor_{}_target_state".format(attractor_index))
+            ilp.add_hashed_state_inclusion_indicator(model, first_state=target_state,
+                                                     second_state_set=other_attractor_states,
+                                                     slice_size=key_slice_size,
+                                                     prefix="attractor_{}_target_state".format(attractor_index))
         model.addConstr(first_inclusion_indicator == 1, name="first_state_inclusion_constraint")
         objective += relative_basin_size * second_inclusion_indicator
     model.setObjective(objective, sense=GRB.MAXIMIZE)
@@ -747,15 +747,15 @@ def vertex_state_impact_scores(G, current_attractors, max_transient_len=30, verb
                     continue
                 other_attractor_states.extend(current_attractors[other_attractor_index])
             first_inclusion_indicator = \
-                ilp.add_state_inclusion_indicator(model, first_state=source_state,
-                                                  second_state_set=this_attractor_states,
-                                                  slice_size=key_slice_size,
-                                                  prefix="attractor_{}_first_state".format(attractor_index))
+                ilp.add_hashed_state_inclusion_indicator(model, first_state=source_state,
+                                                         second_state_set=this_attractor_states,
+                                                         slice_size=key_slice_size,
+                                                         prefix="attractor_{}_first_state".format(attractor_index))
             second_inclusion_indicator = \
-                ilp.add_state_inclusion_indicator(model, first_state=target_state,
-                                                  second_state_set=other_attractor_states,
-                                                  slice_size=key_slice_size,
-                                                  prefix="attractor_{}_target_state".format(attractor_index))
+                ilp.add_hashed_state_inclusion_indicator(model, first_state=target_state,
+                                                         second_state_set=other_attractor_states,
+                                                         slice_size=key_slice_size,
+                                                         prefix="attractor_{}_target_state".format(attractor_index))
             model.addConstr(first_inclusion_indicator == 1, name="first_state_inclusion_constraint")
             model.setObjective(second_inclusion_indicator, sense=GRB.MAXIMIZE)
             # print("second inclusion indicator - {}".format(second_inclusion_indicator))
@@ -1471,7 +1471,7 @@ def learn_model_from_experiment_agreement(G, experiments, relax_experiments, max
         attractor_states = ilp.add_path_to_model(G, model, max_attractor_len,
                                                  experiment_states[exp],
                                                  last_state_vars=None, model_f_vars=v_funcs)
-        experiment_validity_indicator = ilp.add_state_inclusion_indicator(
+        experiment_validity_indicator = ilp.add_hashed_state_inclusion_indicator(
                                             model, experiment_states[exp],
                                             attractor_states, slice_size=key_slice_size,
                                             prefix="experiment_{}_state_inclusion".format(exp),

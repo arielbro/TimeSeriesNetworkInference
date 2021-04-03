@@ -9,8 +9,8 @@ from sklearn.model_selection import train_test_split
 import time
 
 # inference_method = dummy_inference.dummy_inference_method
-inference_method = binary_inference_ideas.infer_known_topology_general
-# inference_method = binary_inference_ideas.infer_known_topology_symmetric
+# inference_method = binary_inference_ideas.infer_known_topology_general
+inference_method = binary_inference_ideas.infer_known_topology_symmetric
 data_dir = "../data/generated/edge_noise"
 timestr = time.strftime("%Y%m%d-%H%M%S")
 output_parent_dir = os.path.join("../inferred_models", "{}_on_{}_time_{}".format(

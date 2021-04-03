@@ -75,8 +75,9 @@ def infer_known_topology(data_matrices, scaffold_network, function_type_restrict
         elif function_type_restriction == FunctionTypeRestriction.SYMMETRIC_THRESHOLD:
             signs, threshold = functions_variables[i]
             float_signs = [get_value_of_gurobi_entity(sign) for sign in signs]
-            signs = [int(sign) for sign in float_signs]
-            assert signs == float_signs
+            signs = [int(round(sign, 3)) for sign in float_signs]
+            # gurobi can give "almost" integer values even for variables defined as integer type
+            assert signs == [round(s, 3) for s in float_signs]
             threshold = get_value_of_gurobi_entity(threshold)
             func = SymmetricThresholdFunction(signs, threshold)
         else:

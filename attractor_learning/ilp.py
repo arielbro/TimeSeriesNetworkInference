@@ -13,6 +13,7 @@ from attractor_learning.utility import order_key_func
 
 # TODO: find good upper bound again, why didn't 29 work on MAPK_large2?
 # http://files.gurobi.com/Numerics.pdf a good resource on numerical issues, high values cause them.
+# TODO: gurobipy now supports adding or, and, if-then constraints (among others). I should rewrite what I implemented by hand to use those interfaces.
 
 
 def recursive_logic_to_var(formula, model, formulas_to_variables):
@@ -466,8 +467,57 @@ def add_simplified_consistency_constraints(model, v_func, v_next_state_var, pred
                         name="{}_<=".format(activity_part))
 
 
-def add_state_inclusion_indicator(model, first_state, second_state_set, slice_size, prefix=None,
-                                  assume_uniqueness=True):
+def add_state_equality_indicator(model, first_state, second_state,
+                                 force_equal=True, prefix=None):
+    """
+    Adds and returns a (NON STRICT) binary indicator for whether two network states are equal.
+    result = 1 -> first_state == second_state.
+    If force_equal, result = 1 <-> first_state == second_state.
+    Does not use state hashing and ordering. States are allowed to be variables or constants.
+
+    :param model:
+    :param first_state:
+    :param second_state:
+    :param force_equal:
+    :param prefix:
+    :return:
+    """
+    # TODO: write tests
+    equality_indicators = []
+    for index, (first_val, second_val) in enumerate(zip(first_state, second_state)):
+        # add indicator for whether these two values are equal.
+        val_equality_indicator = model.addVar(vtype=GRB.BINARY, name="{}_state_equality_indicator_index_{}".
+                                                format(prefix, index))
+        model.update()
+        if force_equal:
+            # force eq_var = 1 <-> first_val == second_val
+            model.addConstr(val_equality_indicator <= 1 + second_val - first_val,
+                                name="{}_state_equality_constraint_<=_1_index_{}".
+                                format(prefix, index))
+            model.addConstr(val_equality_indicator <= 1 + first_val - second_val,
+                                name="{}_state_equality_constraint_<=_2_index_{}".
+                                format(prefix, index))
+            model.addConstr(val_equality_indicator >= first_val + second_val - 1,
+                                name="{}_state_equality_constraint_>=_1_index_{}".
+                                format(prefix, index))
+            model.addConstr(val_equality_indicator >= 1 - first_val - second_val,
+                                name="{}_state_equality_constraint_>=_2_index_{}".
+                                format(prefix, index))
+        else:
+            model.addGenConstrIndicator(val_equality_indicator, 1, first_val == second_val,
+                                        name="{}_state_equality_constraint_index_{}".format(prefix, index))
+        equality_indicators.append(val_equality_indicator)
+    equality_var = model.addVar(vtype=GRB.BINARY, name="{}_state_equality_indicator".
+                 format(prefix))
+    model.update()
+    model.addGenConstrAnd(equality_var, equality_indicators,
+                          name="{}_state_inequality_constraint".format(prefix))
+    model.update()
+    return equality_var
+
+
+def add_hashed_state_inclusion_indicator(model, first_state, second_state_set, slice_size, prefix=None,
+                                         assume_uniqueness=True):
     """
     Adds and returns a binary indicator for whether one network state is included in a set of others.
     States should be either iterables of constant binary values (False/True/0/1), or model variables.
