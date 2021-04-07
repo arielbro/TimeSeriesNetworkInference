@@ -11,11 +11,12 @@ import time
 # inference_method = dummy_inference.dummy_inference_method
 # inference_method = binary_inference_ideas.infer_known_topology_general
 inference_method = binary_inference_ideas.infer_known_topology_symmetric
-data_dir = "../data/generated/edge_noise"
+data_dir = "../data/generated/symmetric_funcs_true_graph_no_sample_noise"
 timestr = time.strftime("%Y%m%d-%H%M%S")
 output_parent_dir = os.path.join("../inferred_models", "{}_on_{}_time_{}".format(
     inference_method.__name__, os.path.split(data_dir)[-1], timestr))
 train_size = 0.8
+model_inference_timeout_secs = 60 * 30
 
 timestr = time.strftime("%Y%m%d-%H%M%S")
 if os.path.exists(output_parent_dir):
@@ -23,12 +24,12 @@ if os.path.exists(output_parent_dir):
 os.makedirs(output_parent_dir)
 
 # concatenate log for model generation with the inference log
-with open(os.path.join(output_parent_dir, "log"), 'wb') as new_log_file:
-    with open(os.path.join(data_dir, "log"), 'rb') as old_log_file:
+with open(os.path.join(output_parent_dir, "log.txt"), 'wb') as new_log_file:
+    with open(os.path.join(data_dir, "log.txt"), 'rb') as old_log_file:
         shutil.copyfileobj(old_log_file, new_log_file)
 
 logger = logging.getLogger()
-logging.basicConfig(filename=os.path.join(output_parent_dir, "log"),
+logging.basicConfig(filename=os.path.join(output_parent_dir, "log.txt"),
                     filemode='a',
                     format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
                     datefmt='%H:%M:%S',
@@ -38,6 +39,7 @@ logging.basicConfig(filename=os.path.join(output_parent_dir, "log"),
 logger.info("inference_method_name={}".format(inference_method.__name__))
 logger.info("inference_method_module={}".format(inference_method.__module__))
 logger.info("train_size={}".format(train_size))
+logger.info("model_inference_timeout_secs={}".format(model_inference_timeout_secs))
 
 
 def main():
@@ -52,7 +54,8 @@ def main():
         reference_test = {i: reference_matrices[i] for i in test_keys}
 
         start = time.time()
-        inferred_model = inference_method(reference_train.values(), scaffold_network)
+        inferred_model = inference_method(reference_train.values(), scaffold_network,
+                                          timeout_secs=model_inference_timeout_secs)
         time_taken = time.time() - start
         os.makedirs(os.path.join(output_parent_dir, network_name))
         inferred_model.export_to_cnet(os.path.join(output_parent_dir, network_name,

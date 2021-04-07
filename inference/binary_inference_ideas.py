@@ -19,13 +19,15 @@ def infer_known_topology_general(*args, **kwargs):
                                 function_type_restriction=FunctionTypeRestriction.NONE)
 
 
-def infer_known_topology(data_matrices, scaffold_network, function_type_restriction=None):
+def infer_known_topology(data_matrices, scaffold_network, function_type_restriction=None,
+                         timeout_secs=None):
     """
     Find a model with best fit to data_matrices, assuming that each node's inputs are defined by the scaffold network
     topology.
     :param function_type_restriction:
     :param data_matrices:
     :param scaffold_network:
+    :param timeout_secs: timelimit to pass to the solver.
     :return:
     """
     # create function variables
@@ -60,6 +62,8 @@ def infer_known_topology(data_matrices, scaffold_network, function_type_restrict
        model_addition_type=ModelAdditionType.INDICATORS)
     agreement = sum(matrix_agreement_indicators)
 
+    if timeout_secs is not None:
+        model.Params.TimeLimit = timeout_secs
     model.setObjective(agreement, sense=gurobipy.GRB.MAXIMIZE)
     model.optimize()
 

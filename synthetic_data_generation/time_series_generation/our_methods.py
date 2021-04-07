@@ -8,17 +8,15 @@ import logging
 StateSampleType = enum.Enum("StateSampleType", "stable perturbed")
 FrequencyHandling = enum.Enum("FrequencyHandling", "random floor")
 
-timepoints_per_experiment = 3
+timepoints_per_experiment = 10
 state_sample_type = StateSampleType.stable
 frequency_handling = FrequencyHandling.floor
 sample_to_model_freq_ratio = 1.0
 state_noise_chance = 0.0
 frequency_noise_std = 0.0
 
-have_logged = False
 
-
-def generate_one_experiment_data(model, log=not have_logged):
+def generate_one_experiment_data(model, logger=None):
     """
     Given a model, generate one matrix of time-series data from the model. Data starts
     at some state (either a basin-weighted attractor state, or a perturbation of one),
@@ -86,9 +84,9 @@ def generate_one_experiment_data(model, log=not have_logged):
     return data
 
 
-def generate_experiments_data(model, n_experiments):
+def generate_experiments_data(model, n_experiments, logger=None):
     for _ in range(n_experiments):
-        yield generate_one_experiment_data(model)
+        yield generate_one_experiment_data(model, logger)
 
 
 def log_params():
