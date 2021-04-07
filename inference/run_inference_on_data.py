@@ -8,9 +8,9 @@ from inference import dummy_inference, binary_inference_ideas
 from sklearn.model_selection import train_test_split
 import time
 
-# inference_method = dummy_inference.dummy_inference_method
+inference_method = dummy_inference.dummy_inference_method
 # inference_method = binary_inference_ideas.infer_known_topology_general
-inference_method = binary_inference_ideas.infer_known_topology_symmetric
+# inference_method = binary_inference_ideas.infer_known_topology_symmetric
 data_dir = "../data/generated/symmetric_funcs_true_graph_no_sample_noise"
 timestr = time.strftime("%Y%m%d-%H%M%S")
 output_parent_dir = os.path.join("../inferred_models", "{}_on_{}_time_{}".format(
@@ -55,7 +55,8 @@ def main():
 
         start = time.time()
         inferred_model = inference_method(reference_train.values(), scaffold_network,
-                                          timeout_secs=model_inference_timeout_secs)
+                                          timeout_secs=model_inference_timeout_secs,
+                                          log_file=os.path.join(output_parent_dir, "inference_log.txt"))
         time_taken = time.time() - start
         os.makedirs(os.path.join(output_parent_dir, network_name))
         inferred_model.export_to_cnet(os.path.join(output_parent_dir, network_name,

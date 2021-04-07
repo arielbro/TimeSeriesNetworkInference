@@ -1,7 +1,7 @@
 import attractor_learning.graphs
 
 
-def dummy_inference_method(data_matrices, scaffold_network, timeout_secs=None):
+def dummy_inference_method(data_matrices, scaffold_network, **kwargs):
     """
     Dummy inference - returns the scaffold network given, with random Boolean functions
     :param data_matrices:

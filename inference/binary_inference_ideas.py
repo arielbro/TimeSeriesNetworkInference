@@ -20,7 +20,7 @@ def infer_known_topology_general(*args, **kwargs):
 
 
 def infer_known_topology(data_matrices, scaffold_network, function_type_restriction=None,
-                         timeout_secs=None):
+                         timeout_secs=None, log_file=None):
     """
     Find a model with best fit to data_matrices, assuming that each node's inputs are defined by the scaffold network
     topology.
@@ -62,6 +62,8 @@ def infer_known_topology(data_matrices, scaffold_network, function_type_restrict
        model_addition_type=ModelAdditionType.INDICATORS)
     agreement = sum(matrix_agreement_indicators)
 
+    if log_file is not None:
+        model.Params.LogFile = log_file
     if timeout_secs is not None:
         model.Params.TimeLimit = timeout_secs
     model.setObjective(agreement, sense=gurobipy.GRB.MAXIMIZE)
