@@ -82,13 +82,19 @@ def model_dirs_to_time_taken_vector(inference_dir):
 
 
 def aggregate_classification_metric(reference_vectors, prediction_vectors, metric):
+    metric_fine_with_constant_vecs = True
+    try:
+        metric([1,1], [1,1])
+    except ValueError as e:
+        metric_fine_with_constant_vecs = False
+
     assert(len(reference_vectors) == len(prediction_vectors))
     has_constant_vecs = False
     for vec in reference_vectors:
         if len(np.unique(vec)) == 1:
             print("Warning: reference vector has only one value, {}".format(np.unique(vec)[0]))
             has_constant_vecs = True
-    if has_constant_vecs:
+    if has_constant_vecs and not metric_fine_with_constant_vecs:
         res_metrics = []
         for ref_vec, pred_vec in zip(reference_vectors, prediction_vectors):
             if len(np.unique(ref_vec)) > 1:

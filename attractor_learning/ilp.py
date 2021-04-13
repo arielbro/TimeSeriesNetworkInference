@@ -608,7 +608,9 @@ def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, last_s
                 if (v_funcs_restrictions is not None) and (
                         v_funcs_restrictions[i] == FunctionTypeRestriction.SYMMETRIC_THRESHOLD):
                     signs, threshold = model_f_vars[i]
-                    threshold_expression = sum(sign * var for sign, var in zip(signs, predecessor_vars)) - threshold + 1
+                    # v * s + (1-s)/2 gives v if s=1 and (1-v) if s=-1
+                    threshold_expression = sum(sign * var + 0.5 * (1 - sign) for sign, var in
+                                               zip(signs, predecessor_vars)) - threshold + 1
                     model.addConstr((len(predecessor_vars) + 1) * next_state_vars[i] >= threshold_expression,
                         name="{}_threshold_function_path_constraint_>=".format(name_prefix))
                     model.addConstr((len(predecessor_vars) + 1) * next_state_vars[i] <=
