@@ -25,11 +25,13 @@ def add_matrices_as_model_paths(graph, model, data_matrices, function_vars, mode
         for t in range(len(matrix) - 1):
             if model_addition_type == ModelAdditionType.CONSTRAINT:
                 ilp.add_path_to_model(graph, model, path_len=1, first_state_vars=matrix[t], model_f_vars=None,
-                                      last_state_vars=matrix[t+1], v_funcs_restrictions=function_type_restrictions)
+                                      last_state_vars=matrix[t+1], v_funcs_restrictions=function_type_restrictions,
+                                      name_prefix="matrix_{}_time_{}".format(matrix_index, t))
             elif model_addition_type == ModelAdditionType.INDICATORS:
                 next_step_vars = ilp.add_path_to_model(graph, model, path_len=1, first_state_vars=matrix[t],
                                       last_state_vars=None, v_funcs_restrictions=function_type_restrictions,
-                                      model_f_vars=function_vars)[0]
+                                      model_f_vars=function_vars,
+                                      name_prefix="matrix_{}_time_{}".format(matrix_index, t))[0]
                 # note that it's a weak constraint indicator, i.e. indicator -> constraint
                 indicator = ilp.add_state_equality_indicator(model, next_step_vars, matrix[t + 1], force_equal=False,
                                       prefix="add_matrices_matrix_index_{}_row_{}".format(matrix_index, t))

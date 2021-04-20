@@ -609,12 +609,39 @@ def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, last_s
                         v_funcs_restrictions[i] == FunctionTypeRestriction.SYMMETRIC_THRESHOLD):
                     signs, threshold = model_f_vars[i]
                     # v * s + (1-s)/2 gives v if s=1 and (1-v) if s=-1
-                    threshold_expression = sum(sign * var + 0.5 * (1 - sign) for sign, var in
-                                               zip(signs, predecessor_vars)) - threshold + 1
+                    # !!! This only works if s\in {-1, 1}, if we're learning the topology and s=0 is possible, breaks.
+                    # instead, divide to cases based on the value of v and an extra variable.
+                    # TODO: consolidate formulation here and in other parts of ilp.py
+                    signed_input_vars = [model.addVar(vtype=gurobipy.GRB.BINARY,
+                                         name="{}_signed_input_var_{}_{}_{}".format(name_prefix, l, i, j))
+                                         for j in range(len(predecessor_vars))]
+                    model.update()
+                    for j, (sign, var, signed_input) in enumerate(zip(signs, predecessor_vars, signed_input_vars)):
+                        # we want signed_input = 1 <-> (s = 1 and v = 1) or (s = -1 and v = 0)
+                        # v is binary, and s can take -1, 0, 1
+                        # (2v - 1)s yields 1 when v and s "agree" (1 and 1 or 0 and -1), otherwise less.
+                        # And so, forcing signed_input to be 1 iff (2v - 1)s is 1 works, but that'd probably be harder
+                        # to solve (since constraint-heavy expressions generally yield better relaxations).
+                        # instead, just split to cases, since v is a constant
+                        if var == 1:
+                            # s = 1 -> signed_input = 1, otherwise signed_input = 0
+                            model.addConstr(signed_input >= sign,
+                                            name="{}_signed_input_constraint_{}_{}_{}>=".format(name_prefix, l, i, j))
+                            model.addConstr(2 * signed_input <= 1 + sign,
+                                            name="{}_signed_input_constraint_{}_{}_{}<=".format(name_prefix, l, i, j))
+                        elif var == 0:
+                            # s = -1 -> signed_input = 1, otherwise signed_input = 0
+                            model.addConstr(signed_input >= -sign,
+                                            name="{}_signed_input_constraint_{}_{}_{}>=".format(name_prefix, l, i, j))
+                            model.addConstr(2 * signed_input <= 1 - sign,
+                                            name="{}_signed_input_constraint_{}_{}_{}<=".format(name_prefix, l, i, j))
+                        else:
+                            raise ValueError("v must be binary, but got value {}".format(v))
+                    threshold_expression = sum(signed_var for signed_var in signed_input_vars) - threshold + 1
                     model.addConstr((len(predecessor_vars) + 1) * next_state_vars[i] >= threshold_expression,
                         name="{}_threshold_function_path_constraint_>=".format(name_prefix))
-                    model.addConstr((len(predecessor_vars) + 1) * next_state_vars[i] <=
-                                    (len(predecessor_vars) + 1) + threshold_expression,
+                    model.addConstr(len(predecessor_vars) * next_state_vars[i] <=
+                                    len(predecessor_vars) + threshold_expression - 1,
                                     name="{}_threshold_function_path_constraint_<=".format(name_prefix))
 
                 elif (v_funcs_restrictions is not None) and (

@@ -1,24 +1,36 @@
 import os
 from attractor_learning import graphs
 import numpy as np
+from scipy import sparse
 import shutil
+from sklearn.metrics import accuracy_score
 import itertools
 
 
-def models_to_edge_vectors(reference_model, inference_model):
+def models_to_edge_vectors(reference_model, inference_model, use_sparse=True):
     assert {v.name for v in reference_model.vertices} == {v.name for v in inference_model.vertices}
-    y_true, y_pred = np.zeros(shape=(len(reference_model) ** 2, )), \
-                     np.zeros(shape=(len(reference_model) ** 2, ))
-    for i, (u, v) in enumerate(itertools.product(reference_model.vertices, repeat=2)):
-        y_true[i] = 1 if (u, v) in reference_model.edges else 0
-        # different model, work by name
-        edge_equiv = inference_model.get_vertex(u.name), inference_model.get_vertex(v.name)
-        y_pred[i] = 1 if edge_equiv in inference_model.edges else 0
-    assert i == len(y_true) - 1
+    if use_sparse:
+        y_true = sparse.lil_matrix((1, len(reference_model) ** 2))
+        y_pred = sparse.lil_matrix((1, len(reference_model) ** 2))
+        # use order in reference_model
+        for vec, model in zip([y_true, y_pred], [reference_model, inference_model]):
+            for edge in reference_model.edges:
+                u_index = reference_model.get_vertex(edge[0].name).index
+                v_index = reference_model.get_vertex(edge[1].name).index
+                index = u_index * len(reference_model) + v_index
+                vec[0, index] = 1
+    else:
+        y_true, y_pred = np.zeros(shape=(len(reference_model) ** 2, )), \
+                         np.zeros(shape=(len(reference_model) ** 2, ))
+        for i, (u, v) in enumerate(itertools.product(reference_model.vertices, repeat=2)):
+            y_true[i] = 1 if (u, v) in reference_model.edges else 0
+            # different model, work by name
+            edge_equiv = inference_model.get_vertex(u.name), inference_model.get_vertex(v.name)
+            y_pred[i] = 1 if edge_equiv in inference_model.edges else 0
     return y_true, y_pred
 
 
-def model_dirs_to_edge_vectors_list(reference_dir, inference_dir):
+def model_dirs_to_edge_vectors_list(reference_dir, inference_dir, use_sparse=True):
     reference_models = {f.name: graphs.Network.parse_cnet(os.path.join(f.path, "true_network.cnet")) for
                         f in os.scandir(reference_dir) if f.is_dir()}
     inference_models = {f.name: graphs.Network.parse_cnet(os.path.join(f.path, "inferred_network.cnet"))
@@ -30,7 +42,8 @@ def model_dirs_to_edge_vectors_list(reference_dir, inference_dir):
     for model_name, ref_model in reference_models.items():
         ref_model = reference_models[model_name]
         pred_model = inference_models[model_name]
-        ref_vector, pred_vector = models_to_edge_vectors(ref_model, pred_model)
+        ref_vector, pred_vector = models_to_edge_vectors(ref_model, pred_model,
+                                                         use_sparse=use_sparse)
         ref_vectors.append(ref_vector)
         pred_vectors.append(pred_vector)
     return {'ref': ref_vectors, 'pred': pred_vectors}
@@ -91,14 +104,36 @@ def aggregate_classification_metric(reference_vectors, prediction_vectors, metri
     assert(len(reference_vectors) == len(prediction_vectors))
     has_constant_vecs = False
     for vec in reference_vectors:
-        if len(np.unique(vec)) == 1:
+        if len(np.unique(vec.data)) == 1:
             print("Warning: reference vector has only one value, {}".format(np.unique(vec)[0]))
             has_constant_vecs = True
     if has_constant_vecs and not metric_fine_with_constant_vecs:
         res_metrics = []
         for ref_vec, pred_vec in zip(reference_vectors, prediction_vectors):
-            if len(np.unique(ref_vec)) > 1:
+            if len(np.unique(ref_vec.data)) > 1:
                 res_metrics.append(metric(ref_vec, pred_vec))
-        print(len(res_metrics))
         return res_metrics
     return [metric(y_ref, y_pred) for (y_ref, y_pred) in zip(reference_vectors, prediction_vectors)]
+
+
+def sparse_accuracy_score(x, y):
+    """
+    Returns the accuracy score of equal lengths binary x and y, i.e. <x, y> / |x|.
+    x and y can be dense (list, tuple, np.array) or sparse, in which case computation is only
+    done on the existing records.
+    :param x:
+    :param y:
+    :return:
+    """
+    try:
+        assert(len(x) == len(y))
+    except TypeError:
+        assert(x.shape == y.shape)
+
+    if sparse.issparse(x) and sparse.issparse(y):
+        common = x.dot(y.T)
+        assert(common.shape == (1, 1))
+        n_common = common[0, 0]
+        return n_common / float(max(x.shape))
+    else:
+        return accuracy_score(x, y)
