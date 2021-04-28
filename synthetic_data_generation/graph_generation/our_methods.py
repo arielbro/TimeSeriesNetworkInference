@@ -55,7 +55,7 @@ def generate_scaffold_network(G, added_edge_frac=scaffold_network_added_edge_fra
     optional_added_edges = list((a, b) for (a, b) in itertools.combinations(scaffold.vertices, 2) if
                       (a, b) not in scaffold.edges)
     if preserve_input_nodes_on_add:
-        optional_added_edges = [(a, b) for (a, b) in optional_added_edges if len(b.predecessors() > 0)]
+        optional_added_edges = [(a, b) for (a, b) in optional_added_edges if len(b.predecessors()) > 0]
     if n_added_edges > len(optional_added_edges):
         warning = "Warning! More edges to add than possible. Reducing amount of added edges"
         if logger is not None:
