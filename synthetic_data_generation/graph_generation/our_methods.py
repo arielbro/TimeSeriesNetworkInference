@@ -77,7 +77,6 @@ def generate_scaffold_network(G, added_edge_frac=scaffold_network_added_edge_fra
 def log_params():
     logger = logging.getLogger(__name__)
     logger.info("random_networks_per_reference={}".format(random_networks_per_reference))
-    logger.info("graphs_dir={}".format(graphs_dir))
     logger.info("mutate_input_nodes={}".format(mutate_input_nodes))
     logger.info("preserve_truth_ratio={}".format(preserve_truth_ratio))
     logger.info("preserve_input_nodes={}".format(preserve_input_nodes_on_add))
