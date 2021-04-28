@@ -74,7 +74,7 @@ def infer_known_topology(data_matrices, scaffold_network, function_type_restrict
     inferred_model = scaffold_network.copy()
     for i in range(len(inferred_model)):
         if len(inferred_model.vertices[i].predecessors()) == 0:
-            inferred_model.vertices[i].function = None
+            func = None
         elif function_type_restriction is None or function_type_restriction == FunctionTypeRestriction.NONE:
             func = BooleanSymbolicFunc(boolean_outputs=[
                 get_value_of_gurobi_entity(functions_variables[i][j]) for j

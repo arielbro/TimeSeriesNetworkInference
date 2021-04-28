@@ -22,8 +22,8 @@ output_parent_dir = os.path.join("../inferred_models/different_data_generation_p
 train_size = 0.8
 model_inference_timeout_secs = 5
 allow_additional_edges = True
-included_edges_relative_weight = 1
-added_edges_relative_weight = -1
+included_edges_relative_weight = -0.1
+added_edges_relative_weight = -0.1
 
 
 timestr = time.strftime("%Y%m%d-%H%M%S")
