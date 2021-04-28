@@ -80,5 +80,6 @@ def log_params():
     logger.info("mutate_input_nodes={}".format(mutate_input_nodes))
     logger.info("preserve_truth_ratio={}".format(preserve_truth_ratio))
     logger.info("preserve_input_nodes={}".format(preserve_input_nodes_on_add))
-    logger.info("scaffold_network_added_edge_fraction={}".format(scaffold_network_added_edge_fraction))
+    logger.info("scaffold_network_removed_edge_fraction={}".format(scaffold_network_removed_edge_fraction))
+    logger.info("function_type_restriction={}".format(function_type_restriction))
     logger.info("function_type_restriction={}".format(function_type_restriction))
