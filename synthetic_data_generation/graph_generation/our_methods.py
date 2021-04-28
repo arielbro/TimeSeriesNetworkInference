@@ -13,8 +13,9 @@ mutate_input_nodes = True
 preserve_truth_ratio = True
 function_type_restriction = FunctionTypeRestriction.SYMMETRIC_THRESHOLD
 
-preserve_input_nodes = True
+preserve_input_nodes_on_add = True
 scaffold_network_added_edge_fraction = 0.2
+scaffold_network_removed_edge_fraction = 0.0
 
 reference_graphs = []
 for graph_dir in os.listdir(graphs_dir):
@@ -35,7 +36,8 @@ def generate_random_graphs(logger=None):
 
 
 def generate_scaffold_network(G, added_edge_frac=scaffold_network_added_edge_fraction,
-                              preserve_input_nodes=preserve_input_nodes, logger=None):
+                              removed_edge_frac=scaffold_network_removed_edge_fraction,
+                              preserve_input_nodes_on_add=preserve_input_nodes_on_add, logger=None):
     """
     Generates an almost correct scaffold network to use in model inference.
     Currently just adds new edges to the reference graph G.
@@ -46,19 +48,26 @@ def generate_scaffold_network(G, added_edge_frac=scaffold_network_added_edge_fra
     scaffold = G.copy()
     for vertex in scaffold.vertices:
         vertex.function = None
+
+    n_removed_edges = int(len(scaffold.edges) * removed_edge_frac)
+    removed_edges = random.sample(scaffold.edges, n_removed_edges)
+
     n_added_edges = int(len(scaffold.edges) * added_edge_frac)
-    optional_edges = list((a, b) for (a, b) in itertools.combinations(scaffold.vertices, 2) if
+    optional_added_edges = list((a, b) for (a, b) in itertools.combinations(scaffold.vertices, 2) if
                       (a, b) not in scaffold.edges)
-    if preserve_input_nodes:
-        optional_edges = [(a, b) for (a, b) in optional_edges if len(b.predecessors() > 0)]
-    if n_added_edges > len(optional_edges):
+    if preserve_input_nodes_on_add:
+        optional_added_edges = [(a, b) for (a, b) in optional_added_edges if len(b.predecessors() > 0)]
+    if n_added_edges > len(optional_added_edges):
         warning = "Warning! More edges to add than possible. Reducing amount of added edges"
         if logger is not None:
             logger.warning(warning)
         print(warning)
-        n_added_edges = len(optional_edges)
-    added_edges = random.sample(optional_edges, n_added_edges)  # without replacement
+        n_added_edges = len(optional_added_edges)
+    added_edges = random.sample(optional_added_edges, n_added_edges)  # without replacement
     # TODO: edge (haha) cases (e.g. not enough edges to choose from)
+
+    for edge in removed_edges:
+        scaffold.edges.remove(edge)
     scaffold.edges.extend(added_edges)
     for node in scaffold.vertices:
         node.precomputed_predecessors = None
@@ -72,6 +81,6 @@ def log_params():
     logger.info("graphs_dir={}".format(graphs_dir))
     logger.info("mutate_input_nodes={}".format(mutate_input_nodes))
     logger.info("preserve_truth_ratio={}".format(preserve_truth_ratio))
-    logger.info("preserve_input_nodes={}".format(preserve_input_nodes))
+    logger.info("preserve_input_nodes={}".format(preserve_input_nodes_on_add))
     logger.info("scaffold_network_added_edge_fraction={}".format(scaffold_network_added_edge_fraction))
     logger.info("function_type_restriction={}".format(function_type_restriction))

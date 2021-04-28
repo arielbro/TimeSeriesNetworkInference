@@ -31,22 +31,15 @@ def models_to_edge_vectors(reference_model, inference_model, use_sparse=True):
 
 
 def model_dirs_to_edge_vectors_list(reference_dir, inference_dir, use_sparse=True):
-    reference_models = {f.name: graphs.Network.parse_cnet(os.path.join(f.path, "true_network.cnet")) for
-                        f in os.scandir(reference_dir) if f.is_dir()}
-    inference_models = {f.name: graphs.Network.parse_cnet(os.path.join(f.path, "inferred_network.cnet"))
-                        for f in os.scandir(inference_dir) if f.is_dir()}
-    assert (set(reference_models.keys()) == set(inference_models.keys()))
+    model_names = {f.name for f in os.scandir(reference_dir) if f.is_dir()}
+    assert model_names == {f.name for f in os.scandir(inference_dir) if f.is_dir()}
 
-    ref_vectors = []
-    pred_vectors = []
-    for model_name, ref_model in reference_models.items():
-        ref_model = reference_models[model_name]
-        pred_model = inference_models[model_name]
-        ref_vector, pred_vector = models_to_edge_vectors(ref_model, pred_model,
+    for name in model_names:
+        ref_model = graphs.Network.parse_cnet(os.path.join(reference_dir, name, "true_network.cnet"))
+        inferred_model = graphs.Network.parse_cnet(os.path.join(inference_dir, name, "inferred_network.cnet"))
+        ref_vector, pred_vector = models_to_edge_vectors(ref_model, inferred_model,
                                                          use_sparse=use_sparse)
-        ref_vectors.append(ref_vector)
-        pred_vectors.append(pred_vector)
-    return {'ref': ref_vectors, 'pred': pred_vectors}
+        yield ref_vector, pred_vector
 
 
 def model_dirs_to_timeseries_vectors(reference_dir, inference_dir):
@@ -81,7 +74,6 @@ def model_dirs_to_timeseries_vectors(reference_dir, inference_dir):
     return {'ref_train': ref_train_vecs, 'ref_test': ref_test_vecs,
             'pred_train': pred_train_vecs, 'pred_test': pred_test_vecs}
 
-
 def model_dirs_to_boolean_function_vectors(reference_dir, inference_dir):
     raise NotImplementedError()
 
@@ -94,26 +86,37 @@ def model_dirs_to_time_taken_vector(inference_dir):
     return timings
 
 
-def aggregate_classification_metric(reference_vectors, prediction_vectors, metric):
+def aggregate_classification_metric(ref_inf_vector_iterator, metric):
     metric_fine_with_constant_vecs = True
     try:
-        metric([1,1], [1,1])
+        metric([1, 1], [1, 1])
     except ValueError as e:
         metric_fine_with_constant_vecs = False
 
-    assert(len(reference_vectors) == len(prediction_vectors))
-    has_constant_vecs = False
-    for vec in reference_vectors:
-        if len(np.unique(vec.data)) == 1:
-            print("Warning: reference vector has only one value, {}".format(np.unique(vec)[0]))
-            has_constant_vecs = True
-    if has_constant_vecs and not metric_fine_with_constant_vecs:
-        res_metrics = []
-        for ref_vec, pred_vec in zip(reference_vectors, prediction_vectors):
-            if len(np.unique(ref_vec.data)) > 1:
+    res_metrics = []
+    i = 0
+    for ref_vec, pred_vec in ref_inf_vector_iterator:
+        if sparse.issparse(ref_vec):
+            if ref_vec.getnnz() == 0:
+                unique = [0]
+            elif ref_vec.getnnz() == ref_vec.shape[1]:
+                unique = np.unique(ref_vec.data[0])
+            else:
+                unique = [0] + list(np.unique(ref_vec.data[0]))
+        else:
+            unique = np.unique(ref_vec.data)
+        if len(unique) == 1:
+            print("Warning: reference vector has only one value, {}".format(unique[0]))
+        if metric_fine_with_constant_vecs or (len(unique) > 1):
+            if len(ref_vec.shape) == 2:
+                # TODO: find way to get correct results from sklearn.metrics.accuracy_score with sparse one-row matrices
+                res_metrics.append(metric(ref_vec.toarray()[0], pred_vec.toarray()[0]))
+            else:
                 res_metrics.append(metric(ref_vec, pred_vec))
-        return res_metrics
-    return [metric(y_ref, y_pred) for (y_ref, y_pred) in zip(reference_vectors, prediction_vectors)]
+        i += 1
+        # if not i % 10:
+        #     print(i)
+    return res_metrics
 
 
 def sparse_accuracy_score(x, y):

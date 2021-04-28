@@ -9,10 +9,10 @@ import time
 import numpy as np
 import logging
 
-experiments_per_network = 30
-data_output_parent_dir = "../data/generated"
+experiments_per_network = 10
+data_output_parent_dir = "../data/generated/different_data_generation_parameters_smaller"
 
-name_prefix = "general_funcs_false_graph_no_sample_noise"
+name_prefix = "symmetric_funcs_false_graph_no_sample_noise"
 # timestr = time.strftime("%Y%m%d-%H%M%S")
 data_dir_path = os.path.join(data_output_parent_dir, name_prefix)
 if os.path.exists(data_dir_path):
