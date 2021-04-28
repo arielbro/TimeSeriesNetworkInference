@@ -8,7 +8,6 @@ import random
 from attractor_learning.ilp import FunctionTypeRestriction
 
 random_networks_per_reference = 10
-graphs_dir = "../data/cellcollective_sample"
 mutate_input_nodes = True
 preserve_truth_ratio = True
 function_type_restriction = FunctionTypeRestriction.SYMMETRIC_THRESHOLD
@@ -17,13 +16,13 @@ preserve_input_nodes_on_add = True
 scaffold_network_added_edge_fraction = 0.2
 scaffold_network_removed_edge_fraction = 0.0
 
-reference_graphs = []
-for graph_dir in os.listdir(graphs_dir):
-    G = graphs.Network.parse_boolean_tables(os.path.join(graphs_dir, graph_dir))
-    reference_graphs.append(G)
 
+def generate_random_graphs(graphs_dir, logger=None):
+    reference_graphs = []
+    for graph_dir in os.listdir(graphs_dir):
+        G = graphs.Network.parse_boolean_tables(os.path.join(graphs_dir, graph_dir))
+        reference_graphs.append(G)
 
-def generate_random_graphs(logger=None):
     for G in reference_graphs:
         for _ in range(random_networks_per_reference):
             random_graph = G.copy()

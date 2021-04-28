@@ -9,7 +9,9 @@ import time
 import numpy as np
 import logging
 
+use_random_network = True
 experiments_per_network = 10
+graphs_dir = "../data/cellcollective_sample"
 data_output_parent_dir = "../data/generated/different_data_generation_parameters_smaller"
 
 name_prefix = "symmetric_funcs_false_graph_no_sample_noise"
@@ -28,23 +30,31 @@ logging.basicConfig(filename=os.path.join(data_dir_path, "log.txt"),
 
 
 logger.info("experiments_per_network={}".format(experiments_per_network))
+logger.info("use_random_network={}".format(use_random_network))
+logger.info("graphs_dir={}".format(graphs_dir))
 graph_generation_log_params()
 time_series_generation_log_params()
 
 
 def main():
 
-    random_graphs = generate_random_graphs(logger=logger)
+    if use_random_network:
+        reference_graphs = generate_random_graphs(graphs_dir, logger=logger)
+    else:
+        reference_graphs = []
+        for graph_dir in os.listdir(graphs_dir):
+            G = graphs.Network.parse_boolean_tables(os.path.join(graphs_dir, graph_dir))
+            reference_graphs.append(G)
 
-    for graph_index, random_graph in enumerate(random_graphs):
+    for graph_index, reference_graph in enumerate(reference_graphs):
         graph_path = os.path.join(data_dir_path, "network_{}".format(graph_index))
         os.makedirs(graph_path)
-        random_graph.export_to_cnet(os.path.join(graph_path, "true_network.cnet"))
-        random_scaffold = generate_scaffold_network(random_graph, logger=logger)
+        reference_graph.export_to_cnet(os.path.join(graph_path, "true_network.cnet"))
+        random_scaffold = generate_scaffold_network(reference_graph, logger=logger)
         for vertex in random_scaffold.vertices:
             vertex.function = lambda *x: False  # so it can fit cnet format.
         random_scaffold.export_to_cnet(os.path.join(graph_path, "scaffold_network.cnet"))
-        matrices = generate_experiments_data(random_graph, experiments_per_network, logger=logger)
+        matrices = generate_experiments_data(reference_graph, experiments_per_network, logger=logger)
         named_matrices = dict((str(i), mat) for (i, mat) in enumerate(matrices))
         np.savez(os.path.join(graph_path, "matrices"), **named_matrices)
 
