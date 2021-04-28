@@ -56,6 +56,8 @@ logger.info("added_edges_relative_weight={}".format(added_edges_relative_weight)
 def main():
 
     paths = [(f.name, f.path) for f in os.scandir(data_dir) if f.is_dir()]
+    if len(paths) == 0:
+        raise ValueError("Did not find network directories in data_dir {}".format(data_dir))
     for network_name, network_path in paths:
         scaffold_network = graphs.Network.parse_cnet(os.path.join(network_path, "scaffold_network.cnet"))
         true_network = graphs.Network.parse_cnet(os.path.join(network_path, "true_network.cnet"))
