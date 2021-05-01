@@ -1,0 +1,12 @@
+# inference_method = "random"
+# inference_method = "general"
+# inference_method = "symmetric"
+inference_method = "symmetric_topology"
+
+data_parent_dir = "../data/generated/initial_learning"
+
+train_size = 0.8
+model_inference_timeout_secs = 5
+allow_additional_edges = True
+included_edges_relative_weight = -0.01
+added_edges_relative_weight = -0.1

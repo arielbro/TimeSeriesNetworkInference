@@ -42,6 +42,22 @@ def model_dirs_to_edge_vectors_list(reference_dir, inference_dir, use_sparse=Tru
         yield ref_vector, pred_vector
 
 
+def model_dirs_to_network_sizes(reference_dir, inference_dir=None, use_sparse=True, with_edges=False):
+    model_names = {f.name for f in os.scandir(reference_dir) if f.is_dir()}
+    res = []
+
+    for name in model_names:
+        try:
+            ref_model = graphs.Network.parse_cnet(os.path.join(reference_dir, name, "true_network.cnet"))
+        except FileNotFoundError as e:
+            ref_model = graphs.Network.parse_cnet(os.path.join(reference_dir, name, "inferred_network.cnet"))
+        if with_edges:
+            res.append(len(ref_model) + len(ref_model.edges))
+        else:
+            res.append(len(ref_model))
+    return res
+
+
 def model_dirs_to_timeseries_vectors(reference_dir, inference_dir):
     reference_model_names = {f.name for f in os.scandir(reference_dir) if f.is_dir()}
     inference_model_names = {f.name for f in os.scandir(inference_dir) if f.is_dir()}

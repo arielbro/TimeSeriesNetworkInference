@@ -3,20 +3,11 @@ import random
 from attractor_learning.stochastic import walk_to_attractor
 import numpy as np
 
-import logging
-
 StateSampleType = enum.Enum("StateSampleType", "stable perturbed")
 FrequencyHandling = enum.Enum("FrequencyHandling", "random floor")
 
-timepoints_per_experiment = 10
-state_sample_type = StateSampleType.stable
-frequency_handling = FrequencyHandling.floor
-sample_to_model_freq_ratio = 1.0
-state_noise_chance = 0.0
-frequency_noise_std = 0.0
 
-
-def generate_one_experiment_data(model, logger=None):
+def generate_one_experiment_data(model, **kwargs):
     """
     Given a model, generate one matrix of time-series data from the model. Data starts
     at some state (either a basin-weighted attractor state, or a perturbation of one),
@@ -34,7 +25,7 @@ def generate_one_experiment_data(model, logger=None):
     """
 
     n_nodes = len(model)
-    data = np.zeros(shape=(timepoints_per_experiment, n_nodes))
+    data = np.zeros(shape=(kwargs['timepoints_per_experiment'], n_nodes))
 
     # sample starting state
     starting_point = [random.randint(0, 1) for _ in range(n_nodes)]
@@ -42,57 +33,48 @@ def generate_one_experiment_data(model, logger=None):
 
     starting_point = random.choice(starting_attractor)
 
-    if state_sample_type == StateSampleType.perturbed:
+    if kwargs['state_sample_type'] == StateSampleType.perturbed:
         i = random.randint(0, n_nodes - 1)
         starting_point[i] = 1 - starting_point[i]
-    elif state_sample_type == StateSampleType.stable:
+    elif kwargs['state_sample_type'] == StateSampleType.stable:
         pass
     else:
-        raise ValueError("unkown StateSampleType {}".format(state_sample_type))
+        raise ValueError("unkown StateSampleType {}".format(kwargs['state_sample_type']))
 
-    if frequency_noise_std != 0:
+    if kwargs['frequency_noise_std'] != 0:
         raise NotImplementedError("frequency noise unimplemented")
 
     # fill in time-series
     model_states = [tuple(starting_point)]
     data[0, :] = model_states[0]
-    q = sample_to_model_freq_ratio
-    for t in range(1, timepoints_per_experiment):
+    q = kwargs['sample_to_model_freq_ratio']
+    for t in range(1, kwargs['timepoints_per_experiment']):
         model_step = float(t) / q
         model_step_floor = int(model_step)
         for _ in range(model_step_floor + 1 - len(model_states)):
             model_states.append(model.next_state(model_states[-1]))
         state = np.zeros(shape=(n_nodes,))
         for i in range(n_nodes):
-            if frequency_handling == FrequencyHandling.floor:
+            if kwargs['frequency_handling'] == FrequencyHandling.floor:
                 state[i] = model_states[model_step_floor][i]
-            elif frequency_handling == FrequencyHandling.random:
+            elif kwargs['frequency_handling'] == FrequencyHandling.random:
                 if random.random() > model_step - model_step_floor:
                     state[i] = model_states[model_step_floor][i]
                 else:
                     state[i] = model_states[model_step_floor + 1][i]
             else:
-                raise ValueError("Unkown frequency handling mode {}".format(frequency_handling))
+                raise ValueError("Unkown frequency handling mode {}".format(kwargs['frequency_handling']))
         data[t, :] = state
 
     # add noise
-    for t in range(timepoints_per_experiment):
+    for t in range(kwargs['timepoints_per_experiment']):
         for i in range(n_nodes):
-            if random.random() < state_noise_chance:
+            if random.random() < kwargs['state_noise_chance']:
                 data[t, i] = 1 - data[t, i]
 
     return data
 
 
-def generate_experiments_data(model, n_experiments, logger=None):
+def generate_experiments_data(model, n_experiments, **kwargs):
     for _ in range(n_experiments):
-        yield generate_one_experiment_data(model, logger)
-
-
-def log_params():
-    logger = logging.getLogger(__name__)
-    logger.info("timepoints_per_experiment={}".format(timepoints_per_experiment))
-    logger.info("sample_to_model_freq_ratio={}".format(sample_to_model_freq_ratio))
-    logger.info("state_noise_chance={}".format(state_noise_chance))
-    logger.info("state_sample_type={}".format(state_sample_type))
-    logger.info("frequency_handling={}".format(frequency_handling))
+        yield generate_one_experiment_data(model, **kwargs)

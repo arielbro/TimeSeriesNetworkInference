@@ -188,7 +188,9 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
         signs = [int(round(sign, 3)) for sign in float_signs]
         # gurobi can give "almost" integer values even for variables defined as integer type
         assert signs == [round(s, 3) for s in float_signs]
-        threshold = get_value_of_gurobi_entity(threshold)
+        float_threshold = get_value_of_gurobi_entity(threshold)
+        threshold = int(round(float_threshold, 3))
+        assert threshold == round(float_threshold, 3)
         # assert threshold doesn't imply a constant function (that shouldn't be possible with the way we modelled this)
         assert threshold <= sum(abs(s) for s in signs)
 
