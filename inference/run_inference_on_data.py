@@ -20,10 +20,10 @@ def main():
     p = configargparse.ArgParser(default_config_files=['./config.txt'])
     p.add_argument('--config', is_config_file=True, help='config file path to override defaults')
     p.add_argument('--inference_method', required=False, type=str, action='append')
-    p.add_argument('--data_parent_dir', required=False, type=str)
+    p.add_argument('--data_parent_dir', required=False, type=str, action='append')
     p.add_argument('--train_size', required=False, type=float)
     p.add_argument('--model_inference_timeout_secs', required=False, type=float)
-    p.add_argument('--allow_additional_edges', required=False, type=bool)
+    p.add_argument('--allow_additional_edges', required=False, default=False, type=bool)
     p.add_argument('--included_edges_relative_weight', required=False, type=float)
     p.add_argument('--added_edges_relative_weight', required=False, type=float)
     options = p.parse_args()
@@ -54,7 +54,9 @@ def main():
         comb_str = comb_str.translate(str.maketrans('', '', "'{}")).replace(": ", "=").replace(", ", "_")
         comb_str = re.sub('<function ([a-zA-Z_]+) at.*', '\\1', comb_str)
 
-        kwargs = options_combination | constant_options
+        # kwargs = options_combination | constant_options (works on python>=3.9)
+        kwargs = options_combination.copy()
+        kwargs.update(constant_options)
 
         for data_dir in os.scandir(kwargs['data_parent_dir']):
             if not os.path.isdir(data_dir):
@@ -62,7 +64,7 @@ def main():
             output_parent_dir = os.path.join("inferred_models", os.path.split(kwargs['data_parent_dir'])[-1],
                 "{}_data_dir={}".format(comb_str, data_dir.name))
             if os.path.exists(output_parent_dir):
-                shutil.rmtree(output_parent_dir)
+                shutil.rmtree(output_parent_dir, ignore_errors=True)
             os.makedirs(output_parent_dir)
 
             # concatenate log for model generation with the inference log

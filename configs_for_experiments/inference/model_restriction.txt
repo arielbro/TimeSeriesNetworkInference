@@ -1,12 +1,12 @@
 # inference_method = "random"
 # inference_method = "general"
 # inference_method = "symmetric"
-inference_method = "symmetric_topology"
+inference_method = ["general", "symmetric"]
 
-data_parent_dir = "../data/generated/initial_learning"
+data_parent_dir = ["data/generated/model_restriction"]
 
 train_size = 0.8
-model_inference_timeout_secs = 5
+model_inference_timeout_secs = 30 * 60
 allow_additional_edges
 included_edges_relative_weight = -0.01
 added_edges_relative_weight = -0.1

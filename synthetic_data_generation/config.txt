@@ -1,4 +1,4 @@
-use_random_network = True
+use_random_network
 experiments_per_network = 10
 graphs_dir = ../data/cellcollective_sample
 data_output_parent_dir = ../data/generated/test
@@ -11,10 +11,10 @@ state_noise_chance = 0.0
 frequency_noise_std = 0.0
 
 random_networks_per_reference = 10
-mutate_input_nodes = True
-preserve_truth_ratio = True
+mutate_input_nodes
+preserve_truth_ratio
 function_type_restriction = SYMMETRIC_THRESHOLD
 
-preserve_input_nodes_on_add = True
+preserve_input_nodes_on_add
 scaffold_network_added_edge_fraction = 0.01
 scaffold_network_removed_edge_fraction = 0.0

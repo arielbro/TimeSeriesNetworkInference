@@ -75,6 +75,6 @@ def generate_one_experiment_data(model, **kwargs):
     return data
 
 
-def generate_experiments_data(model, n_experiments, **kwargs):
-    for _ in range(n_experiments):
+def generate_experiments_data(model, **kwargs):
+    for _ in range(kwargs['experiments_per_network']):
         yield generate_one_experiment_data(model, **kwargs)

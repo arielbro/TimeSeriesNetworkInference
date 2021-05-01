@@ -1,0 +1,20 @@
+graphs_dir = data/cellcollective_models_four_replicas
+data_output_parent_dir = data/generated/unknown_topology/add
+experiments_per_network = 20
+timepoints_per_experiment = 2
+
+state_noise_chance = 0.0
+frequency_noise_std = 0.0
+scaffold_network_added_edge_fraction = [0.01, 0.03, 0.05, 0.08, 0.1, 0.15, 0.2, 0.3, 0.5, 0.8, 1.3, 2.0]
+scaffold_network_removed_edge_fraction = 0.0
+
+# use_random_network
+random_networks_per_reference = 10
+function_type_restriction = NONE
+
+state_sample_type = stable
+frequency_handling = floor
+sample_to_model_freq_ratio = 1.0
+mutate_input_nodes
+preserve_truth_ratio
+preserve_input_nodes_on_add
