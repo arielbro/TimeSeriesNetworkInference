@@ -50,7 +50,8 @@ def main():
 
         # need to represent the argument combination as a string to use in filename. Need to extract name from enums
         # and from inference functions
-        comb_str = str({k: (v.name if isinstance(v, enum.Enum) else v) for k, v in options_combinations.items()})
+        comb_str = str({k: (v.name if isinstance(v, enum.Enum) else v) for k, v in options_combination.items()
+                        if k != 'data_parent_dir'})
         comb_str = comb_str.translate(str.maketrans('', '', "'{}")).replace(": ", "=").replace(", ", "_")
         comb_str = re.sub('<function ([a-zA-Z_]+) at.*', '\\1', comb_str)
 
@@ -61,16 +62,17 @@ def main():
         for data_dir in os.scandir(kwargs['data_parent_dir']):
             if not os.path.isdir(data_dir):
                 continue
-            output_parent_dir = os.path.join("inferred_models", os.path.split(kwargs['data_parent_dir'])[-1],
+            data_dir_partial_path = os.path.join(*os.path.normpath(kwargs['data_parent_dir']).split(os.sep)[-2:])
+            output_parent_dir = os.path.join("inferred_models", data_dir_partial_path,
                 "{}_data_dir={}".format(comb_str, data_dir.name))
             if os.path.exists(output_parent_dir):
                 shutil.rmtree(output_parent_dir, ignore_errors=True)
             os.makedirs(output_parent_dir)
 
             # concatenate log for model generation with the inference log
-            with open(os.path.join(output_parent_dir, "log.txt"), 'wb') as new_log_file:
-                with open(os.path.join(data_dir.path, "log.txt"), 'rb') as old_log_file:
-                    shutil.copyfileobj(old_log_file, new_log_file)
+            # with open(os.path.join(output_parent_dir, "log.txt"), 'wb') as new_log_file:
+            #     with open(os.path.join(data_dir.path, "log.txt"), 'rb') as old_log_file:
+            #         shutil.copyfileobj(old_log_file, new_log_file)
 
             logger = logging.getLogger()
             logging.basicConfig(filename=os.path.join(output_parent_dir, "log.txt"),

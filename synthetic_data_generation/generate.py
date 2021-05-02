@@ -75,7 +75,7 @@ def main():
             logger.info("{}={}".format(var, val))
 
         if kwargs['use_random_network']:
-            reference_graphs = generate_random_graphs(kwargs['graphs_dir'], **kwargs)
+            reference_graphs = generate_random_graphs(**kwargs)
         else:
             reference_graphs = []
             for graph_dir in os.listdir(kwargs['graphs_dir']):
