@@ -49,7 +49,7 @@ def infer_known_topology(data_matrices, scaffold_network, function_type_restrict
                                                  name="vertex_{}_input_{}_pre_sign_var".format(i, j))
                             for j in range(degree)]
             signs = [sign * 2 - 1 for sign in pre_signs]
-            threshold = model.addVar(lb=0, ub=degree, vtype=gurobipy.GRB.INTEGER,
+            threshold = model.addVar(lb=0, ub=degree + 1, vtype=gurobipy.GRB.INTEGER,
                                      name="vertex_{}_threshold_var".format(i))
             functions_variables.append([signs, threshold])
         else:
@@ -121,6 +121,9 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
         signs = [model.addVar(lb=-1, ub=1, vtype=gurobipy.GRB.INTEGER,
                               name="vertex_{}_input_{}_sign_var".format(i, j))
                               for j in range(len(scaffold_network))]
+        # technically can have a constant False function with all nodes as input, which
+        # will have a threshold of len(scaffold_network) + 1, but that function is
+        # (better) representable with less inputs.
         threshold = model.addVar(lb=0, ub=len(scaffold_network), vtype=gurobipy.GRB.INTEGER,
                                  name="vertex_{}_threshold_var".format(i))
         functions_variables.append([signs, threshold])
@@ -159,13 +162,18 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
                     added_edges_indicators.append(0)
 
     # we need to prevent a non-standard representation of a constant function that doesn't zero the sign variables.
-    # that means that with actual degree d, we limit the threshold to range [1, d]
+    # With actual degree d, we want to limit the threshold to range [1, d] if d is positive
+    # and [0, d + 1] if d=0 (to allow for the constant functions). Let n be the network size.
+    # [d/n, d + (1 - d/n)], given an integer threshold, represents both cases, although it might result
+    # in bad linear relaxations. An alternative (not implemented now) is to create some
+    # indicator variable and conditional constraints.
+    # BASICALLY - INDICATOR FOR WHETHER d=0 AND CONDITIONAL CONSTRAINTS.
     for j in range(len(scaffold_network)):
         degree = sum(edge_indicators[i, j] for i in range(len(scaffold_network)))
         threshold = functions_variables[j][1]
-        model.addConstr(threshold <= degree, name="node_{}_threshold_constraint_<=".format(j))
-        # can be moved to lb in variable creation, but more readable here and gurobi surely can presolve this away.
-        model.addConstr(threshold >= 1, name="node_{}_threshold_constraint_>=".format(j))
+        model.addConstr(threshold <= degree + (1 - degree) / len(scaffold_network),
+                        name="node_{}_threshold_constraint_<=".format(j))
+        model.addConstr(len(scaffold_network) * threshold >= degree, name="node_{}_threshold_constraint_>=".format(j))
 
     included_edges_agreement = included_edges_relative_weight * sum(included_edges_indicators) / float(
                                           len(included_edges_indicators))
@@ -192,6 +200,7 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
         threshold = int(round(float_threshold, 3))
         assert threshold == round(float_threshold, 3)
         # assert threshold doesn't imply a constant function (that shouldn't be possible with the way we modelled this)
+
         assert threshold <= sum(abs(s) for s in signs)
 
         for j in range(len(inferred_model.vertices)):

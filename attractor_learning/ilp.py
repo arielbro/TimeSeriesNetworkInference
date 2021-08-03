@@ -414,6 +414,7 @@ def add_function_variables(G, model, function_type_restriction):
                         threshold_expression = model.addVar(vtype=gurobipy.GRB.INTEGER, lb=0, ub=in_degree + 1,
                                                             name="f_{}_threshold".format(i))
                     else:
+                        assert(function_type_restriction == FunctionTypeRestriction.SIMPLE_GATES)
                         threshold_indicator = model.addVar(
                             vtype=gurobipy.GRB.BINARY, name="f_{}_gate_indicator".format(i))
                         threshold_expression = 1 + threshold_indicator * (in_degree - 1)
@@ -636,12 +637,15 @@ def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, last_s
                             model.addConstr(2 * signed_input <= 1 - sign,
                                             name="{}_signed_input_constraint_{}_{}_{}<=".format(name_prefix, l, i, j))
                         else:
-                            raise ValueError("v must be binary, but got value {}".format(v))
-                    threshold_expression = sum(signed_var for signed_var in signed_input_vars) - threshold + 1
-                    model.addConstr((len(predecessor_vars) + 1) * next_state_vars[i] >= threshold_expression,
+                            raise ValueError("v must be binary, but got value {}".format(var))
+                    # This expression ranges in [-threshold + 1, degree + 1]
+                    # which is invariably bounded by [-len(predecessor_vars), len(predecessor_vars) + 1]
+                    # It's strictly positive iff output should be 1.
+                    input_to_threshold_comparison = sum(signed_var for signed_var in signed_input_vars) - threshold + 1
+                    model.addConstr((len(predecessor_vars) + 1) * next_state_vars[i] >= input_to_threshold_comparison,
                         name="{}_threshold_function_path_constraint_>=".format(name_prefix))
-                    model.addConstr(len(predecessor_vars) * next_state_vars[i] <=
-                                    len(predecessor_vars) + threshold_expression - 1,
+                    model.addConstr((len(predecessor_vars) + 1) * next_state_vars[i] <=
+                                    (len(predecessor_vars) + 1) + input_to_threshold_comparison - 1,
                                     name="{}_threshold_function_path_constraint_<=".format(name_prefix))
 
                 elif (v_funcs_restrictions is not None) and (
@@ -800,11 +804,12 @@ def attractors_ilp_with_keys(G, max_len=None, max_num=None,
                             input_sum_expression += z
                         else:
                             input_sum_expression += var if sign else (1 - var)
+                    input_to_threshold_comparison = input_sum_expression - threshold_expression + 1
                     model.addConstr((in_degree + 1)*(v_matrix[i, p, t + 1] + 1 - a_matrix[p, t]) >=
-                                    (input_sum_expression - threshold_expression + 1),
+                                    input_to_threshold_comparison,
                                     name="monotone_func_consistency_>=_{}_{}_{}".format(i, p, t))
                     model.addConstr((in_degree + 1)*(v_matrix[i, p, t + 1] - 1 + a_matrix[p, t]) <=
-                                    (in_degree + input_sum_expression - threshold_expression + 1),
+                                    (in_degree + 1) + (input_to_threshold_comparison - 1),
                                     name="monotone_func_consistency_<=_{}_{}_{}".format(i, p, t))
 
     # print("Time taken for consistent and stable preparation:{:.2f} seconds".format(time.time() - part_start))
