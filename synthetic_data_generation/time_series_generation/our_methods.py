@@ -66,13 +66,14 @@ def generate_one_experiment_data(model, **kwargs):
                 raise ValueError("Unkown frequency handling mode {}".format(kwargs['frequency_handling']))
         data[t, :] = state
 
+    noisy_data = data.copy()
     # add noise
     for t in range(kwargs['timepoints_per_experiment']):
         for i in range(n_nodes):
             if random.random() < kwargs['state_noise_chance']:
-                data[t, i] = 1 - data[t, i]
+                noisy_data[t, i] = 1 - noisy_data[t, i]
 
-    return data
+    return data, noisy_data
 
 
 def generate_experiments_data(model, **kwargs):

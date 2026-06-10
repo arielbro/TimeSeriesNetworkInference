@@ -1,5 +1,5 @@
-graphs_dir = data/cellcollective_models_four_replicas
-data_output_parent_dir = data/generated/data_requirement/timepoints
+graphs_dir = /scratch/gpfs/MONA/abronner/TimeSeriesNetworkInference/data/cellcollective_models_four_replicas
+data_output_parent_dir = /scratch/gpfs/MONA/abronner/TimeSeriesNetworkInference/data/generated/data_requirement/timepoints
 experiments_per_network = 2
 timepoints_per_experiment = [2, 3, 5, 8, 10, 15, 20, 30, 50]
 

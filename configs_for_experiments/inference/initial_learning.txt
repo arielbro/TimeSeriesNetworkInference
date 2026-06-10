@@ -3,10 +3,11 @@
 # inference_method = "symmetric"
 inference_method = ["random", "general", "symmetric"]
 
-data_parent_dir = "data/generated/initial_learning"
+data_parent_dir = "/scratch/gpfs/MONA/abronner/TimeSeriesNetworkInference/data/generated/initial_learning"
 
 train_size = 0.8
-model_inference_timeout_secs = 30 * 60
+model_inference_timeout_secs = 1800  # 30 * 60
 allow_additional_edges
 included_edges_relative_weight = -0.01
 added_edges_relative_weight = -0.1
+n_processes = 1

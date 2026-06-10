@@ -36,6 +36,14 @@ def main():
     p.add_argument('--scaffold_network_removed_edge_fraction', required=False, type=float, action='append')
     options = p.parse_args()
 
+    name_replacements = {
+        "experiments_per_network": "exppernet",
+        "scaffold_network_added_edge_fraction": "scaffaddfrac",
+        "timepoints_per_experiment": "tpperexp",
+        "function_type_restriction": "fncrestriction",
+        "scaffold_network_removed_edge_fraction": "scaffremovedfrac"
+    }
+
     constant_options = {k: v for (k, v) in options._get_kwargs() if not isinstance(v, list)}
     variable_options = {k: v for (k, v) in options._get_kwargs()  if isinstance(v, list)}
     options_combinations = (dict(zip(variable_options, x)) for x in itertools.product(*variable_options.values()))
@@ -52,9 +60,16 @@ def main():
         options_combination['function_type_restriction'] = FunctionTypeRestriction[
             options_combination['function_type_restriction']]
 
+        options_combination.pop("data_dir")
+
         # need to represent the argument combination as a string to use in filename. Need to extract name from enums.
         comb_str = str({k: (v.name if isinstance(v, enum.Enum) else v) for k, v in options_combination.items()})
-        comb_str = comb_str.translate(str.maketrans('', '', "'{}")).replace(": ", "=").replace(", ", "_")
+        comb_str = comb_str.translate(str.maketrans('', '', "'{}")).replace(": ", "=").replace(", ", "-")
+
+        # also replace the variable names with shorter versions using name_replacements
+        for long_name, short_name in name_replacements.items():
+            comb_str = comb_str.replace(long_name, short_name)
+
 
         # kwargs = options_combination | constant_options (works on python>=3.9)
         kwargs = options_combination.copy()
@@ -91,8 +106,14 @@ def main():
                 vertex.function = lambda *x: False  # so it can fit cnet format.
             random_scaffold.export_to_cnet(os.path.join(graph_path, "scaffold_network.cnet"))
             matrices = generate_experiments_data(reference_graph, **kwargs)
-            named_matrices = dict((str(i), mat) for (i, mat) in enumerate(matrices))
-            np.savez(os.path.join(graph_path, "matrices"), **named_matrices)
+            named_real_matrices = dict()
+            named_noisy_matrices = dict()
+            for (i, (real_mat, noisy_mat)) in enumerate(matrices):
+                named_real_matrices[str(i)] = real_mat
+                named_noisy_matrices[str(i)] = noisy_mat
+
+            np.savez(os.path.join(graph_path, "real_matrices"), **named_real_matrices)
+            np.savez(os.path.join(graph_path, "noisy_matrices"), **named_noisy_matrices)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
-graphs_dir = data/cellcollective_models_four_replicas
-data_output_parent_dir = data/generated/noise_robustness/state
+graphs_dir = /scratch/gpfs/MONA/abronner/TimeSeriesNetworkInference/data/cellcollective_models_four_replicas
+data_output_parent_dir = /scratch/gpfs/MONA/abronner/TimeSeriesNetworkInference/data/generated/noise_robustness/state
 experiments_per_network = 10
 timepoints_per_experiment = 5
 

@@ -99,7 +99,7 @@ class Network(object):
             return
         self.edges = set(self.edges)  # so we can speed up lookups and replacements
         for attempt in range(n_attempts):
-            e1, e2 = random.sample(self.edges, 2)
+            e1, e2 = random.sample(list(self.edges), 2) # sample fails on sets...
             if (not include_self_loops) and ((e1[0] == e2[1]) or (e2[0] == e1[1])):
                 continue
             if (e1[0], e2[1]) in self.edges or (e2[0], e1[1]) in self.edges:

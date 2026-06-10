@@ -3,10 +3,11 @@
 # inference_method = "symmetric"
 inference_method = ["general", "symmetric"]
 
-data_parent_dir = ["data/generated/model_restriction"]
+data_parent_dir = ["/scratch/gpfs/MONA/abronner/TimeSeriesNetworkInference/data/generated/model_restriction"]
 
 train_size = 0.8
-model_inference_timeout_secs = 30 * 60
+model_inference_timeout_secs = 1800 # 30 * 60
 allow_additional_edges
 included_edges_relative_weight = -0.01
 added_edges_relative_weight = -0.1
+n_processes = 8
