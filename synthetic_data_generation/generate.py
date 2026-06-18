@@ -23,7 +23,7 @@ def main():
     p.add_argument('--max_graph_size', required=False, type=int, action='append')
     p.add_argument('--data_output_parent_dir', required=False, type=str)
     p.add_argument('--timepoints_per_experiment', required=False, type=int, action='append')
-    p.add_argument('--state_sample_type', required=False, type=str)
+    p.add_argument('--state_sample_type', required=True, type=str)
     p.add_argument('--frequency_handling', required=False, type=str)
     p.add_argument('--sample_to_model_freq_ratio', required=False, type=float)
     p.add_argument('--state_noise_chance', required=False, type=float, action='append')
@@ -61,8 +61,9 @@ def main():
     for options_combination in options_combinations:
 
         print(options_combinations)
-        options_combination['function_type_restriction'] = FunctionTypeRestriction[
-            options_combination['function_type_restriction']]
+        if 'function_type_restriction' in options_combination:
+            options_combination['function_type_restriction'] = FunctionTypeRestriction[
+                options_combination['function_type_restriction']]
 
         # need to represent the argument combination as a string to use in filename. Need to extract name from enums.
         comb_str = str({k: (v.name if isinstance(v, enum.Enum) else v) for k, v in options_combination.items()})
