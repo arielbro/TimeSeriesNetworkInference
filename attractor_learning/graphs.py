@@ -365,7 +365,7 @@ class Network(object):
         with open(path, 'r') as cnet_file:
             text = cnet_file.read()
         # TODO: if runtime is long, stop searching each section for each pattern and use your memory
-        sections = re.split("\n\s*\n", text)
+        sections = re.split(r"\n\s*\n", text)
         bool_funcs = []
         edges = []
         last_v_index = -1
@@ -412,7 +412,7 @@ class Network(object):
                 # input is stated in bits, with - representing wildcards (/dontcares)
                 # skip the start of the section, since you don't want to capture that as rule strings
                 for bool_rule_str in re.findall(r"[0-9\-]+[ \t]+[01]",
-                                                section[re.search("\.n.*\n", section).span()[1]:]):
+                                                section[re.search(r"\.n.*\n", section).span()[1]:]):
                     output = bool(int(bool_rule_str.split()[1]))
                     input_bits = [bit for arg_index, bit in zip(v_args, bool_rule_str.split()[0])]
                     # reorder bits if inputs are given in non-ascending order.

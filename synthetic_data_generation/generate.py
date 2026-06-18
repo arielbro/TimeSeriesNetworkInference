@@ -20,6 +20,7 @@ def main():
     p.add_argument('--use_random_network', required=False, default=False,  type=bool)
     p.add_argument('--experiments_per_network', required=False, type=int, action='append')
     p.add_argument('--graphs_dir', required=False, type=str)
+    p.add_argument('--max_graph_size', required=False, type=int, action='append')
     p.add_argument('--data_output_parent_dir', required=False, type=str)
     p.add_argument('--timepoints_per_experiment', required=False, type=int, action='append')
     p.add_argument('--state_sample_type', required=False, type=str)
@@ -95,6 +96,8 @@ def main():
         else:
             reference_graphs = []
             for graph_dir in os.listdir(kwargs['graphs_dir']):
+                if (kwargs['max_graph_size'] is not None) and (len(graph_dir) > kwargs['max_graph_size']):
+                    continue
                 G = graphs.Network.parse_boolean_tables(os.path.join(kwargs['graphs_dir'], graph_dir))
                 reference_graphs.append(G)
 

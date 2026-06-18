@@ -10,6 +10,9 @@ import random
 def generate_random_graphs(graphs_dir, **kwargs):
     reference_graphs = []
     for graph_dir in os.listdir(graphs_dir):
+        if (kwargs['max_graph_size'] is not None) and (len(graph_dir) > kwargs['max_graph_size']):
+            continue
+        print("loading graph {}".format(graph_dir))
         G = graphs.Network.parse_boolean_tables(os.path.join(graphs_dir, graph_dir))
         reference_graphs.append(G)
 
