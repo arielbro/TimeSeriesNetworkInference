@@ -34,7 +34,10 @@ def main():
     p.add_argument('--preserve_input_nodes_on_add', required=False, default=False,  type=bool)
     p.add_argument('--scaffold_network_added_edge_fraction', required=False, type=float, action='append')
     p.add_argument('--scaffold_network_removed_edge_fraction', required=False, type=float, action='append')
+    p.add_argument('--only_attractors', required=False, default=False,  type=bool)
     options = p.parse_args()
+
+    print(options)
 
     name_replacements = {
         "experiments_per_network": "exppernet",
@@ -59,8 +62,6 @@ def main():
         print(options_combinations)
         options_combination['function_type_restriction'] = FunctionTypeRestriction[
             options_combination['function_type_restriction']]
-
-        options_combination.pop("data_dir")
 
         # need to represent the argument combination as a string to use in filename. Need to extract name from enums.
         comb_str = str({k: (v.name if isinstance(v, enum.Enum) else v) for k, v in options_combination.items()})

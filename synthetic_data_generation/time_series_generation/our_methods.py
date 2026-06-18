@@ -10,7 +10,8 @@ FrequencyHandling = enum.Enum("FrequencyHandling", "random floor")
 def generate_one_experiment_data(model, **kwargs):
     """
     Given a model, generate one matrix of time-series data from the model. Data starts
-    at some state (either a basin-weighted attractor state, or a perturbation of one),
+    at some state (either a basin-weighted attractor state,
+    or a perturbation of one, or a completely random state if not only_attractors),
     and advances according to the state space of the model.
     The method supports generating noisy data and sampling at different frequencies than model
     update.
@@ -21,6 +22,7 @@ def generate_one_experiment_data(model, **kwargs):
     :param sample_to_model_freq_ratio:
     :param frequency_handling:
     :param frequency_noise_std:
+    :param only_attractors:
     :return: an np.array matrix, corresponding to one experiment
     """
 
@@ -29,9 +31,11 @@ def generate_one_experiment_data(model, **kwargs):
 
     # sample starting state
     starting_point = [random.randint(0, 1) for _ in range(n_nodes)]
-    starting_attractor = walk_to_attractor(model, starting_point)
-
-    starting_point = random.choice(starting_attractor)
+    if kwargs['only_attractors']:
+        starting_attractor = walk_to_attractor(model, starting_point)
+        # walk_to_attractor returns attractor states as tuples (next_state yields tuples); convert to a
+        # list so the perturbation below can assign to an element.
+        starting_point = list(random.choice(starting_attractor))
 
     if kwargs['state_sample_type'] == StateSampleType.perturbed:
         i = random.randint(0, n_nodes - 1)
