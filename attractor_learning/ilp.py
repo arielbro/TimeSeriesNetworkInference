@@ -469,18 +469,21 @@ def add_simplified_consistency_constraints(model, v_func, v_next_state_var, pred
 
 
 def add_state_equality_indicator(model, first_state, second_state,
-                                 force_equal=True, prefix=None):
+                                 force_equal=True, prefix=None, return_per_index=False):
     """
     Adds and returns a (NON STRICT) binary indicator for whether two network states are equal.
     result = 1 -> first_state == second_state.
     If force_equal, result = 1 <-> first_state == second_state.
     Does not use state hashing and ordering. States are allowed to be variables or constants.
+    If return_per_index, returns the list of per-node (per-cell) equality indicators instead of a
+    single whole-state indicator, allowing cell-wise rather than row-wise agreement scoring.
 
     :param model:
     :param first_state:
     :param second_state:
     :param force_equal:
     :param prefix:
+    :param return_per_index:
     :return:
     """
     # TODO: write tests
@@ -508,6 +511,8 @@ def add_state_equality_indicator(model, first_state, second_state,
             model.addGenConstrIndicator(val_equality_indicator, 1, first_val == second_val,
                                         name="{}_state_equality_constraint_index_{}".format(prefix, index))
         equality_indicators.append(val_equality_indicator)
+    if return_per_index:
+        return equality_indicators
     equality_var = model.addVar(vtype=GRB.BINARY, name="{}_state_equality_indicator".
                  format(prefix))
     model.update()
@@ -624,7 +629,26 @@ def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, last_s
                         # And so, forcing signed_input to be 1 iff (2v - 1)s is 1 works, but that'd probably be harder
                         # to solve (since constraint-heavy expressions generally yield better relaxations).
                         # instead, just split to cases, since v is a constant
-                        if var == 1:
+                        if isinstance(var, gurobipy.Var):
+                            # v is a decision variable (e.g. a flippable/denoised data cell), so we can't
+                            # split on its value. Linearize the product prod = sign * v via McCormick
+                            # envelopes (exact since v is binary and sign in [-1, 1]):
+                            #   v=1 -> prod=sign ; v=0 -> prod=0.
+                            # Then (2v - 1) * sign == 2 * prod - sign, which lies in {-1, 0, 1} and equals
+                            # 1 exactly when v and sign "agree", so signed_input is its positive part.
+                            prod = model.addVar(lb=-1, ub=1, vtype=gurobipy.GRB.INTEGER,
+                                                name="{}_signed_input_prod_{}_{}_{}".format(name_prefix, l, i, j))
+                            model.update()
+                            model.addConstr(prod <= var, name="{}_signed_input_prod_mc1_{}_{}_{}".format(name_prefix, l, i, j))
+                            model.addConstr(prod >= -var, name="{}_signed_input_prod_mc2_{}_{}_{}".format(name_prefix, l, i, j))
+                            model.addConstr(prod <= sign + (1 - var), name="{}_signed_input_prod_mc3_{}_{}_{}".format(name_prefix, l, i, j))
+                            model.addConstr(prod >= sign - (1 - var), name="{}_signed_input_prod_mc4_{}_{}_{}".format(name_prefix, l, i, j))
+                            agreement = 2 * prod - sign  # in {-1, 0, 1}, == 1 iff v agrees with sign
+                            model.addConstr(signed_input >= agreement,
+                                            name="{}_signed_input_constraint_{}_{}_{}>=".format(name_prefix, l, i, j))
+                            model.addConstr(2 * signed_input <= agreement + 1,
+                                            name="{}_signed_input_constraint_{}_{}_{}<=".format(name_prefix, l, i, j))
+                        elif var == 1:
                             # s = 1 -> signed_input = 1, otherwise signed_input = 0
                             model.addConstr(signed_input >= sign,
                                             name="{}_signed_input_constraint_{}_{}_{}>=".format(name_prefix, l, i, j))

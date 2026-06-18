@@ -14,7 +14,7 @@ def models_to_edge_vectors(reference_model, inference_model, use_sparse=True):
         y_pred = sparse.lil_matrix((1, len(reference_model) ** 2))
         # use order in reference_model
         for vec, model in zip([y_true, y_pred], [reference_model, inference_model]):
-            for edge in reference_model.edges:
+            for edge in model.edges:
                 u_index = reference_model.get_vertex(edge[0].name).index
                 v_index = reference_model.get_vertex(edge[1].name).index
                 index = u_index * len(reference_model) + v_index
@@ -137,9 +137,10 @@ def aggregate_classification_metric(ref_inf_vector_iterator, metric):
 
 def sparse_accuracy_score(x, y):
     """
-    Returns the accuracy score of equal lengths binary x and y, i.e. <x, y> / |x|.
-    x and y can be dense (list, tuple, np.array) or sparse, in which case computation is only
-    done on the existing records.
+    Returns the accuracy (hit rate) of equal length binary x and y, i.e. the fraction of
+    positions where x_i == y_i. Agreement on zeros counts as well as agreement on ones.
+    x and y can be dense (list, tuple, np.array) or sparse, in which case the computation
+    exploits sparsity but still scores over the full length of the vectors.
     :param x:
     :param y:
     :return:
@@ -150,9 +151,47 @@ def sparse_accuracy_score(x, y):
         assert(x.shape == y.shape)
 
     if sparse.issparse(x) and sparse.issparse(y):
+        n = float(max(x.shape))
         common = x.dot(y.T)
         assert(common.shape == (1, 1))
-        n_common = common[0, 0]
-        return n_common / float(max(x.shape))
+        n_common = common[0, 0]  # positions where both are 1 (binary vectors)
+        nnz_x = x.getnnz()
+        nnz_y = y.getnnz()
+        # agreements = (both 1) + (both 0) = n_common + (n - nnz_x - nnz_y + n_common)
+        n_agree = n - nnz_x - nnz_y + 2 * n_common
+        return n_agree / n
     else:
         return accuracy_score(x, y)
+
+
+def sparse_jaccard_score(x, y):
+    """
+    Returns the Jaccard index (intersection-over-union) of equal length binary x and y, i.e.
+    |{i: x_i == y_i == 1}| / |{i: x_i == 1 or y_i == 1}|. True negatives (positions where both
+    are 0) are ignored, making it suitable for sparse vectors such as adjacency matrices where
+    accuracy would be dominated by the zeros.
+    x and y can be dense (list, tuple, np.array) or sparse. An empty union (both all-zero)
+    yields a score of 1.0.
+    :param x:
+    :param y:
+    :return:
+    """
+    if sparse.issparse(x) and sparse.issparse(y):
+        assert(x.shape == y.shape)
+        intersection = x.dot(y.T)
+        assert(intersection.shape == (1, 1))
+        n_intersection = intersection[0, 0]  # positions where both are 1 (binary vectors)
+        nnz_x = x.getnnz()
+        nnz_y = y.getnnz()
+    else:
+        x = np.asarray(x)
+        y = np.asarray(y)
+        assert(x.shape == y.shape)
+        n_intersection = int(np.sum((x != 0) & (y != 0)))
+        nnz_x = int(np.count_nonzero(x))
+        nnz_y = int(np.count_nonzero(y))
+
+    n_union = nnz_x + nnz_y - n_intersection
+    if n_union == 0:
+        return 1.0
+    return n_intersection / float(n_union)

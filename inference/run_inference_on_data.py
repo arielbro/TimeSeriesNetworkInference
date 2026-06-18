@@ -52,7 +52,10 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
                                           log_file=network_log_file,
                                           allow_additional_edges=kwargs['allow_additional_edges'],
                                           included_edges_relative_weight=kwargs['included_edges_relative_weight'],
-                                          added_edges_relative_weight=kwargs['added_edges_relative_weight'])
+                                          added_edges_relative_weight=kwargs['added_edges_relative_weight'],
+                                          allow_input_flips=kwargs['allow_input_flips'],
+                                          flip_penalty=kwargs['flip_penalty'],
+                                          no_anchoring=kwargs['no_anchoring'])
         time_taken = time.time() - start
         del scaffold_network
         inferred_model.export_to_cnet(os.path.join(network_out_dir, "inferred_network.cnet"))
@@ -83,7 +86,7 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
         np.save(os.path.join(network_out_dir, "inference_time"), time_taken)
 
         y_true, y_pred = inference_scoring.models_to_edge_vectors(true_network, inferred_model, use_sparse=True)
-        edge_score = inference_scoring.sparse_accuracy_score(y_true, y_pred)
+        edge_score = inference_scoring.sparse_jaccard_score(y_true, y_pred)
         np.save(os.path.join(network_out_dir, "edge_accuracy_score"), edge_score)
         del true_network, inferred_model, y_true, y_pred
     except Exception:
@@ -120,6 +123,9 @@ def main():
     p.add_argument('--allow_additional_edges', required=False, default=False, type=bool)
     p.add_argument('--included_edges_relative_weight', required=False, type=float)
     p.add_argument('--added_edges_relative_weight', required=False, type=float)
+    p.add_argument('--allow_input_flips', required=False, default=False, type=bool)
+    p.add_argument('--flip_penalty', required=False, default=1.0, type=float)
+    p.add_argument('--no_anchoring', required=False, default=False, type=bool)
     p.add_argument('--n_processes', required=False, type=int, default=1)
     options = p.parse_args()
 
@@ -161,7 +167,7 @@ def main():
                 continue
             data_dir_partial_path = os.path.join(*os.path.normpath(kwargs['data_parent_dir']).split(os.sep)[-2:])
             output_parent_dir = os.path.join("inferred_models", data_dir_partial_path,
-                "{}_data_dir={}".format(comb_str, data_dir.name))
+                "{}-{}".format(comb_str, data_dir.name))
             if os.path.exists(output_parent_dir):
                 shutil.rmtree(output_parent_dir, ignore_errors=True)
             os.makedirs(output_parent_dir)

@@ -21,14 +21,23 @@ def infer_known_topology_general(*args, **kwargs):
 
 
 def infer_known_topology(data_matrices, scaffold_network, function_type_restriction=None,
-                         timeout_secs=None, log_file=None, **kwargs):
+                         timeout_secs=None, log_file=None, allow_input_flips=False, flip_penalty=1.0,
+                         no_anchoring=False, **kwargs):
     """
     Find a model with best fit to data_matrices, assuming that each node's inputs are defined by the scaffold network
     topology.
+    The objective is the cell-wise agreement (fraction of (predicted state, node) cells the model explains correctly),
+    optionally reduced by a penalty for treating observed input cells as noisy and flipping them.
     :param function_type_restriction:
     :param data_matrices:
     :param scaffold_network:
     :param timeout_secs: timelimit to pass to the solver.
+    :param allow_input_flips: if true, the solver may flip bits of the (noisy) input data, paying flip_penalty per flip.
+    :param flip_penalty: penalty per flipped input cell, on the same [0, 1] per-cell scale as the agreement score.
+        flip_penalty < 1 denoises toward a self-consistent trajectory, > 1 only corrects errors that fix more than
+        one cell, and = 1 (the default) is the break-even point at which the chosen flips may be under-determined.
+    :param no_anchoring: if true, score a free-running trajectory (each step is fed the model's own previous
+        prediction) instead of independent one-step transitions anchored to the data.
     :return:
     """
     # create function variables
@@ -55,19 +64,24 @@ def infer_known_topology(data_matrices, scaffold_network, function_type_restrict
         else:
             raise NotImplementedError()
 
-    matrix_agreement_indicators = ilp_components.add_matrices_as_model_paths(
+    matrix_agreement_indicators, flip_cost_terms = ilp_components.add_matrices_as_model_paths(
        scaffold_network, model, data_matrices,
        function_vars=functions_variables,
        model_to_data_sample_rate_ratio=1,
        function_type_restrictions=[function_type_restriction] * len(scaffold_network),
-       model_addition_type=ModelAdditionType.INDICATORS)
-    agreement = sum(matrix_agreement_indicators)
+       model_addition_type=ModelAdditionType.INDICATORS,
+       per_cell_indicators=True, allow_input_flips=allow_input_flips, no_anchoring=no_anchoring)
+    # cell-wise agreement normalized to [0, 1], so it shares a scale with the (per-cell) flip penalty
+    n_cells = float(len(matrix_agreement_indicators))
+    objective = sum(matrix_agreement_indicators) / n_cells
+    if allow_input_flips and flip_cost_terms:
+        objective = objective - flip_penalty * sum(flip_cost_terms) / n_cells
 
     if log_file is not None:
         model.Params.LogFile = log_file
     if timeout_secs is not None:
         model.Params.TimeLimit = timeout_secs
-    model.setObjective(agreement, sense=gurobipy.GRB.MAXIMIZE)
+    model.setObjective(objective, sense=gurobipy.GRB.MAXIMIZE)
     model.optimize()
 
     # set Boolean model found
@@ -95,15 +109,19 @@ def infer_known_topology(data_matrices, scaffold_network, function_type_restrict
 
 def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_additional_edges=False,
                                    included_edges_relative_weight=1, added_edges_relative_weight=-1,
-                                   timeout_secs=None, log_file=None, **kwargs):
+                                   timeout_secs=None, log_file=None, allow_input_flips=False, flip_penalty=1.0,
+                                   no_anchoring=False, **kwargs):
     """
     Find a symmetric threshold model with best fit to data_matrices and scaffold_network,
     by finding both the Boolean function and the incoming edges for each node.
-    The objective is 1 * x + included_edges_relative_weight * y + added_edges_relative_weight * z, where
+    The objective is 1 * x + included_edges_relative_weight * y + added_edges_relative_weight * z - flip_penalty * w,
+    where
     x is the proportion of cells in data_matrices (up to first rows) that are explained correctly by the model
-    y is the proportion of scaffold_network edges that are included in the model.
+    y is the proportion of scaffold_network edges that are included in the model (in [0, 1]).
     z is the number of edges not in scaffold_network that are included in the model, divided by
-    the number of edges in scaffold_network.
+    the number of edges in scaffold_network (this normalizes added edges to the scaffold's scale, so z is NOT
+    bounded by 1 - it is a deliberately stronger sparsity penalty than dividing by the number of possible edges).
+    w is the proportion of (flippable) input cells the model chose to flip, on the same per-cell scale as x.
     :param allow_additional_edges: if false, doesn't allow any edges that weren't in the scaffold network originally.
     :param included_edges_relative_weight:
     :param added_edges_relative_weight:
@@ -111,6 +129,12 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
     :param data_matrices:
     :param scaffold_network:
     :param timeout_secs: timelimit to pass to the solver.
+    :param allow_input_flips: if true, the solver may flip bits of the (noisy) input data, paying flip_penalty per flip.
+    :param flip_penalty: penalty per flipped input cell, on the same [0, 1] per-cell scale as x.
+        flip_penalty < 1 denoises toward a self-consistent trajectory, > 1 only corrects errors that fix more than
+        one cell, and = 1 (the default) is the break-even point at which the chosen flips may be under-determined.
+    :param no_anchoring: if true, score a free-running trajectory (each step is fed the model's own previous
+        prediction) instead of independent one-step transitions anchored to the data.
     :return:
     """
     # create function variables
@@ -132,13 +156,15 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
     full_network = Network(vertex_names=[v.name for v in scaffold_network.vertices],
                            edges=[(u.name, v.name) for u, v in itertools.product(scaffold_network.vertices, repeat=2)],
                            vertex_functions=[None for v in scaffold_network.vertices])
-    matrix_agreement_indicators = ilp_components.add_matrices_as_model_paths(
+    matrix_agreement_indicators, flip_cost_terms = ilp_components.add_matrices_as_model_paths(
        full_network, model, data_matrices,
        function_vars=functions_variables,
        model_to_data_sample_rate_ratio=1,
        function_type_restrictions=[FunctionTypeRestriction.SYMMETRIC_THRESHOLD] * len(scaffold_network),
-       model_addition_type=ModelAdditionType.INDICATORS)
-    data_agreement = sum(matrix_agreement_indicators) / float(len(matrix_agreement_indicators))
+       model_addition_type=ModelAdditionType.INDICATORS,
+       per_cell_indicators=True, allow_input_flips=allow_input_flips, no_anchoring=no_anchoring)
+    n_cells = float(len(matrix_agreement_indicators))
+    data_agreement = sum(matrix_agreement_indicators) / n_cells
 
     included_edges_indicators = []
     added_edges_indicators = []
@@ -175,16 +201,22 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
                         name="node_{}_threshold_constraint_<=".format(j))
         model.addConstr(len(scaffold_network) * threshold >= degree, name="node_{}_threshold_constraint_>=".format(j))
 
-    included_edges_agreement = included_edges_relative_weight * sum(included_edges_indicators) / float(
-                                          len(included_edges_indicators))
-    added_edges_agreement = added_edges_relative_weight * sum(added_edges_indicators) / float(
-                                          len(included_edges_indicators))
+    # both edge terms are normalized by the number of scaffold edges (see docstring); guard the rare
+    # empty-scaffold case, where there are no included edges to normalize by and these terms are vacuous.
+    n_scaffold_edges = float(len(included_edges_indicators))
+    edge_norm = n_scaffold_edges if n_scaffold_edges > 0 else 1.0
+    included_edges_agreement = included_edges_relative_weight * sum(included_edges_indicators) / edge_norm
+    added_edges_agreement = added_edges_relative_weight * sum(added_edges_indicators) / edge_norm
+
+    objective = data_agreement + included_edges_agreement + added_edges_agreement
+    if allow_input_flips and flip_cost_terms:
+        objective = objective - flip_penalty * sum(flip_cost_terms) / n_cells
 
     if log_file is not None:
         model.Params.LogFile = log_file
     if timeout_secs is not None:
         model.Params.TimeLimit = timeout_secs
-    model.setObjective(data_agreement + included_edges_agreement + added_edges_agreement, sense=gurobipy.GRB.MAXIMIZE)
+    model.setObjective(objective, sense=gurobipy.GRB.MAXIMIZE)
     model.optimize()
 
     # set Boolean model found
