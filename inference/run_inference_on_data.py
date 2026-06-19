@@ -179,6 +179,7 @@ def main():
 
             logger = logging.getLogger()
             for h in list(logger.handlers):
+                h.close()  # close the previous data_dir's file handler so its descriptor isn't leaked
                 logger.removeHandler(h)
             logging.basicConfig(filename=os.path.join(output_parent_dir, "log.txt"),
                                 filemode='a',
