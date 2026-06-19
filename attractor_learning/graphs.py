@@ -431,6 +431,80 @@ class Network(object):
         # print("time taken for graph import: {:.2f} seconds".format(time.time() - start))
         return G
 
+    @staticmethod
+    def _serialize_function(vertex):
+        """A portable, truth-table-free descriptor of a vertex's function (for to_networkx)."""
+        f = vertex.function
+        if f is None:
+            return {"type": "none"}
+        if len(vertex.predecessors()) == 0:
+            # input node: a constant (bool / sympy bool / 0-arg callable)
+            value = f() if callable(f) else f
+            return {"type": "constant", "value": bool(value)}
+        if isinstance(f, SymmetricThresholdFunction):
+            # the high-in-degree case cnet/truth-tables choke on; stored compactly as signs + threshold
+            assert len(f.signs) == len(vertex.predecessors()), \
+                "threshold function arity does not match in-degree for vertex {}".format(vertex.name)
+            return f.to_dict()
+        if isinstance(f, BooleanSymbolicFunc):
+            # check arity, not names: general inference builds these with generic input_0.. names, but the
+            # call path is positional (predecessor-index order), which to_dict/from_dict preserves.
+            assert len(f.input_vars) == len(vertex.predecessors()), \
+                "boolean function arity does not match in-degree for vertex {}".format(vertex.name)
+            return f.to_dict()
+        raise ValueError("Cannot serialize function of type {} on vertex {}".format(type(f), vertex.name))
+
+    @staticmethod
+    def _deserialize_function(descriptor):
+        kind = descriptor["type"]
+        if kind == "none":
+            return None
+        if kind == "constant":
+            return bool(descriptor["value"])
+        if kind == "symmetric_threshold":
+            return SymmetricThresholdFunction.from_dict(descriptor)
+        if kind == "boolean_symbolic":
+            return BooleanSymbolicFunc.from_dict(descriptor)
+        raise ValueError("Unknown serialized function type {}".format(kind))
+
+    def to_networkx(self):
+        """A networkx.DiGraph representation: nodes are vertex names carrying their index and a portable
+        function descriptor; directed edges go from each input to the vertex it feeds. This is the storage/
+        interchange format replacing cnet for generated/inferred networks (cnet is kept only for Dubrova)."""
+        import networkx
+        g = networkx.DiGraph()
+        for v in self.vertices:
+            g.add_node(v.name, index=v.index, function=Network._serialize_function(v))
+        for (u, v) in self.edges:
+            g.add_edge(u.name, v.name)
+        return g
+
+    @staticmethod
+    def from_networkx(g):
+        """Reconstructs a Network from a DiGraph produced by to_networkx (vertex order taken from the stored
+        index, so predecessor order - and hence threshold sign order - is preserved)."""
+        nodes = sorted(g.nodes(data=True), key=lambda node_data: node_data[1]["index"])
+        vertex_names = [name for name, _ in nodes]
+        vertex_functions = [Network._deserialize_function(data["function"]) for _, data in nodes]
+        edges = [(u, v) for u, v in g.edges()]
+        return Network(vertex_names=vertex_names, edges=edges, vertex_functions=vertex_functions)
+
+    def save(self, path):
+        """Saves the network to a portable node-link JSON file (see to_networkx)."""
+        import json
+        from networkx.readwrite import json_graph
+        with open(path, 'w') as f:
+            json.dump(json_graph.node_link_data(self.to_networkx()), f)
+
+    @staticmethod
+    def load(path):
+        """Loads a network saved by save()."""
+        import json
+        from networkx.readwrite import json_graph
+        with open(path, 'r') as f:
+            g = json_graph.node_link_graph(json.load(f), directed=True)
+        return Network.from_networkx(g)
+
     def export_to_boolean_tables(self, base_path, model_name):
         """
         Exports a network to (only possibly compatible) cellcollective's truth tables format.
@@ -673,6 +747,9 @@ class Vertex(object):
                                  "non boolean and non None function field.")
         if isinstance(self.function, BooleanSymbolicFunc):
             outputs = self.function.boolean_outputs
+        elif isinstance(self.function, SymmetricThresholdFunction):
+            # compact key (no 2**degree truth table) - safe for high in-degree threshold functions
+            outputs = self.function._canonical_key()
         else:
             outputs = tuple(self.function(*row) for row in itertools.product([False, True],
                                                                              repeat=len(self.predecessors())))

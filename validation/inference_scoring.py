@@ -35,8 +35,8 @@ def model_dirs_to_edge_vectors_list(reference_dir, inference_dir, use_sparse=Tru
     assert model_names == {f.name for f in os.scandir(inference_dir) if f.is_dir()}
 
     for name in model_names:
-        ref_model = graphs.Network.parse_cnet(os.path.join(reference_dir, name, "true_network.cnet"))
-        inferred_model = graphs.Network.parse_cnet(os.path.join(inference_dir, name, "inferred_network.cnet"))
+        ref_model = graphs.Network.load(os.path.join(reference_dir, name, "true_network.json"))
+        inferred_model = graphs.Network.load(os.path.join(inference_dir, name, "inferred_network.json"))
         ref_vector, pred_vector = models_to_edge_vectors(ref_model, inferred_model,
                                                          use_sparse=use_sparse)
         yield ref_vector, pred_vector
@@ -48,9 +48,9 @@ def model_dirs_to_network_sizes(reference_dir, inference_dir=None, use_sparse=Tr
 
     for name in model_names:
         try:
-            ref_model = graphs.Network.parse_cnet(os.path.join(reference_dir, name, "true_network.cnet"))
+            ref_model = graphs.Network.load(os.path.join(reference_dir, name, "true_network.json"))
         except FileNotFoundError as e:
-            ref_model = graphs.Network.parse_cnet(os.path.join(reference_dir, name, "inferred_network.cnet"))
+            ref_model = graphs.Network.load(os.path.join(reference_dir, name, "inferred_network.json"))
         if with_edges:
             res.append(len(ref_model) + len(ref_model.edges))
         else:

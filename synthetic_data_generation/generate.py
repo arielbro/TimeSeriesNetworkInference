@@ -105,11 +105,9 @@ def main():
         for graph_index, reference_graph in enumerate(reference_graphs):
             graph_path = os.path.join(data_dir_path, "network_{}".format(graph_index))
             os.makedirs(graph_path)
-            reference_graph.export_to_cnet(os.path.join(graph_path, "true_network.cnet"))
+            reference_graph.save(os.path.join(graph_path, "true_network.json"))
             random_scaffold = generate_scaffold_network(reference_graph, **kwargs)
-            for vertex in random_scaffold.vertices:
-                vertex.function = lambda *x: False  # so it can fit cnet format.
-            random_scaffold.export_to_cnet(os.path.join(graph_path, "scaffold_network.cnet"))
+            random_scaffold.save(os.path.join(graph_path, "scaffold_network.json"))
             matrices = generate_experiments_data(reference_graph, **kwargs)
             named_real_matrices = dict()
             named_noisy_matrices = dict()

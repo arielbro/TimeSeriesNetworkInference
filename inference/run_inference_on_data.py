@@ -29,8 +29,8 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
     status = 'ok'
 
     try:
-        scaffold_network = graphs.Network.parse_cnet(os.path.join(network_path, "scaffold_network.cnet"))
-        true_network = graphs.Network.parse_cnet(os.path.join(network_path, "true_network.cnet"))
+        scaffold_network = graphs.Network.load(os.path.join(network_path, "scaffold_network.json"))
+        true_network = graphs.Network.load(os.path.join(network_path, "true_network.json"))
         with np.load(os.path.join(network_path, "noisy_matrices.npz")) as reference_matrices, \
                 np.load(os.path.join(network_path, "real_matrices.npz")) as hidden_matrices:
             if kwargs['train_size'] != 1:
@@ -58,7 +58,7 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
                                           no_anchoring=kwargs['no_anchoring'])
         time_taken = time.time() - start
         del scaffold_network
-        inferred_model.export_to_cnet(os.path.join(network_out_dir, "inferred_network.cnet"))
+        inferred_model.save(os.path.join(network_out_dir, "inferred_network.json"))
 
         for group, reference_data, real_data in zip(['train', 'test'], [reference_train, reference_test], [real_train, real_test]):
             inferred_matrices = {i: np.asarray(inferred_model.next_states(data_matrix[0, :], data_matrix.shape[0] - 1))
@@ -116,7 +116,7 @@ def append_network_log_to_master(master_log_path, network_name, network_log_path
 def expected_output_filenames(kwargs):
     """The files process_network writes for one network on a successful run. The test-group files only
     exist when there is a test split (train_size != 1)."""
-    names = ["inferred_network.cnet", "inference_time.npy", "edge_accuracy_score.npy",
+    names = ["inferred_network.json", "inference_time.npy", "edge_accuracy_score.npy",
              "train_matrices.npz", "timeseries_real_accuracy_score_train.npy",
              "timeseries_reference_accuracy_score_train.npy"]
     if kwargs.get('train_size') != 1:

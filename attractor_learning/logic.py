@@ -150,21 +150,58 @@ class BooleanSymbolicFunc(object):
         expr = sympy_func(*symbols)
         return BooleanSymbolicFunc(formula=expr)
 
+    def to_dict(self):
+        """Serialization via the (input_names, boolean_outputs) form, which round-trips exactly through the
+        constructor and preserves input order. These functions are always low in-degree in this codebase, so
+        the truth table is cheap (unlike threshold functions, which can have a high in-degree)."""
+        return {"type": "boolean_symbolic",
+                "input_names": [var.name for var in self.input_vars],
+                "boolean_outputs": [bool(out) for out in self.boolean_outputs]}
+
+    @staticmethod
+    def from_dict(d):
+        return BooleanSymbolicFunc(input_names=d["input_names"], boolean_outputs=d["boolean_outputs"])
+
 
 class SymmetricThresholdFunction(object):
     # TODO: implement in ILP model finding (threshold is not boolean, not supported there ATM)
     def __init__(self, signs, threshold):
-        # translate signs to bool values, if not already
+        # translate signs to bool values, if not already. Signs must be nonzero (+1/-1); a zero sign means
+        # "input unused" and is only meaningful inside the inference ILP, not in a realized function.
         self.signs = []
         for sign in signs:
             if isinstance(sign, bool):
                 self.signs.append(sign)
             elif isinstance(sign, int):
-                assert sign in [1, -1]
+                assert sign in [1, -1], "signs must be nonzero (+1/-1), got {}".format(sign)
                 self.signs.append(True if sign == 1 else False)
             else:
                 raise ValueError("illegal type for signs:{}".format(type(sign)))
+        # threshold in [0, degree+1]: 0 is constant-True, degree+1 is constant-False, [1, degree] is non-constant.
+        assert 0 <= threshold <= len(self.signs) + 1, \
+            "threshold {} out of range [0, {}]".format(threshold, len(self.signs) + 1)
         self.threshold = threshold
+
+    def _canonical_key(self):
+        """A hashable key identical iff two functions are equal. With nonzero signs, a non-constant function
+        (1 <= threshold <= degree) has a unique (signs, threshold); the constant cases are independent of the
+        signs, so collapse threshold <= 0 (always True) and threshold > degree (always False)."""
+        degree = len(self.signs)
+        if self.threshold <= 0:
+            return ("const", True)
+        if self.threshold > degree:
+            return ("const", False)
+        return ("threshold", tuple(self.signs), self.threshold)
+
+    def to_dict(self):
+        """Portable, truth-table-free serialization."""
+        return {"type": "symmetric_threshold",
+                "signs": [1 if sign else -1 for sign in self.signs],
+                "threshold": self.threshold}
+
+    @staticmethod
+    def from_dict(d):
+        return SymmetricThresholdFunction(signs=d["signs"], threshold=d["threshold"])
 
     def __call__(self, *input_values):
         count = sum(1 if ((sign and val) or (not sign and not val)) else 0
@@ -181,23 +218,23 @@ class SymmetricThresholdFunction(object):
     def __eq__(self, other):
         if other is None:
             return False
-        elif other in [False, True, sympy.false, sympy.true]:
-            other_func = lambda _: other
-        else:
-            other_func = other
+        # compact comparisons (no 2**degree truth table) for the common cases
+        if isinstance(other, SymmetricThresholdFunction):
+            return self._canonical_key() == other._canonical_key()
+        if other in [False, True, sympy.false, sympy.true]:
+            key = self._canonical_key()
+            return key[0] == "const" and key[1] == bool(other)
+        # general fallback for arbitrary callables (rare; only reached for non-threshold function types)
         try:
             for input_comb in itertools.product([False, True], repeat=len(self.signs)):
-                if self(*input_comb) != other_func(*input_comb):
+                if self(*input_comb) != other(*input_comb):
                     return False
         except (ValueError, TypeError):
             return False
         return True
 
     def __hash__(self):
-        output_string = ""
-        for input_comb in itertools.product([False, True], repeat=len(self.signs)):
-            output_string += "1" if self(*input_comb) == True else "0"
-        return hash(output_string)
+        return hash(self._canonical_key())
 
     def __ne__(self, other):
         return not self == other
