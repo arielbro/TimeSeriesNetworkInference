@@ -74,9 +74,9 @@ def infer_known_topology(data_matrices, scaffold_network, function_type_restrict
            per_cell_indicators=True, allow_input_flips=allow_input_flips, no_anchoring=no_anchoring)
         # cell-wise agreement normalized to [0, 1], so it shares a scale with the (per-cell) flip penalty
         n_cells = float(len(matrix_agreement_indicators))
-        objective = sum(matrix_agreement_indicators) / n_cells
+        objective = gurobipy.quicksum(matrix_agreement_indicators) / n_cells
         if allow_input_flips and flip_cost_terms:
-            objective = objective - flip_penalty * sum(flip_cost_terms) / n_cells
+            objective = objective - flip_penalty * gurobipy.quicksum(flip_cost_terms) / n_cells
 
         if log_file is not None:
             model.Params.LogFile = log_file
@@ -169,7 +169,7 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
            per_cell_indicators=True, allow_input_flips=allow_input_flips, no_anchoring=no_anchoring)
         del full_network  # only needed to build the model; free it before the (heavy) solve
         n_cells = float(len(matrix_agreement_indicators))
-        data_agreement = sum(matrix_agreement_indicators) / n_cells
+        data_agreement = gurobipy.quicksum(matrix_agreement_indicators) / n_cells
 
         included_edges_indicators = []
         added_edges_indicators = []
@@ -200,7 +200,7 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
         # indicator variable and conditional constraints.
         # BASICALLY - INDICATOR FOR WHETHER d=0 AND CONDITIONAL CONSTRAINTS.
         for j in range(len(scaffold_network)):
-            degree = sum(edge_indicators[i, j] for i in range(len(scaffold_network)))
+            degree = gurobipy.quicksum(edge_indicators[i, j] for i in range(len(scaffold_network)))
             threshold = functions_variables[j][1]
             model.addConstr(threshold <= degree + (1 - degree) / len(scaffold_network),
                             name="node_{}_threshold_constraint_<=".format(j))
@@ -210,12 +210,12 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
         # empty-scaffold case, where there are no included edges to normalize by and these terms are vacuous.
         n_scaffold_edges = float(len(included_edges_indicators))
         edge_norm = n_scaffold_edges if n_scaffold_edges > 0 else 1.0
-        included_edges_agreement = included_edges_relative_weight * sum(included_edges_indicators) / edge_norm
-        added_edges_agreement = added_edges_relative_weight * sum(added_edges_indicators) / edge_norm
+        included_edges_agreement = included_edges_relative_weight * gurobipy.quicksum(included_edges_indicators) / edge_norm
+        added_edges_agreement = added_edges_relative_weight * gurobipy.quicksum(added_edges_indicators) / edge_norm
 
         objective = data_agreement + included_edges_agreement + added_edges_agreement
         if allow_input_flips and flip_cost_terms:
-            objective = objective - flip_penalty * sum(flip_cost_terms) / n_cells
+            objective = objective - flip_penalty * gurobipy.quicksum(flip_cost_terms) / n_cells
 
         if log_file is not None:
             model.Params.LogFile = log_file

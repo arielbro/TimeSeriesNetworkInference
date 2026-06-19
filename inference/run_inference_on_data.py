@@ -113,6 +113,26 @@ def append_network_log_to_master(master_log_path, network_name, network_log_path
         out.write("<<< end network={name}\n".format(name=network_name))
 
 
+def expected_output_filenames(kwargs):
+    """The files process_network writes for one network on a successful run. The test-group files only
+    exist when there is a test split (train_size != 1)."""
+    names = ["inferred_network.cnet", "inference_time.npy", "edge_accuracy_score.npy",
+             "train_matrices.npz", "timeseries_real_accuracy_score_train.npy",
+             "timeseries_reference_accuracy_score_train.npy"]
+    if kwargs.get('train_size') != 1:
+        names += ["test_matrices.npz", "timeseries_real_accuracy_score_test.npy",
+                  "timeseries_reference_accuracy_score_test.npy"]
+    return names
+
+
+def network_output_is_complete(network_out_dir, kwargs):
+    """True iff network_out_dir already holds every (non-empty) output file inference would write, so the
+    network can be skipped on a re-run."""
+    return all(os.path.exists(os.path.join(network_out_dir, f)) and
+               os.path.getsize(os.path.join(network_out_dir, f)) > 0
+               for f in expected_output_filenames(kwargs))
+
+
 def main():
     p = configargparse.ArgParser(default_config_files=['./config.txt'])
     p.add_argument('--config', is_config_file=True, help='config file path to override defaults')
@@ -132,6 +152,11 @@ def main():
     constant_options = {k: v for (k, v) in options._get_kwargs() if not isinstance(v, list)}
     variable_options = {k: v for (k, v) in options._get_kwargs() if isinstance(v, list)}
     options_combinations = (dict(zip(variable_options, x)) for x in itertools.product(*variable_options.values()))
+
+    # parameter folders this run is responsible for, and the output bases they live under, so we can flag
+    # pre-existing folders left over from a different config setup at the end of the run.
+    expected_output_parent_dirs = set()
+    output_bases = set()
 
     # run over different combinations of options as specified in the config
     for options_combination in options_combinations:
@@ -166,11 +191,12 @@ def main():
             if not os.path.isdir(data_dir):
                 continue
             data_dir_partial_path = os.path.join(*os.path.normpath(kwargs['data_parent_dir']).split(os.sep)[-2:])
-            output_parent_dir = os.path.join("inferred_models", data_dir_partial_path,
-                "{}-{}".format(comb_str, data_dir.name))
-            if os.path.exists(output_parent_dir):
-                shutil.rmtree(output_parent_dir, ignore_errors=True)
-            os.makedirs(output_parent_dir)
+            output_base = os.path.join("inferred_models", data_dir_partial_path)
+            output_parent_dir = os.path.join(output_base, "{}-{}".format(comb_str, data_dir.name))
+            # don't wipe existing output: we pick up where a previous run left off (per-network skip below)
+            os.makedirs(output_parent_dir, exist_ok=True)
+            output_bases.add(os.path.normpath(output_base))
+            expected_output_parent_dirs.add(os.path.normpath(output_parent_dir))
 
             # concatenate log for model generation with the inference log
             # with open(os.path.join(output_parent_dir, "log.txt"), 'wb') as new_log_file:
@@ -193,23 +219,51 @@ def main():
             if len(paths) == 0:
                 raise ValueError("Did not find network directories in data_dir {}".format(data_dir.name))
 
+            # pick-up: skip networks whose output folder is already fully populated from a previous run
+            paths_to_run = []
+            for name, path in paths:
+                if network_output_is_complete(os.path.join(output_parent_dir, name), kwargs):
+                    msg = "Skipping network {}: output already fully populated".format(name)
+                    print(msg)
+                    logger.info(msg)
+                else:
+                    paths_to_run.append((name, path))
+
             n_processes = max(1, int(kwargs.get('n_processes', 1) or 1))
             worker = functools.partial(process_network,
                                        output_parent_dir=output_parent_dir,
                                        kwargs=kwargs)
-            if n_processes > 1:
+            if not paths_to_run:
+                network_log_meta = []
+            elif n_processes > 1:
                 with ProcessPoolExecutor(max_workers=n_processes) as ex:
                     network_log_meta = list(ex.map(worker,
-                                                   [name for name, _ in paths],
-                                                   [path for _, path in paths]))
+                                                   [name for name, _ in paths_to_run],
+                                                   [path for _, path in paths_to_run]))
             else:
-                network_log_meta = [worker(name, path) for name, path in paths]
+                network_log_meta = [worker(name, path) for name, path in paths_to_run]
 
             master_log_path = os.path.join(output_parent_dir, "log.txt")
             for h in logger.handlers:
                 h.flush()
             for meta in network_log_meta:
                 append_network_log_to_master(master_log_path, *meta)
+
+    # after everything is saved: any parameter folder under a touched base that this run did not produce
+    # is a leftover from a different config setup (since this run only creates its own folders). Flag it so
+    # the user knows old outputs weren't cleared before running a different config.
+    stale_param_dirs = []
+    for base in sorted(output_bases):
+        if not os.path.isdir(base):
+            continue
+        for entry in os.scandir(base):
+            if entry.is_dir() and os.path.normpath(entry.path) not in expected_output_parent_dirs:
+                stale_param_dirs.append(entry.path)
+    if stale_param_dirs:
+        raise RuntimeError(
+            "Found parameter folder(s) under the output directory that this config did not produce - likely "
+            "leftovers from a different config setup. Clear them (or rerun with the matching config) so "
+            "results aren't mixed:\n" + "\n".join(sorted(stale_param_dirs)))
 
 
 if __name__ == "__main__":

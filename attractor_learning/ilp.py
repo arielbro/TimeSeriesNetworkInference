@@ -309,8 +309,8 @@ def add_truth_table_consistency_constraints(model, v_func, v_next_state_var, pre
         else:
             desired_val = 1 if v_func(*var_combination) else 0  # == because sympy
         # this expression is |in_degree| iff their states agrees with var_combination
-        indicator_expression = sum(v if state else 1 - v for (v, state) in
-                                   zip(predecessors_cur_vars, var_combination))
+        indicator_expression = gurobipy.quicksum(v if state else 1 - v for (v, state) in
+                                                  zip(predecessors_cur_vars, var_combination))
         # a[p, t] & (indicator_expression = in_degree) => v[i,p,t+1] = f(var_combination).
         # For x&y => a=b, require a <= b + (2 -x -b), a >= b - (2 -x -y)
         activity_expression = activity_variable - 1 if activity_variable is not None else 0
@@ -492,7 +492,6 @@ def add_state_equality_indicator(model, first_state, second_state,
         # add indicator for whether these two values are equal.
         val_equality_indicator = model.addVar(vtype=GRB.BINARY, name="{}_state_equality_indicator_index_{}".
                                                 format(prefix, index))
-        model.update()
         if force_equal:
             # force eq_var = 1 <-> first_val == second_val
             model.addConstr(val_equality_indicator <= 1 + second_val - first_val,
@@ -600,7 +599,6 @@ def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, last_s
         next_state_vars = last_state_vars if ((last_state_vars is not None) and (l == path_len - 1)) else [
             model.addVar(vtype=gurobipy.GRB.BINARY, name="transient_path_state_var_{}_{}".format(l, i))
             for i in range(n)]
-        model.update()
         new_state_vars_list.append(next_state_vars)
 
         for i in range(n):
@@ -621,7 +619,6 @@ def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, last_s
                     signed_input_vars = [model.addVar(vtype=gurobipy.GRB.BINARY,
                                          name="{}_signed_input_var_{}_{}_{}".format(name_prefix, l, i, j))
                                          for j in range(len(predecessor_vars))]
-                    model.update()
                     for j, (sign, var, signed_input) in enumerate(zip(signs, predecessor_vars, signed_input_vars)):
                         # we want signed_input = 1 <-> (s = 1 and v = 1) or (s = -1 and v = 0)
                         # v is binary, and s can take -1, 0, 1
@@ -638,7 +635,6 @@ def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, last_s
                             # 1 exactly when v and sign "agree", so signed_input is its positive part.
                             prod = model.addVar(lb=-1, ub=1, vtype=gurobipy.GRB.INTEGER,
                                                 name="{}_signed_input_prod_{}_{}_{}".format(name_prefix, l, i, j))
-                            model.update()
                             model.addConstr(prod <= var, name="{}_signed_input_prod_mc1_{}_{}_{}".format(name_prefix, l, i, j))
                             model.addConstr(prod >= -var, name="{}_signed_input_prod_mc2_{}_{}_{}".format(name_prefix, l, i, j))
                             model.addConstr(prod <= sign + (1 - var), name="{}_signed_input_prod_mc3_{}_{}_{}".format(name_prefix, l, i, j))
@@ -665,7 +661,7 @@ def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, last_s
                     # This expression ranges in [-threshold + 1, degree + 1]
                     # which is invariably bounded by [-len(predecessor_vars), len(predecessor_vars) + 1]
                     # It's strictly positive iff output should be 1.
-                    input_to_threshold_comparison = sum(signed_var for signed_var in signed_input_vars) - threshold + 1
+                    input_to_threshold_comparison = gurobipy.quicksum(signed_input_vars) - threshold + 1
                     model.addConstr((len(predecessor_vars) + 1) * next_state_vars[i] >= input_to_threshold_comparison,
                         name="{}_threshold_function_path_constraint_>=".format(name_prefix))
                     model.addConstr((len(predecessor_vars) + 1) * next_state_vars[i] <=
@@ -686,7 +682,6 @@ def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, last_s
                     add_truth_table_consistency_constraints(model, v_func, next_state_vars[i], predecessor_vars,
                                                             name_prefix="transient_path_step_{}vertex_{}".format(l, i),
                                                             activity_variable=None, find_model_f_vars=find_model_f_vars)
-            model.update()
 
         previous_state_vars = next_state_vars
 
