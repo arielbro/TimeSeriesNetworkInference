@@ -180,7 +180,7 @@ def main():
         comb_str = str({k: (v.name if isinstance(v, enum.Enum) else v) for k, v in options_combination.items()
                         if k != 'data_parent_dir'})
         comb_str = comb_str.translate(str.maketrans('', '', "'{}")).replace(": ", "=").replace(", ", "_")
-        comb_str = re.sub('<function ([a-zA-Z_]+) at.*', '\\1', comb_str)
+        comb_str = re.sub(r'<function ([a-zA-Z_]+) at[^>]*>', r'\1', comb_str)
 
         # kwargs = options_combination | constant_options (works on python>=3.9)
         kwargs = options_combination.copy()
