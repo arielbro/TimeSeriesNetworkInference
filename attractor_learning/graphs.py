@@ -494,7 +494,9 @@ class Network(object):
         import json
         from networkx.readwrite import json_graph
         with open(path, 'w') as f:
-            json.dump(json_graph.node_link_data(self.to_networkx()), f)
+            # edges="edges" pins the (otherwise version-dependent) edge key, silencing networkx's
+            # node_link default-change FutureWarning and staying forward compatible (nx >= 3.1).
+            json.dump(json_graph.node_link_data(self.to_networkx(), edges="edges"), f)
 
     @staticmethod
     def load(path):
@@ -502,7 +504,7 @@ class Network(object):
         import json
         from networkx.readwrite import json_graph
         with open(path, 'r') as f:
-            g = json_graph.node_link_graph(json.load(f), directed=True)
+            g = json_graph.node_link_graph(json.load(f), directed=True, edges="edges")
         return Network.from_networkx(g)
 
     def export_to_boolean_tables(self, base_path, model_name):
