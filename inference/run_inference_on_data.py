@@ -16,6 +16,9 @@ import time
 import re
 import itertools
 import functools
+import json
+import sys
+import random
 import configargparse
 
 
@@ -55,7 +58,8 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
                                           added_edges_relative_weight=kwargs['added_edges_relative_weight'],
                                           allow_input_flips=kwargs['allow_input_flips'],
                                           flip_penalty=kwargs['flip_penalty'],
-                                          no_anchoring=kwargs['no_anchoring'])
+                                          no_anchoring=kwargs['no_anchoring'],
+                                          gurobi_threads=int(os.environ.get('SLURM_CPUS_PER_TASK') or 0))
         time_taken = time.time() - start
         del scaffold_network
         inferred_model.save(os.path.join(network_out_dir, "inferred_network.json"))
@@ -133,6 +137,106 @@ def network_output_is_complete(network_out_dir, kwargs):
                for f in expected_output_filenames(kwargs))
 
 
+# argparse names that control HOW inference is run rather than inference parameters; excluded from the
+# per-problem kwargs stored in a manifest.
+_CONTROL_ARGS = {"config", "emit_manifest", "run_manifest", "task_id", "chunk_size", "n_processes"}
+
+
+def resolve_inference_method(name):
+    methods = {
+        "random": dummy_inference.dummy_inference_method,
+        "general": infer_known_topology_general,
+        "symmetric": infer_known_topology_symmetric,
+        "symmetric_topology": infer_unknown_topology_symmetric,
+    }
+    if name not in methods:
+        raise ValueError("Unknown inference method {}".format(name))
+    return methods[name]
+
+
+def build_comb_str(options_combination):
+    """Directory-name fragment for one inference-parameter combination (inference_method given as the function)."""
+    comb_str = str({k: (v.name if isinstance(v, enum.Enum) else v) for k, v in options_combination.items()
+                    if k != 'data_parent_dir'})
+    comb_str = comb_str.translate(str.maketrans('', '', "'{}")).replace(": ", "=").replace(", ", ",")
+    comb_str = re.sub(r'<function ([a-zA-Z_]+) at[^>]*>', r'\1', comb_str)
+    return comb_str
+
+
+def enumerate_problems(options):
+    """All single-graph inference problems for a config: the cross product of inference-parameter combinations
+    (the varying/appended options), subexperiments (data_dir) and graphs (network_X) in the data folder. Each
+    problem is a JSON-serializable dict with the inference kwargs (inference_method kept as its name string),
+    the network path/name, and the output_parent_dir - the same layout the whole-grid runner produces."""
+    all_options = {k: v for (k, v) in options._get_kwargs()}
+    constant_options = {k: v for k, v in all_options.items() if not isinstance(v, list)}
+    variable_options = {k: v for k, v in all_options.items() if isinstance(v, list)}
+
+    problems = []
+    for combo_values in itertools.product(*variable_options.values()):
+        options_combination = dict(zip(variable_options.keys(), combo_values))
+        resolved = dict(options_combination)
+        resolved['inference_method'] = resolve_inference_method(resolved['inference_method'])
+        comb_str = build_comb_str(resolved)
+
+        kwargs = dict(options_combination)
+        kwargs.update(constant_options)
+        manifest_kwargs = {k: v for k, v in kwargs.items() if k not in _CONTROL_ARGS}
+
+        data_parent_dir = kwargs['data_parent_dir']
+        data_dir_partial_path = os.path.join(*os.path.normpath(data_parent_dir).split(os.sep)[-2:])
+        for data_dir in os.scandir(data_parent_dir):
+            if not data_dir.is_dir():
+                continue
+            output_parent_dir = os.path.join("inferred_models", data_dir_partial_path,
+                                             "{}-{}".format(comb_str, data_dir.name))
+            networks = [(f.name, f.path) for f in os.scandir(data_dir.path) if f.is_dir()]
+            if not networks:
+                raise ValueError("Did not find network directories in data_dir {}".format(data_dir.name))
+            for net_name, net_path in networks:
+                problems.append({"kwargs": manifest_kwargs,
+                                 "network_name": net_name,
+                                 "network_path": net_path,
+                                 "output_parent_dir": output_parent_dir})
+    return problems
+
+
+def run_single_problem(problem):
+    """Run inference for one manifest problem, skipping it if its output is already complete. Returns the
+    process_network metadata tuple, or None if skipped."""
+    kwargs = dict(problem["kwargs"])
+    kwargs["inference_method"] = resolve_inference_method(kwargs["inference_method"])
+    output_parent_dir = problem["output_parent_dir"]
+    network_name = problem["network_name"]
+    if network_output_is_complete(os.path.join(output_parent_dir, network_name), kwargs):
+        print("Skipping {}/{}: output already fully populated".format(output_parent_dir, network_name))
+        return None
+    os.makedirs(output_parent_dir, exist_ok=True)
+    return process_network(network_name, problem["network_path"], output_parent_dir, kwargs)
+
+
+def run_manifest_chunk(manifest_path, task_id, chunk_size):
+    """Run the contiguous slice [task_id*chunk_size, (task_id+1)*chunk_size) of the manifest (one SLURM array
+    task). Exits non-zero if any problem in the chunk errored, so SLURM marks the task failed - a resubmit
+    skips the problems that did complete."""
+    with open(manifest_path) as f:
+        lines = [line for line in f if line.strip()]
+    start = task_id * chunk_size
+    end = min(start + chunk_size, len(lines))
+    if start >= len(lines):
+        print("task_id {} starts past the {} problems in {}; nothing to do".format(task_id, len(lines), manifest_path))
+        return
+    had_error = False
+    for i in range(start, end):
+        problem = json.loads(lines[i])
+        print("=== manifest problem {} ({} of {} in this task) ===".format(i, i - start + 1, end - start))
+        meta = run_single_problem(problem)
+        if meta is not None and meta[4] == 'error':
+            had_error = True
+    if had_error:
+        sys.exit(1)
+
+
 def main():
     p = configargparse.ArgParser(default_config_files=['./config.txt'])
     p.add_argument('--config', is_config_file=True, help='config file path to override defaults')
@@ -147,7 +251,29 @@ def main():
     p.add_argument('--flip_penalty', required=False, default=1.0, type=float)
     p.add_argument('--no_anchoring', required=False, default=False, type=bool)
     p.add_argument('--n_processes', required=False, type=int, default=1)
+    # SLURM-array modes (each exits after running; otherwise a normal whole-grid in-process run happens):
+    p.add_argument('--emit_manifest', required=False, type=str, default=None,
+                   help='enumerate all single-graph problems for the config, write them (one JSON per line) '
+                        'to this path, print the count, and exit')
+    p.add_argument('--run_manifest', required=False, type=str, default=None,
+                   help='run a chunk of problems from a manifest produced by --emit_manifest')
+    p.add_argument('--task_id', required=False, type=int, default=0,
+                   help='SLURM array task id; selects which chunk to run with --run_manifest')
+    p.add_argument('--chunk_size', required=False, type=int, default=1,
+                   help='number of manifest problems each array task runs')
     options = p.parse_args()
+
+    if options.emit_manifest is not None:
+        problems = enumerate_problems(options)
+        random.shuffle(problems)  # spread cheap/expensive problems across chunks for balanced array tasks
+        with open(options.emit_manifest, 'w') as f:
+            for problem in problems:
+                f.write(json.dumps(problem) + "\n")
+        print(len(problems))
+        return
+    if options.run_manifest is not None:
+        run_manifest_chunk(options.run_manifest, options.task_id, options.chunk_size)
+        return
 
     constant_options = {k: v for (k, v) in options._get_kwargs() if not isinstance(v, list)}
     variable_options = {k: v for (k, v) in options._get_kwargs() if isinstance(v, list)}
@@ -162,25 +288,10 @@ def main():
     for options_combination in options_combinations:
         print("Current parameters: ", options_combination)
 
-        # need to translate inference method to the enum
-        if options_combination['inference_method'] == "random":
-            inference_method = dummy_inference.dummy_inference_method
-        elif options_combination['inference_method'] == "general":
-            inference_method = infer_known_topology_general
-        elif options_combination['inference_method'] == "symmetric":
-            inference_method = infer_known_topology_symmetric
-        elif options_combination['inference_method'] == "symmetric_topology":
-            inference_method = infer_unknown_topology_symmetric
-        else:
-            raise ValueError("Unknown inference method {}".format(options_combination['inference_method']))
-        options_combination['inference_method'] = inference_method
+        options_combination['inference_method'] = resolve_inference_method(options_combination['inference_method'])
 
-        # need to represent the argument combination as a string to use in filename. Need to extract name from enums
-        # and from inference functions
-        comb_str = str({k: (v.name if isinstance(v, enum.Enum) else v) for k, v in options_combination.items()
-                        if k != 'data_parent_dir'})
-        comb_str = comb_str.translate(str.maketrans('', '', "'{}")).replace(": ", "=").replace(", ", "_")
-        comb_str = re.sub(r'<function ([a-zA-Z_]+) at[^>]*>', r'\1', comb_str)
+        # represent the argument combination as a string to use in the output directory name
+        comb_str = build_comb_str(options_combination)
 
         # kwargs = options_combination | constant_options (works on python>=3.9)
         kwargs = options_combination.copy()

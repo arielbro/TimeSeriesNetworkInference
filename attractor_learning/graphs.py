@@ -504,7 +504,11 @@ class Network(object):
         import json
         from networkx.readwrite import json_graph
         with open(path, 'r') as f:
-            g = json_graph.node_link_graph(json.load(f), directed=True, edges="edges")
+            data = json.load(f)
+        # the node-link edge key differs across networkx versions ("links" historically, "edges" now);
+        # detect it so files written by either version load, and pass it explicitly to avoid the warning.
+        edge_key = "edges" if "edges" in data else "links"
+        g = json_graph.node_link_graph(data, directed=True, edges=edge_key)
         return Network.from_networkx(g)
 
     def export_to_boolean_tables(self, base_path, model_name):

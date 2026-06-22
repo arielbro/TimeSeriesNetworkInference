@@ -22,7 +22,7 @@ def infer_known_topology_general(*args, **kwargs):
 
 def infer_known_topology(data_matrices, scaffold_network, function_type_restriction=None,
                          timeout_secs=None, log_file=None, allow_input_flips=False, flip_penalty=1.0,
-                         no_anchoring=False, **kwargs):
+                         no_anchoring=False, gurobi_threads=0, **kwargs):
     """
     Find a model with best fit to data_matrices, assuming that each node's inputs are defined by the scaffold network
     topology.
@@ -82,6 +82,8 @@ def infer_known_topology(data_matrices, scaffold_network, function_type_restrict
             model.Params.LogFile = log_file
         if timeout_secs is not None:
             model.Params.TimeLimit = timeout_secs
+        if gurobi_threads:
+            model.Params.Threads = gurobi_threads
         model.setObjective(objective, sense=gurobipy.GRB.MAXIMIZE)
         model.optimize()
 
@@ -113,7 +115,7 @@ def infer_known_topology(data_matrices, scaffold_network, function_type_restrict
 def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_additional_edges=False,
                                    included_edges_relative_weight=1, added_edges_relative_weight=-1,
                                    timeout_secs=None, log_file=None, allow_input_flips=False, flip_penalty=1.0,
-                                   no_anchoring=False, **kwargs):
+                                   no_anchoring=False, gurobi_threads=0, **kwargs):
     """
     Find a symmetric threshold model with best fit to data_matrices and scaffold_network,
     by finding both the Boolean function and the incoming edges for each node.
@@ -221,6 +223,9 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
             model.Params.LogFile = log_file
         if timeout_secs is not None:
             model.Params.TimeLimit = timeout_secs
+        if gurobi_threads:
+            model.Params.Threads = gurobi_threads
+
         model.setObjective(objective, sense=gurobipy.GRB.MAXIMIZE)
         model.optimize()
 
