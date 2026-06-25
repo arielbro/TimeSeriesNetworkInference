@@ -2,9 +2,9 @@
 #SBATCH --job-name=model_inference
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
-#SBATCH --mem=172G # the noise robustness experiment is the bottleneck
-#SBATCH --time=12:00:00
+#SBATCH --cpus-per-task=128
+#SBATCH --mem=256G # the noise robustness experiment is the bottleneck
+#SBATCH --time=5:00:00
 #SBATCH --output=slurm_logs/slurm-%j.out
 #SBATCH --error=slurm_logs/slurm-%j.err
 #SBATCH --mail-type=FAIL,END        # send email when job begins
@@ -20,9 +20,9 @@ conda activate torch_cobra
 set -euo pipefail
 cd "$SLURM_SUBMIT_DIR"             # must be the project root
 
-export OMP_NUM_THREADS=1
-export OPENBLAS_NUM_THREADS=1
-export MKL_NUM_THREADS=1
+# export OMP_NUM_THREADS=1
+# export OPENBLAS_NUM_THREADS=1
+# export MKL_NUM_THREADS=1
 # Make Gurobi honor the allocation
 EXP="${1:?Usage: sbatch run_experiment.sbatch <experiment_name>}"  # change per experiment
 echo "EXP=$EXP"

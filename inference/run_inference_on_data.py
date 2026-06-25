@@ -19,6 +19,7 @@ import functools
 import json
 import sys
 import random
+import subprocess
 import configargparse
 
 
@@ -139,7 +140,8 @@ def network_output_is_complete(network_out_dir, kwargs):
 
 # argparse names that control HOW inference is run rather than inference parameters; excluded from the
 # per-problem kwargs stored in a manifest.
-_CONTROL_ARGS = {"config", "emit_manifest", "run_manifest", "task_id", "chunk_size", "n_processes"}
+_CONTROL_ARGS = {"config", "emit_manifest", "run_manifest", "task_id", "chunk_size", "n_processes",
+                 "summarize_errors", "array_job_id"}
 
 
 def resolve_inference_method(name):
@@ -215,10 +217,18 @@ def run_single_problem(problem):
     return process_network(network_name, problem["network_path"], output_parent_dir, kwargs)
 
 
+def error_parts_dir(manifest_path):
+    """Directory where each array task drops a record of the problems it saw error, for summarize_errors to
+    aggregate once the whole array has finished."""
+    return manifest_path + ".errparts"
+
+
 def run_manifest_chunk(manifest_path, task_id, chunk_size):
     """Run the contiguous slice [task_id*chunk_size, (task_id+1)*chunk_size) of the manifest (one SLURM array
-    task). Exits non-zero if any problem in the chunk errored, so SLURM marks the task failed - a resubmit
-    skips the problems that did complete."""
+    task). Appends the process_network metadata of each errored problem to a per-task file under
+    error_parts_dir() as soon as it happens, so an end-of-array finalize job can collect them and a later kill
+    in this chunk doesn't lose errors recorded earlier. Exits non-zero if any problem in the chunk errored, so
+    SLURM marks the task failed - a resubmit skips the problems that did complete."""
     with open(manifest_path) as f:
         lines = [line for line in f if line.strip()]
     start = task_id * chunk_size
@@ -226,6 +236,10 @@ def run_manifest_chunk(manifest_path, task_id, chunk_size):
     if start >= len(lines):
         print("task_id {} starts past the {} problems in {}; nothing to do".format(task_id, len(lines), manifest_path))
         return
+    parts_dir = error_parts_dir(manifest_path)
+    os.makedirs(parts_dir, exist_ok=True)
+    part_path = os.path.join(parts_dir, "task_{}.jsonl".format(task_id))
+    open(part_path, 'w', encoding='utf-8').close()  # truncate any stale file from a prior run of this task id
     had_error = False
     for i in range(start, end):
         problem = json.loads(lines[i])
@@ -233,8 +247,138 @@ def run_manifest_chunk(manifest_path, task_id, chunk_size):
         meta = run_single_problem(problem)
         if meta is not None and meta[4] == 'error':
             had_error = True
+            with open(part_path, 'a', encoding='utf-8') as out:  # append now, before any later problem can be killed
+                out.write(json.dumps({"manifest_index": i,
+                                      "output_parent_dir": problem["output_parent_dir"],
+                                      "meta": meta}) + "\n")
     if had_error:
         sys.exit(1)
+
+
+def query_slurm_task_states(array_job_id):
+    """Map array-task index -> "STATE (exit CODE)" via sacct, so the summary can explain why a task was killed
+    (e.g. TIMEOUT, OUT_OF_MEMORY, CANCELLED). Returns {} when no job id is given or sacct is unavailable/fails
+    (e.g. not running on a SLURM node), so callers degrade gracefully."""
+    if not array_job_id:
+        return {}
+    try:
+        completed = subprocess.run(
+            ["sacct", "-j", str(array_job_id), "--parsable2", "--noheader",
+             "--format=JobID,State,ExitCode"],
+            capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    if completed.returncode != 0:
+        return {}
+    states = {}
+    for line in completed.stdout.splitlines():
+        fields = line.split("|")
+        if len(fields) < 3:
+            continue
+        job_id, state, exit_code = fields[0], fields[1], fields[2]
+        if "." in job_id:  # skip job substeps like <A>_<a>.batch / .extern
+            continue
+        # main array-task line is "<A>_<a>"; sacct may collapse pending/cancelled ones into "<A>_[lo-hi]"
+        m = re.match(r'^\d+_\[?(\d+)(?:-(\d+))?(?:%\d+)?\]?$', job_id)
+        if not m:
+            continue
+        lo = int(m.group(1))
+        hi = int(m.group(2)) if m.group(2) else lo
+        for task_index in range(lo, hi + 1):
+            states[task_index] = "{} (exit {})".format(state, exit_code)
+    return states
+
+
+def summarize_errors(manifest_path, summary_filename, chunk_size, array_job_id=None):
+    """Write an errors-only summary named summary_filename into each experiment directory the manifest targets
+    (inferred_models/<experiment> = the parent of a problem's output_parent_dir). Each summary lists, for that
+    experiment:
+      1. networks that raised a caught exception, with the full per-network log/traceback (recorded by the
+         array tasks), and
+      2. problems whose output is still incomplete yet were never recorded as errors - i.e. whose array task
+         was killed/timed out (or otherwise died without a Python error) before finishing them. sacct is
+         queried (via array_job_id, mapping manifest index -> task_id = index // chunk_size) for that task's
+         terminal state so the summary can say why it was killed.
+    An experiment with no errors and nothing incomplete still gets a summary stating so. Meant to run once,
+    after the whole array has finished (via a SLURM afterany job)."""
+    chunk_size = max(1, int(chunk_size or 1))
+
+    # read the full manifest so we can compare every enumerated problem against what actually completed
+    problems = []
+    with open(manifest_path) as f:
+        for index, line in enumerate(f):
+            if line.strip():
+                problems.append((index, json.loads(line)))
+
+    # error records the array tasks left behind (caught exceptions)
+    error_records = []
+    recorded_indices = set()
+    parts_dir = error_parts_dir(manifest_path)
+    if os.path.isdir(parts_dir):
+        for entry in os.scandir(parts_dir):
+            if not entry.name.endswith(".jsonl"):
+                continue
+            with open(entry.path, encoding='utf-8') as f:
+                for line in f:
+                    if line.strip():
+                        rec = json.loads(line)
+                        error_records.append(rec)
+                        recorded_indices.add(rec["manifest_index"])
+
+    slurm_states = query_slurm_task_states(array_job_id)
+
+    # seed both groupings with every targeted experiment so a clean experiment still gets a zero-count summary
+    errors_by_exp = {}
+    incomplete_by_exp = {}
+    for _, problem in problems:
+        experiment_dir = os.path.dirname(problem["output_parent_dir"])
+        errors_by_exp.setdefault(experiment_dir, [])
+        incomplete_by_exp.setdefault(experiment_dir, [])
+
+    for rec in error_records:
+        errors_by_exp.setdefault(os.path.dirname(rec["output_parent_dir"]), []).append(rec)
+
+    # compare the manifest against on-disk output: a problem that is neither complete nor recorded as an error
+    # is "incomplete but unrecorded" - its task was killed/timed out before writing the outputs
+    for index, problem in problems:
+        if index in recorded_indices:
+            continue
+        network_out_dir = os.path.join(problem["output_parent_dir"], problem["network_name"])
+        if network_output_is_complete(network_out_dir, problem["kwargs"]):
+            continue
+        task_id = index // chunk_size
+        incomplete_by_exp[os.path.dirname(problem["output_parent_dir"])].append({
+            "manifest_index": index,
+            "network_out_dir": network_out_dir,
+            "task_id": task_id,
+            "array_task": "{}_{}".format(array_job_id, task_id) if array_job_id else None,
+            "slurm": slurm_states.get(task_id, "unknown (sacct unavailable)"),
+        })
+
+    for experiment_dir in sorted(set(errors_by_exp) | set(incomplete_by_exp)):
+        errors = sorted(errors_by_exp.get(experiment_dir, []), key=lambda r: r["manifest_index"])
+        incompletes = sorted(incomplete_by_exp.get(experiment_dir, []), key=lambda r: r["manifest_index"])
+        os.makedirs(experiment_dir, exist_ok=True)
+        summary_path = os.path.join(experiment_dir, summary_filename)
+        with open(summary_path, 'w', encoding='utf-8') as out:
+            out.write("Error summary for {}: {} errored network(s), {} incomplete-but-unrecorded problem(s)\n".format(
+                manifest_path, len(errors), len(incompletes)))
+            out.write("\n==== incomplete but unrecorded problems (no caught error; likely killed/timed out) ====\n")
+            for rec in incompletes:
+                out.write("- problem {idx}  {dir}  task={task}{arr}  slurm={slurm}\n".format(
+                    idx=rec["manifest_index"], dir=rec["network_out_dir"], task=rec["task_id"],
+                    arr="" if rec["array_task"] is None else " ({})".format(rec["array_task"]),
+                    slurm=rec["slurm"]))
+            if not incompletes:
+                out.write("(none)\n")
+            out.write("\n==== errored networks (caught exceptions; full per-network log below) ====\n")
+            if not errors:
+                out.write("(none)\n")
+        for rec in errors:
+            name, network_log_path, started_iso, elapsed_s, status = rec["meta"]
+            append_network_log_to_master(summary_path, name, network_log_path, started_iso, elapsed_s, status)
+        print("Wrote {} ({} errored, {} incomplete-but-unrecorded)".format(
+            summary_path, len(errors), len(incompletes)))
 
 
 def main():
@@ -261,8 +405,21 @@ def main():
                    help='SLURM array task id; selects which chunk to run with --run_manifest')
     p.add_argument('--chunk_size', required=False, type=int, default=1,
                    help='number of manifest problems each array task runs')
+    p.add_argument('--summarize_errors', required=False, type=str, default=None,
+                   help='aggregate the per-task error records for the manifest given by --run_manifest into an '
+                        'errors-only summary file with this name, written into each targeted experiment dir '
+                        '(inferred_models/<experiment>); also lists incomplete-but-unrecorded problems, then '
+                        'exit (run as an end-of-array finalize job)')
+    p.add_argument('--array_job_id', required=False, type=str, default=None,
+                   help='SLURM job id of the inference array, used by --summarize_errors to query sacct for the '
+                        'terminal state of tasks that left problems incomplete')
     options = p.parse_args()
 
+    if options.summarize_errors is not None:
+        if options.run_manifest is None:
+            p.error("--summarize_errors requires --run_manifest <manifest> to locate the error records")
+        summarize_errors(options.run_manifest, options.summarize_errors, options.chunk_size, options.array_job_id)
+        return
     if options.emit_manifest is not None:
         problems = enumerate_problems(options)
         random.shuffle(problems)  # spread cheap/expensive problems across chunks for balanced array tasks
