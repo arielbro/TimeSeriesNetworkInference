@@ -60,6 +60,8 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
                                           allow_input_flips=kwargs['allow_input_flips'],
                                           flip_penalty=kwargs['flip_penalty'],
                                           no_anchoring=kwargs['no_anchoring'],
+                                          warm_start_from_scaffold=kwargs['warm_start_from_scaffold'],
+                                          warm_start_time_frac=kwargs['warm_start_time_frac'],
                                           gurobi_threads=int(os.environ.get('SLURM_CPUS_PER_TASK') or 0))
         time_taken = time.time() - start
         del scaffold_network
@@ -394,6 +396,8 @@ def main():
     p.add_argument('--allow_input_flips', required=False, default=False, type=bool)
     p.add_argument('--flip_penalty', required=False, default=1.0, type=float)
     p.add_argument('--no_anchoring', required=False, default=False, type=bool)
+    p.add_argument('--warm_start_from_scaffold', required=False, default=False, type=bool)
+    p.add_argument('--warm_start_time_frac', required=False, default=0.2, type=float)
     p.add_argument('--n_processes', required=False, type=int, default=1)
     # SLURM-array modes (each exits after running; otherwise a normal whole-grid in-process run happens):
     p.add_argument('--emit_manifest', required=False, type=str, default=None,

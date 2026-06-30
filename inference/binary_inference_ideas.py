@@ -6,6 +6,7 @@ from attractor_learning.graphs import FunctionTypeRestriction, Network
 from inference.ilp_components import ModelAdditionType, get_value_of_gurobi_entity
 from attractor_learning.logic import BooleanSymbolicFunc, SymmetricThresholdFunction
 import itertools
+import time
 
 
 # TODO: rethink the scattered way I do config, that made it worthwhile to have these
@@ -84,6 +85,7 @@ def infer_known_topology(data_matrices, scaffold_network, function_type_restrict
             model.Params.TimeLimit = timeout_secs
         if gurobi_threads:
             model.Params.Threads = gurobi_threads
+        model.Params.MIPFocus = 1
         model.setObjective(objective, sense=gurobipy.GRB.MAXIMIZE)
         model.optimize()
 
@@ -112,10 +114,40 @@ def infer_known_topology(data_matrices, scaffold_network, function_type_restrict
     return inferred_model
 
 
+def _scaffold_warm_start_values(data_matrices, scaffold_network, timeout_secs, log_file,
+                                allow_input_flips, flip_penalty, no_anchoring, gurobi_threads):
+    """Solve the known-topology symmetric ILP (inputs fixed to the scaffold) and read back, per vertex, a
+    ({input vertex index: +1/-1 sign}, threshold) pair to seed the unknown-topology model's variables.
+    The sign of edge j->i is stored under index j (so it maps directly onto signs_vars[j] of vertex i).
+    Thresholds are clamped into the unknown model's feasible [1, degree] range for nodes with inputs: the
+    known model may return a constant function (threshold 0 or degree+1) while keeping nonzero signs, and
+    feeding such a threshold back would make the whole seeded MIP start infeasible (Gurobi would discard it).
+    Degree-0 (input) nodes get no signs and threshold 0."""
+    scaffold_model = infer_known_topology_symmetric(
+        data_matrices, scaffold_network, timeout_secs=timeout_secs, log_file=log_file,
+        allow_input_flips=allow_input_flips, flip_penalty=flip_penalty,
+        no_anchoring=no_anchoring, gurobi_threads=gurobi_threads)
+    warm_start = []
+    for vertex in scaffold_model.vertices:
+        func = vertex.function
+        if func is None:
+            warm_start.append(({}, 0))
+            continue
+        predecessors = vertex.predecessors()
+        # func.signs[k] aligns with predecessors()[k] (both ordered by vertex index in the known model)
+        signs_by_index = {pred.index: (1 if sign else -1)
+                          for pred, sign in zip(predecessors, func.signs)}
+        degree = len(predecessors)
+        threshold = min(max(func.threshold, 1), degree)
+        warm_start.append((signs_by_index, threshold))
+    return warm_start
+
+
 def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_additional_edges=False,
                                    included_edges_relative_weight=1, added_edges_relative_weight=-1,
                                    timeout_secs=None, log_file=None, allow_input_flips=False, flip_penalty=1.0,
-                                   no_anchoring=False, gurobi_threads=0, **kwargs):
+                                   no_anchoring=False, gurobi_threads=0,
+                                   warm_start_from_scaffold=False, warm_start_time_frac=0.2, **kwargs):
     """
     Find a symmetric threshold model with best fit to data_matrices and scaffold_network,
     by finding both the Boolean function and the incoming edges for each node.
@@ -140,8 +172,27 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
         one cell, and = 1 (the default) is the break-even point at which the chosen flips may be under-determined.
     :param no_anchoring: if true, score a free-running trajectory (each step is fed the model's own previous
         prediction) instead of independent one-step transitions anchored to the data.
+    :param warm_start_from_scaffold: if true, first solve the known-topology symmetric ILP (inputs fixed to the
+        scaffold) and use the signs/thresholds it learns as a MIP start for this (unknown-topology) solve.
+    :param warm_start_time_frac: fraction of timeout_secs given to the scaffold (warm-start) solve; this solve's
+        actual elapsed time is then subtracted from timeout_secs to budget the main solve. Ignored when
+        warm_start_from_scaffold is False or timeout_secs is None.
     :return:
     """
+    warm_start = None
+    main_timeout_secs = timeout_secs
+    if warm_start_from_scaffold:
+        data_matrices = list(data_matrices)  # iterated by both the scaffold solve and the main solve below
+        scaffold_timeout = timeout_secs * warm_start_time_frac if timeout_secs is not None else None
+        scaffold_start = time.time()
+        warm_start = _scaffold_warm_start_values(
+            data_matrices, scaffold_network, timeout_secs=scaffold_timeout, log_file=log_file,
+            allow_input_flips=allow_input_flips, flip_penalty=flip_penalty,
+            no_anchoring=no_anchoring, gurobi_threads=gurobi_threads)
+        if timeout_secs is not None:
+            # give the (harder) unknown-topology solve whatever of the budget the scaffold solve left unused
+            main_timeout_secs = max(timeout_secs - (time.time() - scaffold_start), 0.0)
+
     # create function variables
     functions_variables = []
     model = gurobipy.Model()
@@ -219,12 +270,22 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
         if allow_input_flips and flip_cost_terms:
             objective = objective - flip_penalty * gurobipy.quicksum(flip_cost_terms) / n_cells
 
+        if warm_start is not None:
+            # seed signs/threshold from the scaffold solve; Gurobi completes the rest of the partial MIP start
+            for i in range(len(scaffold_network)):
+                signs_by_index, threshold_start = warm_start[i]
+                signs_vars, threshold_var = functions_variables[i]
+                for j in range(len(scaffold_network)):
+                    signs_vars[j].Start = signs_by_index.get(j, 0)
+                threshold_var.Start = threshold_start
+
         if log_file is not None:
             model.Params.LogFile = log_file
-        if timeout_secs is not None:
-            model.Params.TimeLimit = timeout_secs
+        if main_timeout_secs is not None:
+            model.Params.TimeLimit = main_timeout_secs
         if gurobi_threads:
             model.Params.Threads = gurobi_threads
+        model.Params.MIPFocus = 1
 
         model.setObjective(objective, sense=gurobipy.GRB.MAXIMIZE)
         model.optimize()
