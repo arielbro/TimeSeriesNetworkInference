@@ -1,13 +1,13 @@
 import enum
 import random
-from attractor_learning.stochastic import walk_to_attractor
+from attractor_learning.stochastic import walk_to_attractor, estimate_attractors
 import numpy as np
 
 StateSampleType = enum.Enum("StateSampleType", "stable perturbed")
 FrequencyHandling = enum.Enum("FrequencyHandling", "random floor")
 
 
-def generate_one_experiment_data(model, **kwargs):
+def generate_one_experiment_data(model, starting_point=None, **kwargs):
     """
     Given a model, generate one matrix of time-series data from the model. Data starts
     at some state (either a basin-weighted attractor state,
@@ -16,6 +16,8 @@ def generate_one_experiment_data(model, **kwargs):
     The method supports generating noisy data and sampling at different frequencies than model
     update.
     :param model:
+    :param starting_point: if given, the first (pre-perturbation) state of the time series. When None,
+        it is sampled internally: a uniform random state, walked to its attractor if only_attractors.
     :param state_sample_type:
     :param timepoints_per_experiment:
     :param state_noise_chance:
@@ -30,12 +32,16 @@ def generate_one_experiment_data(model, **kwargs):
     data = np.zeros(shape=(kwargs['timepoints_per_experiment'], n_nodes))
 
     # sample starting state
-    starting_point = [random.randint(0, 1) for _ in range(n_nodes)]
-    if kwargs['only_attractors']:
-        starting_attractor = walk_to_attractor(model, starting_point)
-        # walk_to_attractor returns attractor states as tuples (next_state yields tuples); convert to a
-        # list so the perturbation below can assign to an element.
-        starting_point = list(random.choice(starting_attractor))
+    if starting_point is None:
+        starting_point = [random.randint(0, 1) for _ in range(n_nodes)]
+        if kwargs['only_attractors']:
+            starting_attractor = walk_to_attractor(model, starting_point)
+            # walk_to_attractor returns attractor states as tuples (next_state yields tuples); convert to a
+            # list so the perturbation below can assign to an element.
+            starting_point = list(random.choice(starting_attractor))
+    else:
+        # a precomputed attractor state; convert to a list so the perturbation below can assign to an element.
+        starting_point = list(starting_point)
 
     if kwargs['state_sample_type'] == StateSampleType.perturbed:
         i = random.randint(0, n_nodes - 1)
@@ -81,5 +87,28 @@ def generate_one_experiment_data(model, **kwargs):
 
 
 def generate_experiments_data(model, **kwargs):
-    for _ in range(kwargs['experiments_per_network']):
-        yield generate_one_experiment_data(model, **kwargs)
+    if not kwargs['only_attractors']:
+        for _ in range(kwargs['experiments_per_network']):
+            yield generate_one_experiment_data(model, **kwargs)
+        return
+
+    # Attractor-based sampling: estimate the model's attractors and their relative basin sizes once,
+    # then pick starting attractors weighted by basin size (without replacement, hence capped at the
+    # number of distinct attractors), sampling a uniform-random state from each as the first timepoint.
+    if kwargs.get('attractor_estimation_n_walks') is None:
+        raise ValueError("attractor_estimation_n_walks must be set when only_attractors is True")
+    attractor_items = list(estimate_attractors(model, kwargs['attractor_estimation_n_walks'],
+                                               with_basins=True))
+    if not attractor_items:
+        raise ValueError("no attractors found during estimation; increase attractor_estimation_n_walks")
+
+    attractors = [attractor for attractor, _ in attractor_items]
+    basin_sizes = np.array([basin for _, basin in attractor_items], dtype=float)
+    basin_probabilities = basin_sizes / basin_sizes.sum()
+
+    n_matrices = min(kwargs['experiments_per_network'], len(attractors))
+    chosen_indices = np.random.choice(len(attractors), size=n_matrices, replace=False,
+                                      p=basin_probabilities)
+    for index in chosen_indices:
+        starting_point = random.choice(attractors[index])
+        yield generate_one_experiment_data(model, starting_point=starting_point, **kwargs)

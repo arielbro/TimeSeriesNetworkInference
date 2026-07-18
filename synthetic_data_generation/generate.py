@@ -36,6 +36,7 @@ def main():
     p.add_argument('--scaffold_network_added_edge_fraction', required=False, type=float, action='append')
     p.add_argument('--scaffold_network_removed_edge_fraction', required=False, type=float, action='append')
     p.add_argument('--only_attractors', required=False, default=False,  type=bool)
+    p.add_argument('--attractor_estimation_n_walks', required=False, type=int)
     options = p.parse_args()
 
     print(options)

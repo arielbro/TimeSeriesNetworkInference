@@ -21,21 +21,25 @@ module load gurobi/8.0.1
 conda activate torch_cobra
 set -euo pipefail
 
+# progress/summary messages go to stderr so they show immediately even when stdout is redirected or piped
+# (stdout would be block-buffered in that case, hiding these lines until the buffer flushes)
+log() { echo "$@" >&2; }
+
 # manifest name keyed to the config so concurrent runs of different configs don't collide
 MANIFEST="manifest_$(basename "${CONFIG%.*}").jsonl"
-echo "Enumerating problems for ${CONFIG} ..."
+log "Enumerating problems for ${CONFIG} ..."
 python -m inference.run_inference_on_data --config "$CONFIG" --emit_manifest "$MANIFEST"
 N=$(wc -l < "$MANIFEST")
-echo "Enumerated ${N} problems -> ${MANIFEST}"
+log "Enumerated ${N} problems -> ${MANIFEST}"
 if [ "$N" -eq 0 ]; then
-    echo "No problems to run; not submitting."
+    log "No problems to run; not submitting."
     exit 0
 fi
 
 # choose the smallest chunk size that keeps the number of array tasks within MaxArraySize
 CHUNK_SIZE=$(( (N + MAX_ARRAY_SIZE - 1) / MAX_ARRAY_SIZE ))
 N_TASKS=$(( (N + CHUNK_SIZE - 1) / CHUNK_SIZE ))
-echo "chunk_size=${CHUNK_SIZE}  n_tasks=${N_TASKS}  max_concurrent=${MAX_CONCURRENT}"
+log "chunk_size=${CHUNK_SIZE}  n_tasks=${N_TASKS}  max_concurrent=${MAX_CONCURRENT}"
 
 # wall time per task = chunk_size x per-graph Gurobi timeout x TIME_OVERHEAD. A task runs CHUNK_SIZE problems
 # serially, each capped at model_inference_timeout_secs; that timeout is constant across the config, so read it
@@ -57,7 +61,22 @@ m, s = divmod(rem, 60)
 print("{:d}-{:02d}:{:02d}:{:02d}".format(days, h, m, s) if days else "{:d}:{:02d}:{:02d}".format(h, m, s))
 PY
 )
-echo "time=${TIME} (chunk_size x model_inference_timeout_secs x ${TIME_OVERHEAD})"
+log "time=${TIME} (chunk_size x model_inference_timeout_secs x ${TIME_OVERHEAD})"
+
+# consolidated summary of what is about to be submitted (last chance to sanity-check TIME against the
+# partition/QOS wall-clock limit before sbatch either accepts it or rejects it)
+log "-------------------------------------------------------------"
+log "submission summary"
+log "  config        : ${CONFIG}"
+log "  manifest      : ${MANIFEST}"
+log "  problems (N)  : ${N}"
+log "  chunk_size    : ${CHUNK_SIZE}  (problems per array task, run serially)"
+log "  n_tasks       : ${N_TASKS}     (array 0-$((N_TASKS - 1))%${MAX_CONCURRENT})"
+log "  max_concurrent: ${MAX_CONCURRENT}"
+log "  time/task     : ${TIME}  (chunk_size x model_inference_timeout_secs x ${TIME_OVERHEAD})"
+log "  cpus-per-task : ${CPUS}"
+log "  mem           : ${MEM}"
+log "-------------------------------------------------------------"
 
 # clear any error records left by a previous submission of this config so the summary reflects only this run
 rm -rf "${MANIFEST}.errparts"
