@@ -171,7 +171,9 @@ def enumerate_problems(options):
     """All single-graph inference problems for a config: the cross product of inference-parameter combinations
     (the varying/appended options), subexperiments (data_dir) and graphs (network_X) in the data folder. Each
     problem is a JSON-serializable dict with the inference kwargs (inference_method kept as its name string),
-    the network path/name, and the output_parent_dir - the same layout the whole-grid runner produces."""
+    the network path/name, and the output_parent_dir - the same layout the whole-grid runner produces.
+    Problems whose output is already fully populated are omitted, so the manifest (and the array sized from it)
+    covers only missing work; a partially-written output counts as missing and is re-run from scratch."""
     all_options = {k: v for (k, v) in options._get_kwargs()}
     constant_options = {k: v for k, v in all_options.items() if not isinstance(v, list)}
     variable_options = {k: v for k, v in all_options.items() if isinstance(v, list)}
@@ -198,6 +200,8 @@ def enumerate_problems(options):
             if not networks:
                 raise ValueError("Did not find network directories in data_dir {}".format(data_dir.name))
             for net_name, net_path in networks:
+                if network_output_is_complete(os.path.join(output_parent_dir, net_name), manifest_kwargs):
+                    continue  # already fully generated; leave it out of the manifest
                 problems.append({"kwargs": manifest_kwargs,
                                  "network_name": net_name,
                                  "network_path": net_path,
