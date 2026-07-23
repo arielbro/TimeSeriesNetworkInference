@@ -140,6 +140,31 @@ def network_output_is_complete(network_out_dir, kwargs):
                for f in expected_output_filenames(kwargs))
 
 
+def count_timeseries_matrices(network_path):
+    """Number of time-series matrices for a network - the samples process_network splits into train/test
+    (it splits on the keys of noisy_matrices.npz, line ~41). Returns None if the file can't be read, leaving
+    that network's fate to the runtime error path rather than pre-judging it."""
+    try:
+        with np.load(os.path.join(network_path, "noisy_matrices.npz")) as data:
+            return len(data.files)
+    except Exception:
+        return None
+
+
+def split_precheck_reason(n_matrices, train_size):
+    """None if process_network's train/test split would succeed for this many time-series matrices and this
+    train_size, else the ValueError message explaining why it can't be split. Mirrors runtime exactly by
+    invoking the same train_test_split (on a dummy range) rather than reimplementing sklearn's size math, so
+    the precheck can't drift from process_network across sklearn versions. train_size==1 does no split."""
+    if train_size == 1:
+        return None
+    try:
+        train_test_split(list(range(n_matrices)), train_size=train_size)
+        return None
+    except ValueError as e:
+        return str(e)
+
+
 # argparse names that control HOW inference is run rather than inference parameters; excluded from the
 # per-problem kwargs stored in a manifest.
 _CONTROL_ARGS = {"config", "emit_manifest", "run_manifest", "task_id", "chunk_size", "n_processes",
@@ -173,12 +198,18 @@ def enumerate_problems(options):
     problem is a JSON-serializable dict with the inference kwargs (inference_method kept as its name string),
     the network path/name, and the output_parent_dir - the same layout the whole-grid runner produces.
     Problems whose output is already fully populated are omitted, so the manifest (and the array sized from it)
-    covers only missing work; a partially-written output counts as missing and is re-run from scratch."""
+    covers only missing work; a partially-written output counts as missing and is re-run from scratch.
+    Problems that would fail process_network's train/test split (too few time-series matrices for the given
+    train_size) are also kept out of the manifest and returned separately as prevalidation errors - this just
+    moves detection that already happened at runtime earlier, so no SLURM task is wasted on a certain failure;
+    summarize_errors still reports them. Returns (problems, prevalidation_errors)."""
     all_options = {k: v for (k, v) in options._get_kwargs()}
     constant_options = {k: v for k, v in all_options.items() if not isinstance(v, list)}
     variable_options = {k: v for k, v in all_options.items() if isinstance(v, list)}
 
     problems = []
+    prevalidation_errors = []
+    matrix_count_cache = {}  # net_path -> matrix count; the count is a property of the data, reused across combos
     for combo_values in itertools.product(*variable_options.values()):
         options_combination = dict(zip(variable_options.keys(), combo_values))
         resolved = dict(options_combination)
@@ -202,11 +233,27 @@ def enumerate_problems(options):
             for net_name, net_path in networks:
                 if network_output_is_complete(os.path.join(output_parent_dir, net_name), manifest_kwargs):
                     continue  # already fully generated; leave it out of the manifest
+                # pre-check the train/test split so a network with too few time-series matrices is excluded
+                # from the array (no wasted task) and recorded for the error summary instead. If the matrix
+                # count can't be read, fall through to the manifest and let the runtime error path handle it.
+                if net_path not in matrix_count_cache:
+                    matrix_count_cache[net_path] = count_timeseries_matrices(net_path)
+                n_matrices = matrix_count_cache[net_path]
+                if n_matrices is not None:
+                    reason = split_precheck_reason(n_matrices, manifest_kwargs.get('train_size'))
+                    if reason is not None:
+                        prevalidation_errors.append({"kwargs": manifest_kwargs,
+                                                     "network_name": net_name,
+                                                     "network_path": net_path,
+                                                     "output_parent_dir": output_parent_dir,
+                                                     "n_timeseries_matrices": n_matrices,
+                                                     "reason": "train/test split precheck failed: {}".format(reason)})
+                        continue
                 problems.append({"kwargs": manifest_kwargs,
                                  "network_name": net_name,
                                  "network_path": net_path,
                                  "output_parent_dir": output_parent_dir})
-    return problems
+    return problems, prevalidation_errors
 
 
 def run_single_problem(problem):
@@ -227,6 +274,23 @@ def error_parts_dir(manifest_path):
     """Directory where each array task drops a record of the problems it saw error, for summarize_errors to
     aggregate once the whole array has finished."""
     return manifest_path + ".errparts"
+
+
+def prevalidation_path(manifest_path):
+    """Sidecar file beside the manifest listing problems an emit-time precheck excluded from the array (e.g.
+    too few time-series matrices to train/test split). Kept out of the manifest so no SLURM task is created
+    for them, and out of error_parts_dir (which submit_inference_array.sh wipes); summarize_errors folds these
+    into the error summary. Rewritten on every emit, so a prior submission's records never leak into this one."""
+    return manifest_path + ".prevalidation.jsonl"
+
+
+def summary_state_path(experiment_dir, summary_filename):
+    """Durable per-experiment JSONL store backing the human-readable summary, keyed by
+    (output_parent_dir, network_name). It accumulates prevalidation/error/incomplete records across runs so a
+    later run updates the summary instead of replacing it, and marks an entry resolved (rather than dropping it)
+    once its output is complete. Co-located with the summary in the experiment dir, so it persists across
+    submissions (unlike the manifest/errparts/sidecar, which live beside the transient manifest)."""
+    return os.path.join(experiment_dir, os.path.splitext(summary_filename)[0] + ".state.jsonl")
 
 
 def run_manifest_chunk(manifest_path, task_id, chunk_size):
@@ -296,27 +360,34 @@ def query_slurm_task_states(array_job_id):
 
 
 def summarize_errors(manifest_path, summary_filename, chunk_size, array_job_id=None):
-    """Write an errors-only summary named summary_filename into each experiment directory the manifest targets
-    (inferred_models/<experiment> = the parent of a problem's output_parent_dir). Each summary lists, for that
-    experiment:
-      1. networks that raised a caught exception, with the full per-network log/traceback (recorded by the
-         array tasks), and
-      2. problems whose output is still incomplete yet were never recorded as errors - i.e. whose array task
-         was killed/timed out (or otherwise died without a Python error) before finishing them. sacct is
-         queried (via array_job_id, mapping manifest index -> task_id = index // chunk_size) for that task's
-         terminal state so the summary can say why it was killed.
-    An experiment with no errors and nothing incomplete still gets a summary stating so. Meant to run once,
-    after the whole array has finished (via a SLURM afterany job)."""
+    """Update an errors summary named summary_filename in each experiment directory the manifest targets
+    (inferred_models/<experiment> = the parent of a problem's output_parent_dir). Rather than replacing the
+    summary with only this run's findings, it merges into a durable per-experiment store (summary_state_path,
+    keyed by (output_parent_dir, network_name)) so results accumulate across submissions. Each entry is one of:
+      1. errored - a network that raised a caught exception (recorded by the array tasks), rendered with its
+         full per-network log/traceback,
+      2. incomplete - a manifest problem still incomplete yet never recorded as an error, i.e. whose array task
+         was killed/timed out (or died without a Python error). sacct is queried (via array_job_id, mapping
+         manifest index -> task_id = index // chunk_size) for that task's terminal state, or
+      3. pre-excluded - a problem an emit-time precheck kept out of the array (prevalidation sidecar), e.g. too
+         few time-series matrices to train/test split.
+    This run's findings update the matching entries (a network re-run to a different fate is reclassified);
+    entries the run didn't touch are retained. Every entry (touched or not) is reconciled against on-disk
+    output: one whose output is now complete is marked resolved and kept for history rather than dropped.
+    Meant to run once after the whole array has finished (via a SLURM afterany job), and also inline by the
+    submit script when there is no array to depend on."""
     chunk_size = max(1, int(chunk_size or 1))
+    now_iso = datetime.datetime.now().isoformat(timespec='seconds')
 
-    # read the full manifest so we can compare every enumerated problem against what actually completed
+    # full manifest (index -> problem) for kwargs lookup and completeness checks
     problems = []
     with open(manifest_path) as f:
         for index, line in enumerate(f):
             if line.strip():
                 problems.append((index, json.loads(line)))
+    problem_by_index = {index: problem for index, problem in problems}
 
-    # error records the array tasks left behind (caught exceptions)
+    # caught-exception records the array tasks left behind this run
     error_records = []
     recorded_indices = set()
     parts_dir = error_parts_dir(manifest_path)
@@ -331,21 +402,35 @@ def summarize_errors(manifest_path, summary_filename, chunk_size, array_job_id=N
                         error_records.append(rec)
                         recorded_indices.add(rec["manifest_index"])
 
+    # emit-time prevalidation exclusions for this run (never submitted, so absent from the manifest)
+    prevalidation_records = []
+    pv_path = prevalidation_path(manifest_path)
+    if os.path.isfile(pv_path):
+        with open(pv_path, encoding='utf-8') as f:
+            for line in f:
+                if line.strip():
+                    prevalidation_records.append(json.loads(line))
+
     slurm_states = query_slurm_task_states(array_job_id)
 
-    # seed both groupings with every targeted experiment so a clean experiment still gets a zero-count summary
-    errors_by_exp = {}
-    incomplete_by_exp = {}
-    for _, problem in problems:
-        experiment_dir = os.path.dirname(problem["output_parent_dir"])
-        errors_by_exp.setdefault(experiment_dir, [])
-        incomplete_by_exp.setdefault(experiment_dir, [])
+    def key_of(output_parent_dir, network_name):
+        return (os.path.normpath(output_parent_dir), network_name)
 
+    # this run's findings, keyed by (output_parent_dir, network_name). Categories are disjoint by construction:
+    # pre-excluded problems aren't in the manifest, and a recorded error's index is excluded from the incomplete
+    # scan below - so a key lands in exactly one bucket.
+    current = {}
+    for rec in prevalidation_records:
+        current[key_of(rec["output_parent_dir"], rec["network_name"])] = {
+            "output_parent_dir": rec["output_parent_dir"], "network_name": rec["network_name"],
+            "kwargs": rec.get("kwargs", {}), "category": "prevalidation",
+            "reason": rec.get("reason", ""), "n_timeseries_matrices": rec.get("n_timeseries_matrices")}
     for rec in error_records:
-        errors_by_exp.setdefault(os.path.dirname(rec["output_parent_dir"]), []).append(rec)
-
-    # compare the manifest against on-disk output: a problem that is neither complete nor recorded as an error
-    # is "incomplete but unrecorded" - its task was killed/timed out before writing the outputs
+        net = rec["meta"][0]
+        problem = problem_by_index.get(rec["manifest_index"], {})
+        current[key_of(rec["output_parent_dir"], net)] = {
+            "output_parent_dir": rec["output_parent_dir"], "network_name": net,
+            "kwargs": problem.get("kwargs", {}), "category": "error", "meta": rec["meta"]}
     for index, problem in problems:
         if index in recorded_indices:
             continue
@@ -353,38 +438,103 @@ def summarize_errors(manifest_path, summary_filename, chunk_size, array_job_id=N
         if network_output_is_complete(network_out_dir, problem["kwargs"]):
             continue
         task_id = index // chunk_size
-        incomplete_by_exp[os.path.dirname(problem["output_parent_dir"])].append({
-            "manifest_index": index,
-            "network_out_dir": network_out_dir,
-            "task_id": task_id,
+        current[key_of(problem["output_parent_dir"], problem["network_name"])] = {
+            "output_parent_dir": problem["output_parent_dir"], "network_name": problem["network_name"],
+            "kwargs": problem["kwargs"], "category": "incomplete", "task_id": task_id,
             "array_task": "{}_{}".format(array_job_id, task_id) if array_job_id else None,
-            "slurm": slurm_states.get(task_id, "unknown (sacct unavailable)"),
-        })
+            "slurm": slurm_states.get(task_id, "unknown (sacct unavailable)")}
 
-    for experiment_dir in sorted(set(errors_by_exp) | set(incomplete_by_exp)):
-        errors = sorted(errors_by_exp.get(experiment_dir, []), key=lambda r: r["manifest_index"])
-        incompletes = sorted(incomplete_by_exp.get(experiment_dir, []), key=lambda r: r["manifest_index"])
+    # experiments to (re)write: those this run touched, whether via the manifest or a current finding. An
+    # experiment whose entries are ALL untouched this run isn't revisited - the run that last touched it already
+    # reconciled it (a problem is in the manifest of the run that completes it, so its resolution is recorded then).
+    experiment_dirs = {os.path.dirname(problem["output_parent_dir"]) for _, problem in problems}
+    experiment_dirs |= {os.path.dirname(e["output_parent_dir"]) for e in current.values()}
+
+    current_by_exp = {}
+    for k, entry in current.items():
+        current_by_exp.setdefault(os.path.dirname(entry["output_parent_dir"]), {})[k] = entry
+
+    for experiment_dir in sorted(experiment_dirs):
+        state_path = summary_state_path(experiment_dir, summary_filename)
+        entries = {}  # key -> stored entry, carried over from prior runs
+        if os.path.isfile(state_path):
+            with open(state_path, encoding='utf-8') as f:
+                for line in f:
+                    if line.strip():
+                        e = json.loads(line)
+                        entries[key_of(e["output_parent_dir"], e["network_name"])] = e
+
+        # overlay this run's findings (reclassify a touched entry, keep its first_seen)
+        for k, entry in current_by_exp.get(experiment_dir, {}).items():
+            prior = entries.get(k)
+            merged = dict(entry)
+            merged["first_seen"] = prior.get("first_seen", now_iso) if prior else now_iso
+            merged["last_updated"] = now_iso
+            entries[k] = merged
+
+        # reconcile every entry against on-disk output: complete now -> resolved (kept, not dropped). A
+        # carried-over entry uses its stored kwargs; if train_size (not part of comb_str) is edited in the
+        # config mid-experiment, an untouched entry's completeness verdict could lag until the run re-touches it.
+        for e in entries.values():
+            complete = network_output_is_complete(
+                os.path.join(e["output_parent_dir"], e["network_name"]), e.get("kwargs", {}))
+            if complete and not e.get("resolved"):
+                e["resolved"] = True
+                e["resolved_at"] = now_iso
+            elif not complete and e.get("resolved"):  # regressed since last resolved
+                e["resolved"] = False
+                e["resolved_at"] = None
+            else:
+                e.setdefault("resolved", False)
+                e.setdefault("resolved_at", None)
+
         os.makedirs(experiment_dir, exist_ok=True)
+        with open(state_path, 'w', encoding='utf-8') as out:
+            for e in entries.values():
+                out.write(json.dumps(e) + "\n")
+
+        def in_cat(cat):
+            return sorted((e for e in entries.values() if not e.get("resolved") and e["category"] == cat),
+                          key=lambda e: (e["output_parent_dir"], e["network_name"]))
+        errors, incompletes, prevalids = in_cat("error"), in_cat("incomplete"), in_cat("prevalidation")
+        resolved = sorted((e for e in entries.values() if e.get("resolved")),
+                          key=lambda e: (e["output_parent_dir"], e["network_name"]))
+
         summary_path = os.path.join(experiment_dir, summary_filename)
         with open(summary_path, 'w', encoding='utf-8') as out:
-            out.write("Error summary for {}: {} errored network(s), {} incomplete-but-unrecorded problem(s)\n".format(
-                manifest_path, len(errors), len(incompletes)))
+            out.write("Error summary for {}: {} errored, {} incomplete, {} pre-excluded, {} resolved "
+                      "(updated {})\n".format(
+                          manifest_path, len(errors), len(incompletes), len(prevalids), len(resolved), now_iso))
+            out.write("\n==== resolved (output now complete; kept for history) ====\n")
+            for e in resolved:
+                out.write("- {dir}/{net}  [FIXED {when}]  (was {cat})\n".format(
+                    dir=e["output_parent_dir"], net=e["network_name"], when=e.get("resolved_at"),
+                    cat=e["category"]))
+            if not resolved:
+                out.write("(none)\n")
+            out.write("\n==== pre-excluded problems (failed an emit-time precheck; never submitted) ====\n")
+            for e in prevalids:
+                out.write("- {dir}/{net}  ({n} time-series matrices)  {reason}\n".format(
+                    dir=e["output_parent_dir"], net=e["network_name"],
+                    n=e.get("n_timeseries_matrices"), reason=e.get("reason", "")))
+            if not prevalids:
+                out.write("(none)\n")
             out.write("\n==== incomplete but unrecorded problems (no caught error; likely killed/timed out) ====\n")
-            for rec in incompletes:
-                out.write("- problem {idx}  {dir}  task={task}{arr}  slurm={slurm}\n".format(
-                    idx=rec["manifest_index"], dir=rec["network_out_dir"], task=rec["task_id"],
-                    arr="" if rec["array_task"] is None else " ({})".format(rec["array_task"]),
-                    slurm=rec["slurm"]))
+            for e in incompletes:
+                out.write("- {dir}/{net}  task={task}{arr}  slurm={slurm}\n".format(
+                    dir=e["output_parent_dir"], net=e["network_name"], task=e.get("task_id"),
+                    arr="" if e.get("array_task") is None else " ({})".format(e.get("array_task")),
+                    slurm=e.get("slurm")))
             if not incompletes:
                 out.write("(none)\n")
             out.write("\n==== errored networks (caught exceptions; full per-network log below) ====\n")
             if not errors:
                 out.write("(none)\n")
-        for rec in errors:
-            name, network_log_path, started_iso, elapsed_s, status = rec["meta"]
+        for e in errors:
+            name, network_log_path, started_iso, elapsed_s, status = e["meta"]
             append_network_log_to_master(summary_path, name, network_log_path, started_iso, elapsed_s, status)
-        print("Wrote {} ({} errored, {} incomplete-but-unrecorded)".format(
-            summary_path, len(errors), len(incompletes)))
+        print("Wrote {} ({} errored, {} incomplete, {} pre-excluded, {} resolved)".format(
+            summary_path, len(errors), len(incompletes), len(prevalids), len(resolved)))
 
 
 def main():
@@ -429,11 +579,16 @@ def main():
         summarize_errors(options.run_manifest, options.summarize_errors, options.chunk_size, options.array_job_id)
         return
     if options.emit_manifest is not None:
-        problems = enumerate_problems(options)
+        problems, prevalidation_errors = enumerate_problems(options)
         random.shuffle(problems)  # spread cheap/expensive problems across chunks for balanced array tasks
         with open(options.emit_manifest, 'w') as f:
             for problem in problems:
                 f.write(json.dumps(problem) + "\n")
+        # always (re)write the sidecar, even when empty, so a prior submission's prevalidation records don't
+        # leak into this run's error summary (the manifest is likewise rewritten above)
+        with open(prevalidation_path(options.emit_manifest), 'w', encoding='utf-8') as f:
+            for rec in prevalidation_errors:
+                f.write(json.dumps(rec) + "\n")
         print(len(problems))
         return
     if options.run_manifest is not None:

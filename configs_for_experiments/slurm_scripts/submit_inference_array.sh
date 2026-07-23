@@ -27,12 +27,28 @@ log() { echo "$@" >&2; }
 
 # manifest name keyed to the config so concurrent runs of different configs don't collide
 MANIFEST="manifest_$(basename "${CONFIG%.*}").jsonl"
+# bare summary filename (written into each experiment dir by --summarize_errors); mirrors the derivation in
+# summarize_inference_errors.sbatch so an inline summary here and the finalize job write the same file
+SUMMARY="errors_summary_$(basename "${MANIFEST%.*}" | sed 's/^manifest_//').txt"
 log "Enumerating problems for ${CONFIG} ..."
 python -m inference.run_inference_on_data --config "$CONFIG" --emit_manifest "$MANIFEST"
 N=$(wc -l < "$MANIFEST")
-log "Enumerated ${N} problems -> ${MANIFEST}"
+# problems the emit-time precheck excluded from the array (e.g. too few time-series to train/test split); the
+# sidecar is written next to the manifest by --emit_manifest and folded into the error summary at the end
+PREVALID="${MANIFEST}.prevalidation.jsonl"
+N_PREVALID=0
+if [ -f "$PREVALID" ]; then N_PREVALID=$(wc -l < "$PREVALID"); fi
+log "Enumerated ${N} problems -> ${MANIFEST} (${N_PREVALID} pre-excluded: too few time-series to train/test split)"
 if [ "$N" -eq 0 ]; then
-    log "No problems to run; not submitting."
+    if [ "$N_PREVALID" -gt 0 ]; then
+        # no array will run, so no afterany finalize job either - write the error summary now so the
+        # pre-excluded problems are still reported
+        log "No runnable problems, but ${N_PREVALID} pre-excluded; writing error summary and exiting."
+        python -m inference.run_inference_on_data --run_manifest "$MANIFEST" \
+               --summarize_errors "$SUMMARY" --chunk_size 1
+    else
+        log "No problems to run; not submitting."
+    fi
     exit 0
 fi
 
@@ -70,6 +86,7 @@ log "submission summary"
 log "  config        : ${CONFIG}"
 log "  manifest      : ${MANIFEST}"
 log "  problems (N)  : ${N}"
+log "  pre-excluded  : ${N_PREVALID}  (too few time-series to train/test split; in error summary, not the array)"
 log "  chunk_size    : ${CHUNK_SIZE}  (problems per array task, run serially)"
 log "  n_tasks       : ${N_TASKS}     (array 0-$((N_TASKS - 1))%${MAX_CONCURRENT})"
 log "  max_concurrent: ${MAX_CONCURRENT}"
