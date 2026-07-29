@@ -8,7 +8,7 @@ import datetime
 import enum
 import traceback
 from concurrent.futures import ProcessPoolExecutor
-from inference import dummy_inference, binary_inference_ideas
+from inference import dummy_inference, binary_inference_ideas, benchmark_inference
 from inference.binary_inference_ideas import infer_known_topology_symmetric, infer_known_topology_general, infer_unknown_topology_symmetric
 from sklearn.model_selection import train_test_split
 from validation import inference_scoring
@@ -177,6 +177,9 @@ def resolve_inference_method(name):
         "general": infer_known_topology_general,
         "symmetric": infer_known_topology_symmetric,
         "symmetric_topology": infer_unknown_topology_symmetric,
+        "random_model": benchmark_inference.random_model_inference,
+        "exact_match_else_random": benchmark_inference.exact_match_else_random_inference,
+        "linear_classifier": benchmark_inference.linear_classifier_inference,
     }
     if name not in methods:
         raise ValueError("Unknown inference method {}".format(name))
