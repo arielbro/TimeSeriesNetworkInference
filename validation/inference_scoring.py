@@ -1,10 +1,86 @@
 import os
+import random
 from attractor_learning import graphs
+from attractor_learning.logic import BooleanSymbolicFunc
 import numpy as np
 from scipy import sparse
 import shutil
 from sklearn.metrics import accuracy_score
 import itertools
+
+
+def prune_ignored_inputs(model):
+    """Remove, in place, each edge feeding an input that a node's learned truth table does not actually depend
+    on, so an edge score reflects the model's effective topology rather than the scaffold it was handed.
+
+    Only nodes whose function is a BooleanSymbolicFunc are touched - i.e. the truth-table-based inference
+    methods (general, random_model, exact_match_else_random, linear_classifier); threshold-function nodes
+    (symmetric / symmetric_topology) and input nodes are left alone. An input is "ignored" when flipping it
+    never changes the output for any assignment of the node's other inputs (probed by calling the function, so
+    this is independent of the truth-table bit convention); the truth table is rebuilt over the remaining
+    (relevant) inputs. A node whose function depends on no input at all (a learned constant) keeps a single,
+    randomly chosen one of its inputs and stays a (constant) non-input node emitting that same value, with its
+    other incoming edges removed. Every rewrite preserves the node's next_state output. Returns the number of
+    edges removed.
+    """
+    predecessors_by_index = {v.index: list(v.predecessors()) for v in model.vertices}
+    edges_to_remove = set()   # (predecessor_index, vertex_index) pairs
+    replacement_functions = {}  # vertex_index -> new function (BooleanSymbolicFunc or None)
+
+    for v in model.vertices:
+        func = v.function
+        predecessors = predecessors_by_index[v.index]
+        degree = len(predecessors)
+        if degree == 0 or not isinstance(func, BooleanSymbolicFunc):
+            continue
+        combinations = list(itertools.product([False, True], repeat=degree))
+        outputs = {combo: bool(func(*combo)) for combo in combinations}
+
+        # input k is relevant iff flipping it changes the output for some assignment of the other inputs
+        relevant = []
+        for k in range(degree):
+            for combo in combinations:
+                if not combo[k] and outputs[combo] != outputs[combo[:k] + (True,) + combo[k + 1:]]:
+                    relevant.append(k)
+                    break
+        if len(relevant) == degree:
+            continue  # depends on every input; nothing to prune
+
+        if not relevant:
+            # depends on no input (learned constant): keep one randomly chosen input and stay a constant,
+            # non-input node emitting that same value; drop the node's other incoming edges.
+            kept = random.choice(predecessors)
+            for pred in predecessors:
+                if pred.index != kept.index:
+                    edges_to_remove.add((pred.index, v.index))
+            constant_value = outputs[combinations[0]]  # identical for every assignment
+            replacement_functions[v.index] = BooleanSymbolicFunc(
+                input_names=[kept.name], boolean_outputs=[constant_value, constant_value])
+        else:
+            for k in range(degree):
+                if k not in relevant:
+                    edges_to_remove.add((predecessors[k].index, v.index))
+            # ignored inputs are truly irrelevant, so fixing them (to False) while enumerating the relevant
+            # ones reproduces the function over its support. reduced_names is in vertex-index order (a subset
+            # of predecessors), matching the post-prune predecessor order the rebuilt function is called with.
+            reduced_names = [predecessors[k].name for k in relevant]
+            reduced_outputs = []
+            for reduced_combo in itertools.product([False, True], repeat=len(relevant)):
+                full = [False] * degree
+                for position, k in enumerate(relevant):
+                    full[k] = reduced_combo[position]
+                reduced_outputs.append(outputs[tuple(full)])
+            replacement_functions[v.index] = BooleanSymbolicFunc(input_names=reduced_names,
+                                                                 boolean_outputs=reduced_outputs)
+
+    if edges_to_remove:
+        model.edges = [(a, b) for (a, b) in model.edges if (a.index, b.index) not in edges_to_remove]
+        for vertex_index, new_func in replacement_functions.items():
+            model.vertices[vertex_index].function = new_func
+        for v in model.vertices:  # adjacency changed; drop caches so predecessors()/successors() recompute
+            v.precomputed_predecessors = None
+            v.precomputed_successors = None
+    return len(edges_to_remove)
 
 
 def models_to_edge_vectors(reference_model, inference_model, use_sparse=True):

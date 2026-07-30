@@ -65,6 +65,15 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
                                           gurobi_threads=int(os.environ.get('SLURM_CPUS_PER_TASK') or 0))
         time_taken = time.time() - start
         del scaffold_network
+
+        # Truth-table inference (general / random_model / exact_match_else_random / linear_classifier) keeps
+        # every scaffold edge even when a node's learned truth table ignores an input. Prune those functionally
+        # irrelevant inputs so the saved model, its time-series predictions, and the edge score all reflect the
+        # model's effective topology (a node depending on no input keeps one randomly chosen input and stays
+        # constant). Threshold-function models are untouched. Every rewrite preserves next_state output, so the
+        # time-series predictions below are unchanged; done before the save so inferred_network.json is the
+        # pruned graph. Kept out of inference_time above (post-processing, not solving).
+        inference_scoring.prune_ignored_inputs(inferred_model)
         inferred_model.save(os.path.join(network_out_dir, "inferred_network.json"))
 
         for group, reference_data, real_data in zip(['train', 'test'], [reference_train, reference_test], [real_train, real_test]):
