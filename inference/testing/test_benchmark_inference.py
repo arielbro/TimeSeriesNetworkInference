@@ -8,7 +8,9 @@ from attractor_learning.graphs import Network
 from attractor_learning.logic import BooleanSymbolicFunc
 from inference.benchmark_inference import (random_model_inference,
                                            exact_match_else_random_inference,
-                                           linear_classifier_inference)
+                                           linear_classifier_inference,
+                                           reveal_inference, best_fit_inference,
+                                           _select_reveal)
 
 # The learned nodes and their true truth tables (inputs [a, b] with a as the most significant bit). "e" is
 # ASYMMETRIC (a AND NOT b): its table changes under an input transposition, so these tests actually pin the
@@ -100,3 +102,78 @@ class TestBenchmarkInference(TestCase):
             for name in LEARNED_NODES:
                 idx = network.get_vertex(name).index
                 self.assertEqual(got[idx], expected[idx])
+
+
+def _reveal_bestfit_network():
+    # inputs a, b, c (indices 0,1,2); target g = a AND NOT b (asymmetric -> guards bit order); c is a
+    # distractor input g does not depend on. Scaffold max in-degree = 2 (g's), so max_indegree=-1 gives k=2.
+    g = BooleanSymbolicFunc(input_names=["a", "b"], boolean_outputs=[False, False, True, False])  # a & ~b
+    return Network(vertex_names=["a", "b", "c", "g"], edges=[("a", "g"), ("b", "g")],
+                   vertex_functions=[None, None, None, g])
+
+
+def _all_transition_matrices(network):
+    return [np.array([list(s), list(network.next_state(s))], dtype=float)
+            for s in itertools.product([0, 1], repeat=len(network))]
+
+
+class TestRevealBestFit(TestCase):
+    def test_recover_regulators_and_positional_truth_table(self):
+        for infer in (reveal_inference, best_fit_inference):
+            random.seed(0)
+            net = _reveal_bestfit_network()
+            model = infer(_all_transition_matrices(net), net, max_indegree=-1)  # k = scaffold max in-degree = 2
+            g = model.get_vertex("g")
+            self.assertEqual([u.name for u in g.predecessors()], ["a", "b"], infer.__name__)
+            # a AND NOT b over (a, b) with a as MSB -> (F,F,T,F); a reversed bit order would give (F,T,F,F)
+            self.assertEqual(tuple(bool(o) for o in g.function.boolean_outputs),
+                             (False, False, True, False), infer.__name__)
+
+    def test_static_inputs_emitted_as_input_nodes_and_behaviour_matches(self):
+        for infer in (reveal_inference, best_fit_inference):
+            random.seed(1)
+            net = _reveal_bestfit_network()
+            model = infer(_all_transition_matrices(net), net, max_indegree=-1)
+            for name in ("a", "b", "c"):  # source nodes hold their value -> emitted as input nodes
+                self.assertEqual(len(model.get_vertex(name).predecessors()), 0, (infer.__name__, name))
+                self.assertIsNone(model.get_vertex(name).function, (infer.__name__, name))
+            # topology recovered exactly and dynamics reproduced
+            self.assertEqual({(u.name, v.name) for u, v in model.edges}, {("a", "g"), ("b", "g")})
+            for s in itertools.product([0, 1], repeat=len(net)):
+                self.assertEqual(model.next_state(s), net.next_state(s), infer.__name__)
+
+    def test_emit_static_off_gives_self_loops(self):
+        random.seed(2)
+        net = _reveal_bestfit_network()
+        model = best_fit_inference(_all_transition_matrices(net), net, max_indegree=-1,
+                                   emit_static_as_input=False)
+        # with the toggle off, each source node holds its value via an identity self-loop
+        self.assertIn(("a", "a"), {(u.name, v.name) for u, v in model.edges})
+
+    def test_max_indegree_caps_regulators(self):
+        random.seed(3)
+        net = _reveal_bestfit_network()
+        # g needs 2 regulators (a, b); a cap of 1 must force a single regulator
+        model = best_fit_inference(_all_transition_matrices(net), net, max_indegree=1)
+        self.assertEqual(len(model.get_vertex("g").predecessors()), 1)
+
+    def test_reveal_is_parsimonious_on_noisy_data(self):
+        # y = a AND NOT b with 10% flips; c,d,e,f are pure-noise distractors; budget k=5. REVEAL's MDL
+        # relaxation must NOT grab the whole budget - it should keep the true small set {a, b}.
+        rng = np.random.default_rng(0)
+        n, N = 6, 800
+        X = rng.integers(0, 2, size=(N, n)).astype(np.int8)
+        y = ((X[:, 0] == 1) & (X[:, 1] == 0)).astype(np.int8)   # a AND NOT b
+        flip = rng.random(N) < 0.10
+        y = np.where(flip, 1 - y, y).astype(np.int8)
+        reveal_set = _select_reveal(X, y, n, k=5)
+        # A naive max-MI REVEAL would grab the whole budget (MI is monotone in added inputs); the MDL penalty
+        # keeps it to exactly the true regulators. (Best-Fit's size here is noise/N-dependent - no assertion.)
+        self.assertEqual(set(reveal_set), {0, 1})
+
+    def test_no_transition_data_returns_all_input_nodes(self):
+        random.seed(4)
+        net = _reveal_bestfit_network()
+        model = reveal_inference([np.array([[0, 0, 0, 0]], dtype=float)], net, max_indegree=-1)  # single row
+        self.assertEqual(model.edges, [])
+        self.assertTrue(all(v.function is None for v in model.vertices))

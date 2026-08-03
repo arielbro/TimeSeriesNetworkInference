@@ -51,6 +51,10 @@ class Network(object):
     def __len__(self):
         return len(self.vertices)
 
+    def max_in_degree(self):
+        """Largest number of predecessors over all vertices (0 for an edgeless graph)."""
+        return max((len(v.predecessors()) for v in self.vertices), default=0)
+
     def __str__(self):
         res = "Graph: \n\tV=" + list_repr(self.vertices) + \
               "\n\tE=" + list_repr([(a.name, b.name) for a, b in self.edges]) + \

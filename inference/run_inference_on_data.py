@@ -62,6 +62,7 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
                                           no_anchoring=kwargs['no_anchoring'],
                                           warm_start_from_scaffold=kwargs['warm_start_from_scaffold'],
                                           warm_start_time_frac=kwargs['warm_start_time_frac'],
+                                          max_indegree=kwargs.get('max_indegree', -1),
                                           gurobi_threads=int(os.environ.get('SLURM_CPUS_PER_TASK') or 0))
         time_taken = time.time() - start
         del scaffold_network
@@ -189,6 +190,8 @@ def resolve_inference_method(name):
         "random_model": benchmark_inference.random_model_inference,
         "exact_match_else_random": benchmark_inference.exact_match_else_random_inference,
         "linear_classifier": benchmark_inference.linear_classifier_inference,
+        "reveal": benchmark_inference.reveal_inference,
+        "best_fit": benchmark_inference.best_fit_inference,
     }
     if name not in methods:
         raise ValueError("Unknown inference method {}".format(name))
@@ -564,6 +567,9 @@ def main():
     p.add_argument('--no_anchoring', required=False, default=False, type=bool)
     p.add_argument('--warm_start_from_scaffold', required=False, default=False, type=bool)
     p.add_argument('--warm_start_time_frac', required=False, default=0.2, type=float)
+    # max in-degree bound; only used by reveal / best_fit (regulator-set size cap) and symmetric_topology
+    # (per-node MILP constraint). -1 = use the scaffold network's max in-degree, computed per network.
+    p.add_argument('--max_indegree', required=False, default=-1, type=int)
     p.add_argument('--n_processes', required=False, type=int, default=1)
     # SLURM-array modes (each exits after running; otherwise a normal whole-grid in-process run happens):
     p.add_argument('--emit_manifest', required=False, type=str, default=None,

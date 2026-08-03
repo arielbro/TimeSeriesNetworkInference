@@ -147,7 +147,8 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
                                    included_edges_relative_weight=1, added_edges_relative_weight=-1,
                                    timeout_secs=None, log_file=None, allow_input_flips=False, flip_penalty=1.0,
                                    no_anchoring=False, gurobi_threads=0,
-                                   warm_start_from_scaffold=False, warm_start_time_frac=0.2, **kwargs):
+                                   warm_start_from_scaffold=False, warm_start_time_frac=0.2,
+                                   max_indegree=-1, **kwargs):
     """
     Find a symmetric threshold model with best fit to data_matrices and scaffold_network,
     by finding both the Boolean function and the incoming edges for each node.
@@ -252,9 +253,15 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
         # in bad linear relaxations. An alternative (not implemented now) is to create some
         # indicator variable and conditional constraints.
         # BASICALLY - INDICATOR FOR WHETHER d=0 AND CONDITIONAL CONSTRAINTS.
+        # per-node in-degree cap: -1 means the scaffold's (global) max in-degree, computed per network. Clamped
+        # to >= 1 so a degenerate edgeless scaffold (whose max in-degree is 0) doesn't force degree <= 0, which
+        # combined with the threshold constraints below would collapse the whole model to constants.
+        max_indeg_cap = max_indegree if max_indegree != -1 else scaffold_network.max_in_degree()
+        max_indeg_cap = max(1, max_indeg_cap)
         for j in range(len(scaffold_network)):
             degree = gurobipy.quicksum(edge_indicators[i, j] for i in range(len(scaffold_network)))
             threshold = functions_variables[j][1]
+            model.addConstr(degree <= max_indeg_cap, name="node_{}_max_indegree_constraint".format(j))
             model.addConstr(threshold <= degree + (1 - degree) / len(scaffold_network),
                             name="node_{}_threshold_constraint_<=".format(j))
             model.addConstr(len(scaffold_network) * threshold >= degree, name="node_{}_threshold_constraint_>=".format(j))
