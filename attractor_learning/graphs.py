@@ -13,6 +13,22 @@ from .utility import list_repr
 import copy
 
 
+def _node_link_compat(func, arg, edge_key, **kwargs):
+    """Call networkx's node_link_data/node_link_graph with an explicit edge-key parameter.
+
+    networkx renamed that parameter from `link` to `edges` in 3.4 and dropped `link` in 3.6, so no single
+    spelling works across the versions this project runs under (the cluster's anaconda3/2024.6 module
+    predates 3.4, while the inference environment doesn't). Try the current name, fall back to the old one
+    on the TypeError an unexpected keyword raises, and let any other TypeError through.
+    """
+    try:
+        return func(arg, edges=edge_key, **kwargs)
+    except TypeError as e:
+        if "unexpected keyword argument 'edges'" not in str(e):
+            raise
+        return func(arg, link=edge_key, **kwargs)
+
+
 class FunctionTypeRestriction(Enum):
     NONE = 1
     SYMMETRIC_THRESHOLD = 2
@@ -498,9 +514,9 @@ class Network(object):
         import json
         from networkx.readwrite import json_graph
         with open(path, 'w') as f:
-            # edges="edges" pins the (otherwise version-dependent) edge key, silencing networkx's
-            # node_link default-change FutureWarning and staying forward compatible (nx >= 3.1).
-            json.dump(json_graph.node_link_data(self.to_networkx(), edges="edges"), f)
+            # "edges" pins the (otherwise version-dependent) edge key, silencing networkx's node_link
+            # default-change FutureWarning and keeping the file identical across networkx versions.
+            json.dump(_node_link_compat(json_graph.node_link_data, self.to_networkx(), "edges"), f)
 
     @staticmethod
     def load(path):
@@ -512,7 +528,7 @@ class Network(object):
         # the node-link edge key differs across networkx versions ("links" historically, "edges" now);
         # detect it so files written by either version load, and pass it explicitly to avoid the warning.
         edge_key = "edges" if "edges" in data else "links"
-        g = json_graph.node_link_graph(data, directed=True, edges=edge_key)
+        g = _node_link_compat(json_graph.node_link_graph, data, edge_key, directed=True)
         return Network.from_networkx(g)
 
     def export_to_boolean_tables(self, base_path, model_name):
