@@ -14,6 +14,21 @@ import itertools
 import re
 
 
+def parse_bool_option(value):
+    """configargparse `type` for a boolean given as a value rather than a bare flag (`only_attractors = False`
+    in a config file). `type=bool` cannot be used for this: it just calls bool() on the string, so every
+    non-empty value - "False" and "0" included - comes out True. Twin of the helper of the same name in
+    inference/run_inference_on_data.py (kept local so the data generator doesn't import the inference stack)."""
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in ('true', 'yes', 'y', '1'):
+        return True
+    if normalized in ('false', 'no', 'n', '0'):
+        return False
+    raise ValueError("expected a boolean (true/false), got {!r}".format(value))
+
+
 def main():
     p = configargparse.ArgParser(default_config_files=['./config.txt'])
     p.add_argument('-c', '--config', required=False, is_config_file=True, help='config file path to override defaults')
@@ -35,18 +50,29 @@ def main():
     p.add_argument('--preserve_input_nodes_on_add', required=False, default=False,  type=bool)
     p.add_argument('--scaffold_network_added_edge_fraction', required=False, type=float, action='append')
     p.add_argument('--scaffold_network_removed_edge_fraction', required=False, type=float, action='append')
-    p.add_argument('--only_attractors', required=False, default=False,  type=bool)
+    # appendable so a config can grid-search it (`only_attractors = [False, True]`), which also puts it in
+    # comb_str and hence in the data directory name. The default is applied after parsing, since argparse
+    # appends onto a list default instead of replacing it.
+    p.add_argument('--only_attractors', required=False, default=None, type=parse_bool_option,
+                   action='append')
     p.add_argument('--attractor_estimation_n_walks', required=False, type=int)
     options = p.parse_args()
+    if options.only_attractors is None:
+        options.only_attractors = [False]  # kept a list so it stays a (single-valued) varying option
 
     print(options)
 
+    # Abbreviations for parameter names in the data directory name; without them a folder covering several
+    # varying parameters gets unwieldy (and pushes toward path-length limits).
     name_replacements = {
         "experiments_per_network": "exppernet",
         "scaffold_network_added_edge_fraction": "scaffaddfrac",
         "timepoints_per_experiment": "tpperexp",
         "function_type_restriction": "fncrestriction",
-        "scaffold_network_removed_edge_fraction": "scaffremovedfrac"
+        "scaffold_network_removed_edge_fraction": "scaffremovedfrac",
+        "state_noise_chance": "statenoise",
+        "max_graph_size": "maxsize",
+        "only_attractors": "onlyattr",
     }
 
     constant_options = {k: v for (k, v) in options._get_kwargs() if not isinstance(v, list)}

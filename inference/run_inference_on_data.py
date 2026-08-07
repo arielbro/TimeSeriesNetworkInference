@@ -181,30 +181,83 @@ _CONTROL_ARGS = {"config", "emit_manifest", "run_manifest", "task_id", "chunk_si
                  "summarize_errors", "array_job_id"}
 
 
+def parse_bool_option(value):
+    """argparse/configargparse `type` for a boolean given as a value rather than a bare flag (`--x False`,
+    or `x = False` in a config file). `type=bool` cannot be used for this: it just calls bool() on the
+    string, so every non-empty value - "False" and "0" included - comes out True."""
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in ('true', 'yes', 'y', '1'):
+        return True
+    if normalized in ('false', 'no', 'n', '0'):
+        return False
+    raise ValueError("expected a boolean (true/false), got {!r}".format(value))
+
+
+INFERENCE_METHODS = {
+    "random": dummy_inference.dummy_inference_method,
+    "general": infer_known_topology_general,
+    "symmetric": infer_known_topology_symmetric,
+    "symmetric_topology": infer_unknown_topology_symmetric,
+    "random_model": benchmark_inference.random_model_inference,
+    "exact_match_else_random": benchmark_inference.exact_match_else_random_inference,
+    "linear_classifier": benchmark_inference.linear_classifier_inference,
+    "reveal": benchmark_inference.reveal_inference,
+    "best_fit": benchmark_inference.best_fit_inference,
+}
+
+
 def resolve_inference_method(name):
-    methods = {
-        "random": dummy_inference.dummy_inference_method,
-        "general": infer_known_topology_general,
-        "symmetric": infer_known_topology_symmetric,
-        "symmetric_topology": infer_unknown_topology_symmetric,
-        "random_model": benchmark_inference.random_model_inference,
-        "exact_match_else_random": benchmark_inference.exact_match_else_random_inference,
-        "linear_classifier": benchmark_inference.linear_classifier_inference,
-        "reveal": benchmark_inference.reveal_inference,
-        "best_fit": benchmark_inference.best_fit_inference,
-    }
-    if name not in methods:
-        raise ValueError("Unknown inference method {}".format(name))
-    return methods[name]
+    if name not in INFERENCE_METHODS:
+        raise ValueError("Unknown inference method {} (known: {})".format(
+            name, ", ".join(sorted(INFERENCE_METHODS))))
+    return INFERENCE_METHODS[name]
+
+
+def inference_method_name(method):
+    """The config name of a resolved inference method. Directory names are written with this rather than the
+    function's __name__, so a folder reads inference_method=best_fit - the same spelling a config uses -
+    instead of best_fit_inference."""
+    for name, func in INFERENCE_METHODS.items():
+        if func is method:
+            return name
+    return getattr(method, "__name__", str(method))
+
+
+# Abbreviations for parameter names in output directory names. The full argparse names make a folder name
+# unwieldy (and push toward path-length limits) as soon as a few parameters vary. 'inference_method' is
+# deliberately NOT abbreviated: the analysis notebook keys off that exact name when picking a heatmap's
+# categorical axis, so shortening it there would silently drop those figures.
+COMB_STR_SHORTHANDS = {
+    "allow_additional_edges": "addedges",
+    "included_edges_relative_weight": "inclw",
+    "added_edges_relative_weight": "addw",
+    "model_inference_timeout_secs": "timeout",
+    "warm_start_from_scaffold": "warmstart",
+    "warm_start_time_frac": "warmfrac",
+    "allow_input_flips": "inpflips",
+    "flip_penalty": "flippen",
+    "max_indegree": "maxindeg",
+    "train_size": "trainsize",
+}
 
 
 def build_comb_str(options_combination):
-    """Directory-name fragment for one inference-parameter combination (inference_method given as the function)."""
-    comb_str = str({k: (v.name if isinstance(v, enum.Enum) else v) for k, v in options_combination.items()
-                    if k != 'data_parent_dir'})
-    comb_str = comb_str.translate(str.maketrans('', '', "'{}")).replace(": ", "=").replace(", ", ",")
-    comb_str = re.sub(r'<function ([a-zA-Z_]+) at[^>]*>', r'\1', comb_str)
-    return comb_str
+    """Directory-name fragment for one inference-parameter combination (inference_method given as the
+    function). Parameter names are abbreviated via COMB_STR_SHORTHANDS and the method is written with its
+    short config name, so the folder stays readable when several parameters vary."""
+    rendered = {}
+    for key, value in options_combination.items():
+        if key == 'data_parent_dir':
+            continue
+        if key == 'inference_method':
+            value = inference_method_name(value)
+        elif isinstance(value, enum.Enum):
+            value = value.name
+        rendered[COMB_STR_SHORTHANDS.get(key, key)] = value
+    comb_str = str(rendered)
+    return comb_str.translate(str.maketrans('', '', "'{}")).replace(": ", "=").replace(", ", ",")
 
 
 def enumerate_problems(options):
@@ -559,7 +612,11 @@ def main():
     p.add_argument('--data_parent_dir', required=False, type=str, action='append')
     p.add_argument('--train_size', required=False, type=float)
     p.add_argument('--model_inference_timeout_secs', required=False, type=float)
-    p.add_argument('--allow_additional_edges', required=False, default=False, type=bool)
+    # appendable (like inference_method) so a config can grid-search it - `allow_additional_edges = [False,
+    # True]` runs both - and so it always lands in the varying options, hence in the output directory name.
+    # default is applied after parsing, since argparse appends onto a list default instead of replacing it.
+    p.add_argument('--allow_additional_edges', required=False, default=None, type=parse_bool_option,
+                   action='append')
     p.add_argument('--included_edges_relative_weight', required=False, type=float, action='append')
     p.add_argument('--added_edges_relative_weight', required=False, type=float, action='append')
     p.add_argument('--allow_input_flips', required=False, default=False, type=bool)
@@ -590,6 +647,8 @@ def main():
                    help='SLURM job id of the inference array, used by --summarize_errors to query sacct for the '
                         'terminal state of tasks that left problems incomplete')
     options = p.parse_args()
+    if options.allow_additional_edges is None:
+        options.allow_additional_edges = [False]  # kept a list so it stays a (single-valued) varying option
 
     if options.summarize_errors is not None:
         if options.run_manifest is None:

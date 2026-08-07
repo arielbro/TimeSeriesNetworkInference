@@ -8,9 +8,12 @@ transition is a consecutive pair of rows within one matrix.
 Two families live here:
   * Scaffold-topology baselines (random_model, exact_match_else_random, linear_classifier): keep the
     scaffold's edges and only decide each node's Boolean function.
-  * Topology-free published methods (REVEAL, Best-Fit): infer each node's regulators from scratch by
-    searching regulator sets of size up to an in-degree bound; the scaffold is used only to derive that
-    bound when max_indegree == -1 (its max in-degree). See reveal_inference / best_fit_inference.
+  * Published topology-inferring methods (REVEAL, Best-Fit): infer each node's regulators by searching
+    regulator sets of size up to an in-degree bound. With allow_additional_edges on (the published,
+    topology-free behaviour) the scaffold is used only to derive that bound when max_indegree == -1 (its
+    max in-degree); with it off, the search is confined to each node's scaffold predecessors, so these
+    methods can prune scaffold edges but not invent new ones - the same restriction the ILP methods obey.
+    See reveal_inference / best_fit_inference.
 
 Row/bit convention: a node's inputs are ordered by vertex index, and truth-table row j (index into
 ``BooleanSymbolicFunc.boolean_outputs``) decodes with the first input as the most significant bit - matching
@@ -19,6 +22,7 @@ how ``BooleanSymbolicFunc`` builds its formula and how ``next_state`` calls it.
 
 import itertools
 import random
+import time
 import warnings
 import numpy as np
 from attractor_learning.graphs import Network
@@ -154,7 +158,24 @@ def linear_classifier_inference(data_matrices, scaffold_network, lasso_C=DEFAULT
 # Topology-free published methods: REVEAL and Best-Fit. Both search, per gene, over candidate regulator sets
 # of size up to an in-degree bound k (max_indegree, or the scaffold's max in-degree when -1), score each set,
 # and read off the chosen set's truth table by majority vote per observed input pattern.
+#
+# Two knobs bound that search, both taken from the standard inference kwargs:
+#   * allow_additional_edges - when False the candidates for a gene are only its scaffold predecessors, so
+#     the methods pick the best subset of the given topology rather than ranging over every gene;
+#   * timeout_secs - a wall-clock budget for the whole call, after which the search stops enlarging
+#     regulator sets and keeps what it has (see _infer_by_subset_search).
 # ---------------------------------------------------------------------------------------------------------
+
+# Subsets scanned between clock reads inside a size sweep. The sweep body is a few microseconds, so polling
+# the clock every iteration would be a measurable share of the runtime; every 1024 keeps the overshoot past
+# the deadline negligible without that cost.
+_DEADLINE_CHECK_EVERY = 1024
+
+
+def _out_of_time(deadline):
+    """True once the wall-clock budget is spent. deadline is an absolute time.time() value, or None for no
+    limit (in which case the search always runs to completion)."""
+    return deadline is not None and time.time() >= deadline
 
 def _transition_table(data_matrices):
     """Stack every one-step transition into (X, Y) int8 arrays of shape (n_transitions, n_nodes): X = states
@@ -199,45 +220,71 @@ def _conditional_entropy_bits(total, ones):
     return float(np.sum((tp / n) * h))
 
 
-def _select_best_fit(X, y, n, k):
+def _select_best_fit(X, y, n, k, candidates=None, deadline=None):
     """Best-Fit Extension: the regulator set (size 1..k) whose best Boolean function misclassifies the fewest
     observed transitions (the sum of the minority count over input patterns), ties broken toward fewer
     regulators. Note that with no complexity penalty this tends to use the full budget k on noisy data (adding
     regulators can only lower training error) - that is the method's known behavior, which is why k matters.
-    Returns the chosen subset (ascending tuple), or None if k < 1."""
+
+    candidates restricts which gene indices may be chosen (default: all n); the size cap is lowered to
+    len(candidates) when that is smaller than k. deadline is an absolute wall-clock time past which the
+    search stops enlarging sets and returns the best found so far - size 1 is always swept in full, so the
+    result is never None for a non-empty candidate list. Returns the chosen subset (ascending tuple), or
+    None if the effective cap is below 1."""
+    cands = list(range(n)) if candidates is None else list(candidates)
     y = y.astype(float)
     best = None  # (error, size, subset)
-    for size in range(1, k + 1):
+    for size in range(1, min(k, len(cands)) + 1):
+        if size > 1 and _out_of_time(deadline):
+            break  # keep the best set found so far rather than starting a larger, slower sweep
         n_patterns = 1 << size
-        for subset in itertools.combinations(range(n), size):
+        timed_out = False
+        for scanned, subset in enumerate(itertools.combinations(cands, size)):
+            if size > 1 and scanned % _DEADLINE_CHECK_EVERY == 0 and _out_of_time(deadline):
+                timed_out = True
+                break
             total, ones = _pattern_counts(_pattern_codes(X, subset), y, n_patterns)
             error = float(np.minimum(ones, total - ones).sum())
             if best is None or (error, size) < (best[0], best[1]):
                 best = (error, size, subset)
+        if timed_out:
+            break
         if best is not None and best[0] == 0.0:
             break  # perfect fit at this (smallest) size; a larger set can't beat zero error
     return best[2] if best else None
 
 
-def _select_reveal(X, y, n, k):
+def _select_reveal(X, y, n, k, candidates=None, deadline=None):
     """REVEAL with an MDL/BIC relaxation for noisy data (ours): the regulator set (size 1..k) minimizing the
     description length  N*H(Y|S) + 0.5 * 2**|S| * log2(N)  (residual coding cost + model cost), ties broken
     toward fewer regulators. On noise-free data H(Y|S)=0 is achievable and this reduces to REVEAL's original
     criterion (the smallest fully-determining set). The complexity term counters the monotonicity of mutual
     information (H(Y|S) never increases as inputs are added), so pure-noise regulators are not accepted -
-    without it, maximizing MI would always grab the largest allowed set. Returns the subset, or None if k<1."""
+    without it, maximizing MI would always grab the largest allowed set.
+
+    candidates and deadline behave as in _select_best_fit. Returns the subset, or None if the effective cap
+    is below 1."""
+    cands = list(range(n)) if candidates is None else list(candidates)
     y = y.astype(float)
     n_transitions = len(y)
     log2n = np.log2(n_transitions) if n_transitions > 1 else 0.0
     best = None  # (description_length, size, subset)
-    for size in range(1, k + 1):
+    for size in range(1, min(k, len(cands)) + 1):
+        if size > 1 and _out_of_time(deadline):
+            break
         n_patterns = 1 << size
         model_cost = 0.5 * n_patterns * log2n
-        for subset in itertools.combinations(range(n), size):
+        timed_out = False
+        for scanned, subset in enumerate(itertools.combinations(cands, size)):
+            if size > 1 and scanned % _DEADLINE_CHECK_EVERY == 0 and _out_of_time(deadline):
+                timed_out = True
+                break
             total, ones = _pattern_counts(_pattern_codes(X, subset), y, n_patterns)
             description_length = n_transitions * _conditional_entropy_bits(total, ones) + model_cost
             if best is None or (description_length, size) < (best[0], best[1]):
                 best = (description_length, size, subset)
+        if timed_out:
+            break
     return best[2] if best else None
 
 
@@ -264,18 +311,31 @@ def _truth_table_from_subset(X, y, subset):
 
 
 def _infer_by_subset_search(data_matrices, scaffold_network, max_indegree, select_regulators,
-                            emit_static_as_input):
+                            emit_static_as_input, allow_additional_edges=True, timeout_secs=None):
     """Shared driver for the topology-free methods (REVEAL, Best-Fit). For each gene it (optionally) emits a
     static gene as an input node, else searches regulator sets of size up to the in-degree bound k with
     select_regulators and builds the gene's BooleanSymbolicFunc from the chosen set. k = max_indegree, or the
     scaffold's max in-degree when max_indegree == -1; k < 1 (e.g. an edgeless scaffold with -1) yields an
-    all-input-node model."""
+    all-input-node model.
+
+    allow_additional_edges=False confines a gene's candidate regulators to its own scaffold predecessors, so
+    the methods choose the best subset of the given topology and can only ever remove scaffold edges, never
+    invent one. A gene with no scaffold predecessors then has nothing to search and stays an input node.
+    (With the flag on - the published, topology-free behaviour - every gene is a candidate for every other.)
+
+    timeout_secs bounds the whole call rather than any single gene: the deadline is set once here and passed
+    down, and each gene's search stops enlarging its regulator sets once it has passed, keeping the best set
+    found so far. Every gene is still visited and size-1 candidates are always swept, so the returned model
+    is always complete - a run that overruns degrades toward single-regulator functions instead of failing.
+    """
     data_matrices = list(data_matrices)
-    names = [v.name for v in scaffold_network.vertices]
+    vertices = list(scaffold_network.vertices)
+    names = [v.name for v in vertices]
     n = len(names)
     X, Y = _transition_table(data_matrices)
     k = max_indegree if max_indegree != -1 else scaffold_network.max_in_degree()
     k = min(k, n)  # can't select more regulators than there are genes
+    deadline = None if timeout_secs is None else time.time() + timeout_secs
 
     edges, functions = [], [None] * n
     if X is not None and k >= 1:
@@ -283,7 +343,13 @@ def _infer_by_subset_search(data_matrices, scaffold_network, max_indegree, selec
             y = Y[:, i]
             if emit_static_as_input and np.all(y == X[:, i]):
                 continue  # only ever holds its value (source node / constant) -> input node
-            subset = select_regulators(X, y, n, k)
+            if allow_additional_edges:
+                candidates = range(n)
+            else:
+                candidates = sorted(u.index for u in vertices[i].predecessors())
+                if not candidates:
+                    continue  # no scaffold parents and no new edges allowed -> input node
+            subset = select_regulators(X, y, n, k, candidates=candidates, deadline=deadline)
             if not subset:
                 continue
             subset = tuple(sorted(subset))  # ascending -> first predecessor is MSB (BooleanSymbolicFunc order)
@@ -294,17 +360,25 @@ def _infer_by_subset_search(data_matrices, scaffold_network, max_indegree, selec
 
 
 def reveal_inference(data_matrices, scaffold_network, max_indegree=-1,
-                     emit_static_as_input=EMIT_STATIC_GENES_AS_INPUTS, **kwargs):
+                     emit_static_as_input=EMIT_STATIC_GENES_AS_INPUTS,
+                     allow_additional_edges=True, timeout_secs=None, **kwargs):
     """REVEAL (Liang, Fuhrman & Somogyi 1998), topology-free, with an MDL relaxation for noisy data (see
-    _select_reveal). max_indegree bounds each gene's regulator-set size (-1 = the scaffold's max in-degree)."""
+    _select_reveal). max_indegree bounds each gene's regulator-set size (-1 = the scaffold's max in-degree);
+    allow_additional_edges=False confines the search to each gene's scaffold predecessors, and timeout_secs
+    caps the whole call (both described in _infer_by_subset_search). The defaults keep the published,
+    unbounded behaviour; the pipeline passes both explicitly."""
     return _infer_by_subset_search(data_matrices, scaffold_network, max_indegree, _select_reveal,
-                                   emit_static_as_input)
+                                   emit_static_as_input, allow_additional_edges, timeout_secs)
 
 
 def best_fit_inference(data_matrices, scaffold_network, max_indegree=-1,
-                       emit_static_as_input=EMIT_STATIC_GENES_AS_INPUTS, **kwargs):
+                       emit_static_as_input=EMIT_STATIC_GENES_AS_INPUTS,
+                       allow_additional_edges=True, timeout_secs=None, **kwargs):
     """Best-Fit Extension (Lähdesmäki, Shmulevich & Yli-Harja 2003), topology-free, with unobserved truth-table
     rows filled by a fair coin (the relaxation to a total function). max_indegree bounds each gene's
-    regulator-set size (-1 = the scaffold's max in-degree)."""
+    regulator-set size (-1 = the scaffold's max in-degree); allow_additional_edges=False confines the search
+    to each gene's scaffold predecessors, and timeout_secs caps the whole call (both described in
+    _infer_by_subset_search). The defaults keep the published, unbounded behaviour; the pipeline passes both
+    explicitly."""
     return _infer_by_subset_search(data_matrices, scaffold_network, max_indegree, _select_best_fit,
-                                   emit_static_as_input)
+                                   emit_static_as_input, allow_additional_edges, timeout_secs)

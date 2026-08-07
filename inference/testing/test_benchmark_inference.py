@@ -171,6 +171,41 @@ class TestRevealBestFit(TestCase):
         # keeps it to exactly the true regulators. (Best-Fit's size here is noise/N-dependent - no assertion.)
         self.assertEqual(set(reveal_set), {0, 1})
 
+    def test_scaffold_restriction_keeps_the_search_inside_the_given_topology(self):
+        # g truly depends on a and b, but the scaffold only offers b and c. With added edges disallowed the
+        # search may pick any subset of {b, c} and must never reach for a, however much better a would score.
+        for infer in (reveal_inference, best_fit_inference):
+            random.seed(6)
+            net = _reveal_bestfit_network()  # true network: g = a AND NOT b
+            scaffold = Network(vertex_names=["a", "b", "c", "g"], edges=[("b", "g"), ("c", "g")])
+            model = infer(_all_transition_matrices(net), scaffold, max_indegree=-1,
+                          emit_static_as_input=False, allow_additional_edges=False)
+            self.assertLessEqual({(u.name, v.name) for u, v in model.edges},
+                                 {("b", "g"), ("c", "g")}, infer.__name__)
+            # a, b and c have no scaffold predecessors, so there is nothing to search: input nodes even with
+            # emit_static_as_input off (which would otherwise have given them identity self-loops)
+            for name in ("a", "b", "c"):
+                self.assertEqual(len(model.get_vertex(name).predecessors()), 0, (infer.__name__, name))
+
+    def test_timeout_degrades_to_single_regulators_but_still_returns_a_complete_model(self):
+        for infer in (reveal_inference, best_fit_inference):
+            net = _reveal_bestfit_network()   # g needs both a and b; k = 2
+            data = _all_transition_matrices(net)
+
+            random.seed(7)  # an already-spent budget: sizes above 1 are never swept
+            spent = infer(data, net, max_indegree=-1, timeout_secs=0)
+            g = spent.get_vertex("g")
+            self.assertEqual(len(g.predecessors()), 1, infer.__name__)
+            self.assertIsNotNone(g.function, infer.__name__)  # every gene still gets a function
+            self.assertEqual(len(g.function.boolean_outputs), 2, infer.__name__)
+
+            random.seed(7)  # a budget that cannot bind must leave the unbounded answer untouched
+            timed = infer(data, net, max_indegree=-1, timeout_secs=60)
+            random.seed(7)
+            untimed = infer(data, net, max_indegree=-1)
+            self.assertEqual({(u.name, v.name) for u, v in timed.edges},
+                             {(u.name, v.name) for u, v in untimed.edges}, infer.__name__)
+
     def test_no_transition_data_returns_all_input_nodes(self):
         random.seed(4)
         net = _reveal_bestfit_network()
