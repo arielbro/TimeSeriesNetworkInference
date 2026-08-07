@@ -10,7 +10,11 @@ import random
 def generate_random_graphs(graphs_dir, **kwargs):
     reference_graphs = []
     for graph_dir in os.listdir(graphs_dir):
-        if (kwargs['max_graph_size'] is not None) and (len(graph_dir) > kwargs['max_graph_size']):
+        # max_graph_size bounds the number of nodes; None (the default, i.e. the option left out of the
+        # config) means no filtering. Probed from SPECIES_KEY.csv so an oversized model is never parsed.
+        if (kwargs['max_graph_size'] is not None) and \
+                (graphs.Network.boolean_tables_size(os.path.join(graphs_dir, graph_dir))
+                 > kwargs['max_graph_size']):
             continue
         print("loading graph {}".format(graph_dir))
         G = graphs.Network.parse_boolean_tables(os.path.join(graphs_dir, graph_dir))

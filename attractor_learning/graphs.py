@@ -582,6 +582,15 @@ class Network(object):
                     writer.writerow(row)
 
     @staticmethod
+    def boolean_tables_size(path):
+        """Number of vertices in a cellcollective truth-tables directory, read from SPECIES_KEY.csv (one row
+        per vertex) without parsing the truth tables. Cheap enough to size-filter a model directory before
+        deciding to load it - parse_boolean_tables builds a BooleanSymbolicFunc per node, whose cost grows
+        as 2**in-degree, so probing first avoids paying that for models that are about to be skipped."""
+        with open(os.path.join(path, "SPECIES_KEY.csv"), 'r') as mapping_file:
+            return sum(1 for row in csv.reader(mapping_file, delimiter="\t") if row)
+
+    @staticmethod
     def parse_boolean_tables(path):
         """
         Parses cellcollective's truth tables format directory and returns a corresponding network.

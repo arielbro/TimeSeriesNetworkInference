@@ -35,7 +35,9 @@ def main():
     p.add_argument('--use_random_network', required=False, default=False,  type=bool)
     p.add_argument('--experiments_per_network', required=False, type=int, action='append')
     p.add_argument('--graphs_dir', required=False, type=str)
-    p.add_argument('--max_graph_size', required=False, type=int, action='append')
+    p.add_argument('--max_graph_size', required=False, default=None, type=int, action='append',
+                   help='skip source models with more than this many nodes; leave the option out of the '
+                        'config (the default) to load every model regardless of size')
     p.add_argument('--data_output_parent_dir', required=False, type=str)
     p.add_argument('--timepoints_per_experiment', required=False, type=int, action='append')
     p.add_argument('--state_sample_type', required=True, type=str)
@@ -124,9 +126,14 @@ def main():
         else:
             reference_graphs = []
             for graph_dir in os.listdir(kwargs['graphs_dir']):
-                if (kwargs['max_graph_size'] is not None) and (len(graph_dir) > kwargs['max_graph_size']):
+                # max_graph_size bounds the number of nodes; None (the default, i.e. the option left out of
+                # the config) means no filtering. Probed from SPECIES_KEY.csv so an oversized model is never
+                # parsed - parse_boolean_tables costs 2**in-degree per node to build its functions.
+                graph_path = os.path.join(kwargs['graphs_dir'], graph_dir)
+                if (kwargs['max_graph_size'] is not None) and \
+                        (graphs.Network.boolean_tables_size(graph_path) > kwargs['max_graph_size']):
                     continue
-                G = graphs.Network.parse_boolean_tables(os.path.join(kwargs['graphs_dir'], graph_dir))
+                G = graphs.Network.parse_boolean_tables(graph_path)
                 reference_graphs.append(G)
 
         for graph_index, reference_graph in enumerate(reference_graphs):

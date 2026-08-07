@@ -238,6 +238,7 @@ COMB_STR_SHORTHANDS = {
     "warm_start_time_frac": "warmfrac",
     "allow_input_flips": "inpflips",
     "flip_penalty": "flippen",
+    "no_anchoring": "noanchor",
     "max_indegree": "maxindeg",
     "train_size": "trainsize",
 }
