@@ -32,7 +32,7 @@ def parse_bool_option(value):
 def main():
     p = configargparse.ArgParser(default_config_files=['./config.txt'])
     p.add_argument('-c', '--config', required=False, is_config_file=True, help='config file path to override defaults')
-    p.add_argument('--use_random_network', required=False, default=False,  type=bool)
+    p.add_argument('--use_random_network', required=False, default=False,  type=parse_bool_option)
     p.add_argument('--experiments_per_network', required=False, type=int, action='append')
     p.add_argument('--graphs_dir', required=False, type=str)
     p.add_argument('--max_graph_size', required=False, default=None, type=int, action='append',
@@ -46,10 +46,10 @@ def main():
     p.add_argument('--state_noise_chance', required=False, type=float, action='append')
     p.add_argument('--frequency_noise_std', required=False, type=float)
     p.add_argument('--random_networks_per_reference', required=False, type=int)
-    p.add_argument('--mutate_input_nodes', required=False, default=False,  type=bool)
-    p.add_argument('--preserve_truth_ratio', required=False, default=False,  type=bool)
+    p.add_argument('--mutate_input_nodes', required=False, default=False,  type=parse_bool_option)
+    p.add_argument('--preserve_truth_ratio', required=False, default=False,  type=parse_bool_option)
     p.add_argument('--function_type_restriction', required=False, type=str, action='append')
-    p.add_argument('--preserve_input_nodes_on_add', required=False, default=False,  type=bool)
+    p.add_argument('--preserve_input_nodes_on_add', required=False, default=False,  type=parse_bool_option)
     p.add_argument('--scaffold_network_added_edge_fraction', required=False, type=float, action='append')
     p.add_argument('--scaffold_network_removed_edge_fraction', required=False, type=float, action='append')
     # appendable so a config can grid-search it (`only_attractors = [False, True]`), which also puts it in

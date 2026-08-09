@@ -620,10 +620,12 @@ def main():
                    action='append')
     p.add_argument('--included_edges_relative_weight', required=False, type=float, action='append')
     p.add_argument('--added_edges_relative_weight', required=False, type=float, action='append')
-    p.add_argument('--allow_input_flips', required=False, default=False, type=bool)
-    p.add_argument('--flip_penalty', required=False, default=1.0, type=float)
-    p.add_argument('--no_anchoring', required=False, default=False, type=bool)
-    p.add_argument('--warm_start_from_scaffold', required=False, default=False, type=bool)
+    p.add_argument('--allow_input_flips', required=False, default=False, type=parse_bool_option)
+    # appendable and recorded for the same reasons as allow_additional_edges above: `flip_penalty = [0.5,
+    # 1.0]` sweeps both, and the value reaches the output directory name (as flippen) either way.
+    p.add_argument('--flip_penalty', required=False, default=None, type=float, action='append')
+    p.add_argument('--no_anchoring', required=False, default=False, type=parse_bool_option)
+    p.add_argument('--warm_start_from_scaffold', required=False, default=False, type=parse_bool_option)
     p.add_argument('--warm_start_time_frac', required=False, default=0.2, type=float)
     # max in-degree bound; only used by reveal / best_fit (regulator-set size cap) and symmetric_topology
     # (per-node MILP constraint). -1 = use the scaffold network's max in-degree, computed per network.
@@ -650,6 +652,8 @@ def main():
     options = p.parse_args()
     if options.allow_additional_edges is None:
         options.allow_additional_edges = [False]  # kept a list so it stays a (single-valued) varying option
+    if options.flip_penalty is None:
+        options.flip_penalty = [1.0]  # likewise
 
     if options.summarize_errors is not None:
         if options.run_manifest is None:
