@@ -122,6 +122,19 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
                     timeseries_score)
             del ref_vec, pred_vec, inferred_matrices
 
+            # compare against non-noisy data again, but rolled out from the real first state rather than the
+            # noisy one. The noisy seed can differ from the real one in any node, which puts the model on a
+            # different trajectory however well it was inferred; seeding from the real state separates that
+            # from the model's own prediction error.
+            real_start_matrices = {i: np.asarray(inferred_model.next_states(data_matrix[0, :], data_matrix.shape[0] - 1))
+                                   for i, data_matrix in real_data.items()}
+            pred_vec = np.concatenate([real_start_matrices[i][1:, ].flatten() for i in real_start_matrices.keys()])
+            ref_vec = np.concatenate([real_data[i][1:, ].flatten() for i in real_start_matrices.keys()])
+            timeseries_score = inference_scoring.sparse_accuracy_score(ref_vec, pred_vec)
+            np.save(os.path.join(network_out_dir, "timeseries_real_start_accuracy_score_{}".format(group)),
+                    timeseries_score)
+            del ref_vec, pred_vec, real_start_matrices
+
         del reference_train, real_train, reference_test, real_test
 
         np.save(os.path.join(network_out_dir, "inference_time"), time_taken)

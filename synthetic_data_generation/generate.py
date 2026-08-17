@@ -1,7 +1,8 @@
 import os
 import shutil
 from attractor_learning import graphs
-from synthetic_data_generation.graph_generation.our_methods import generate_random_graphs, generate_scaffold_network
+from synthetic_data_generation.graph_generation.our_methods import generate_random_graphs, \
+    generate_scaffold_network, parse_added_edge_fraction
 from synthetic_data_generation.time_series_generation.our_methods import generate_experiments_data
 from synthetic_data_generation.time_series_generation.our_methods import FrequencyHandling, StateSampleType
 import time
@@ -68,7 +69,11 @@ def main():
     p.add_argument('--preserve_truth_ratio', required=False, default=False,  type=parse_bool_option)
     p.add_argument('--function_type_restriction', required=False, type=str, action='append')
     p.add_argument('--preserve_input_nodes_on_add', required=False, default=False,  type=parse_bool_option)
-    p.add_argument('--scaffold_network_added_edge_fraction', required=False, type=float, action='append')
+    p.add_argument('--scaffold_network_added_edge_fraction', required=False,
+                   type=parse_added_edge_fraction, action='append',
+                   help='fraction of the reference graph\'s edges to add to the scaffold, or "all" for a '
+                        'scaffold holding every possible edge (which ignores '
+                        '--scaffold_network_removed_edge_fraction)')
     p.add_argument('--scaffold_network_removed_edge_fraction', required=False, type=float, action='append')
     # appendable so a config can grid-search it (`only_attractors = [False, True]`), which also puts it in
     # comb_str and hence in the data directory name. The default is applied after parsing, since argparse

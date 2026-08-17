@@ -7,6 +7,19 @@ import logging
 import random
 
 
+# scaffold_network_added_edge_fraction value asking for the full scaffold rather than a fraction of added
+# edges. Kept here rather than in generate.py so the option parser and this function agree on the spelling.
+FULL_SCAFFOLD = "all"
+
+
+def parse_added_edge_fraction(value):
+    """configargparse `type` for --scaffold_network_added_edge_fraction: a float, or FULL_SCAFFOLD ("all")
+    for a scaffold holding every possible edge (see generate_scaffold_network)."""
+    if str(value).strip().lower() == FULL_SCAFFOLD:
+        return FULL_SCAFFOLD
+    return float(value)
+
+
 def generate_random_graphs(graphs_dir, **kwargs):
     reference_graphs = []
     for graph_dir in os.listdir(graphs_dir):
@@ -39,7 +52,9 @@ def generate_scaffold_network(G, **kwargs):
     """
     Generates an almost correct scaffold network to use in model inference.
     Currently just adds new edges to the reference graph G.
-    :param added_edge_frac: fraction of current amount of edges to add. |E'|=(1+added_edge_frac)|E|
+    :param added_edge_frac: fraction of current amount of edges to add. |E'|=(1+added_edge_frac)|E|.
+        The string "all" instead gives the full scaffold - every possible edge, so inference is
+        unconstrained by the scaffold's topology - in which case removed_edge_frac is ignored.
     :param G:
     :return:
     """
@@ -51,6 +66,18 @@ def generate_scaffold_network(G, **kwargs):
     for vertex in scaffold.vertices:
         vertex.function = None
 
+    if added_edge_frac == FULL_SCAFFOLD:
+        # every ordered pair, self-loops included, so the scaffold is a superset of G's edges whatever they
+        # are. Removing edges would contradict that, so removed_edge_frac has no meaning here and is ignored.
+        # Targets are picked before the edges are replaced, since predecessors() then still describes G.
+        targets = [v for v in scaffold.vertices
+                   if (not preserve_input_nodes_on_add) or len(v.predecessors()) > 0]
+        scaffold.edges = [(u, v) for v in targets for u in scaffold.vertices]
+        for node in scaffold.vertices:
+            node.precomputed_predecessors = None
+            node.precomputed_successors = None
+        return scaffold
+
     n_removed_edges = int(len(scaffold.edges) * removed_edge_frac)
     removed_edges = random.sample(scaffold.edges, n_removed_edges)
 
@@ -58,8 +85,12 @@ def generate_scaffold_network(G, **kwargs):
     # membership against a set: scaffold.edges is a list, and an `in` test per candidate pair is
     # O(#edges), which on a 1000-node graph turns this into ~10**9 comparisons
     existing_edges = set(scaffold.edges)
-    optional_added_edges = list((a, b) for (a, b) in itertools.combinations(scaffold.vertices, 2) if
-                      (a, b) not in existing_edges)
+    # every ordered pair the graph doesn't already have, self-loops included - the same candidate set the
+    # FULL_SCAFFOLD branch lays down, just sampled from. itertools.combinations, used here previously, yields
+    # each pair once in vertex order, so only about half the missing edges could ever be drawn and every
+    # added edge pointed from a lower-indexed node to a higher-indexed one.
+    optional_added_edges = [(a, b) for (a, b) in itertools.product(scaffold.vertices, repeat=2)
+                            if (a, b) not in existing_edges]
     if preserve_input_nodes_on_add:
         optional_added_edges = [(a, b) for (a, b) in optional_added_edges if len(b.predecessors()) > 0]
     if n_added_edges > len(optional_added_edges):
