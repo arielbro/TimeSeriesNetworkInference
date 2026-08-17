@@ -68,6 +68,20 @@ def _fit_l1_logistic(X, y, C):
     return classifier
 
 
+def all_constants_inference(data_matrices, scaffold_network, **kwargs):
+    """The trivial "nothing ever changes" baseline: an edgeless model, so every node is an input node and
+    holds its value (Network.next_state), and a predicted trajectory is the initial state repeated.
+
+    Both the data and the scaffold's edges are ignored - only its vertex names are kept. This is the score
+    a zero-edge inference result already gets, made explicit as a benchmark: on data sampled at or near an
+    attractor most cells never change, so this baseline alone can reach a high time-series accuracy, and a
+    method is only informative to the extent it beats it. Its edge set is empty, so it scores zero edge
+    overlap by construction.
+    """
+    return Network(vertex_names=[v.name for v in scaffold_network.vertices], edges=[],
+                   vertex_functions=[None for _ in scaffold_network.vertices])
+
+
 def random_model_inference(data_matrices, scaffold_network, **kwargs):
     """A random Boolean model over the scaffold: each node's truth-table row output is an i.i.d. fair coin.
 

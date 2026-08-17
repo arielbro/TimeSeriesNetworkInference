@@ -23,6 +23,30 @@ import subprocess
 import configargparse
 
 
+NETWORK_MARKER_FILE = "true_network.json"
+
+
+def find_network_dirs(data_dir_path):
+    """(name, path) for every network directory under a data dir, at whatever depth it sits. A network
+    directory is one holding the files process_network reads; any directory level above it is an extra
+    grouping level (data generation mirrors a grouped graphs_dir that way), and the returned name keeps
+    that relative path so the output tree ends up with the same shape.
+
+    Sorted, so a run's network order doesn't depend on the platform's directory order."""
+    found = []
+    for root, dirs, files in os.walk(data_dir_path):
+        dirs.sort()
+        if NETWORK_MARKER_FILE in files:
+            relative = os.path.relpath(root, data_dir_path)
+            name = os.path.basename(root) if relative == os.curdir else relative.replace(os.sep, "/")
+            # '/' regardless of platform: the name is joined into output paths (both separators work on
+            # Windows) but also written into the job manifest, which may be emitted and consumed on
+            # different machines
+            found.append((name, root))
+            dirs[:] = []            # a network directory holds no further networks
+    return sorted(found)
+
+
 def process_network(network_name, network_path, output_parent_dir, kwargs):
     inference_method = kwargs['inference_method']
     network_out_dir = os.path.join(output_parent_dir, network_name)
@@ -200,6 +224,7 @@ INFERENCE_METHODS = {
     "general": infer_known_topology_general,
     "symmetric": infer_known_topology_symmetric,
     "symmetric_topology": infer_unknown_topology_symmetric,
+    "all_constants": benchmark_inference.all_constants_inference,
     "random_model": benchmark_inference.random_model_inference,
     "exact_match_else_random": benchmark_inference.exact_match_else_random_inference,
     "linear_classifier": benchmark_inference.linear_classifier_inference,
@@ -296,9 +321,10 @@ def enumerate_problems(options):
                 continue
             output_parent_dir = os.path.join("inferred_models", data_dir_partial_path,
                                              "{}-{}".format(comb_str, data_dir.name))
-            networks = [(f.name, f.path) for f in os.scandir(data_dir.path) if f.is_dir()]
+            networks = find_network_dirs(data_dir.path)
             if not networks:
-                raise ValueError("Did not find network directories in data_dir {}".format(data_dir.name))
+                raise ValueError("Did not find network directories (holding {}) under data_dir {}".format(
+                    NETWORK_MARKER_FILE, data_dir.name))
             for net_name, net_path in networks:
                 if network_output_is_complete(os.path.join(output_parent_dir, net_name), manifest_kwargs):
                     continue  # already fully generated; leave it out of the manifest
@@ -728,9 +754,10 @@ def main():
             for var, val in kwargs.items():
                 logger.info("{}={}".format(var, val))
 
-            paths = [(f.name, f.path) for f in os.scandir(data_dir.path) if f.is_dir()]
+            paths = find_network_dirs(data_dir.path)
             if len(paths) == 0:
-                raise ValueError("Did not find network directories in data_dir {}".format(data_dir.name))
+                raise ValueError("Did not find network directories (holding {}) under data_dir {}".format(
+                    NETWORK_MARKER_FILE, data_dir.name))
 
             # pick-up: skip networks whose output folder is already fully populated from a previous run
             paths_to_run = []

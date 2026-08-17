@@ -1,0 +1,65 @@
+# Boolean network model exported from https://github.com/arielbro/attractor_learning
+
+# total number of nodes
+.v 9
+
+# labels of nodes and names of corresponding components
+# 1 = a0
+# 2 = a1
+# 3 = a2
+# 4 = a3
+# 5 = a4
+# 6 = b0
+# 7 = b1
+# 8 = b2
+# 9 = and_ab
+
+# 1 = a0
+.n 1 1 5
+0 1
+1 0
+
+# 2 = a1
+.n 2 1 1
+0 1
+1 0
+
+# 3 = a2
+.n 3 1 2
+0 1
+1 0
+
+# 4 = a3
+.n 4 1 3
+0 1
+1 0
+
+# 5 = a4
+.n 5 1 4
+0 1
+1 0
+
+# 6 = b0
+.n 6 1 8
+0 1
+1 0
+
+# 7 = b1
+.n 7 1 6
+0 1
+1 0
+
+# 8 = b2
+.n 8 1 7
+0 1
+1 0
+
+# 9 = and_ab
+.n 9 2 1 6
+00 0
+01 0
+10 0
+11 1
+
+
+

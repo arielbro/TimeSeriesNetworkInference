@@ -564,7 +564,9 @@ class Network(object):
 
         # create name mapping
         row_tuples = [(v.index + 1, v.name) for v in self.vertices]
-        with open(os.path.join(base_path, model_name, "SPECIES_KEY.csv"), 'w') as mapping_file:
+        # newline='' so csv's own \r\n line terminator isn't translated again by text mode (which would put a
+        # blank line between every record, and parse_boolean_tables then reads an empty row and fails)
+        with open(os.path.join(base_path, model_name, "SPECIES_KEY.csv"), 'w', newline='') as mapping_file:
             writer = csv.writer(mapping_file, delimiter='\t')
             for row in row_tuples:
                 writer.writerow(row)
@@ -575,7 +577,8 @@ class Network(object):
                 continue
             row_tuples = [tup + (int(bool(v.function(*tup))),) for tup in itertools.product(
                 [0, 1], repeat=len(v.predecessors()))]
-            with open(os.path.join(base_path, model_name, "{}.csv".format(v.index + 1)), 'w') as table_file:
+            with open(os.path.join(base_path, model_name, "{}.csv".format(v.index + 1)), 'w',
+                      newline='') as table_file:
                 writer = csv.writer(table_file, delimiter='\t')
                 writer.writerow([u.index + 1 for u in v.predecessors()] + [v.index + 1])
                 for row in row_tuples:
@@ -589,6 +592,45 @@ class Network(object):
         as 2**in-degree, so probing first avoids paying that for models that are about to be skipped."""
         with open(os.path.join(path, "SPECIES_KEY.csv"), 'r') as mapping_file:
             return sum(1 for row in csv.reader(mapping_file, delimiter="\t") if row)
+
+    # A model directory in a graphs_dir holds either cellcollective truth tables (SPECIES_KEY.csv + one csv
+    # per node) or, for models whose functions are symmetric threshold functions, a single node-link JSON
+    # written by save(). The JSON form stores each function as signs + threshold, so it stays small for the
+    # high in-degree nodes of a scale-free graph, where a truth table would need 2**in-degree rows.
+    MODEL_JSON_NAME = "network.json"
+
+    @staticmethod
+    def model_dir_format(path):
+        """'json' or 'boolean_tables' for a model directory; raises if it is neither."""
+        if os.path.exists(os.path.join(path, Network.MODEL_JSON_NAME)):
+            return "json"
+        if os.path.exists(os.path.join(path, "SPECIES_KEY.csv")):
+            return "boolean_tables"
+        raise ValueError("{} holds neither {} nor SPECIES_KEY.csv".format(path, Network.MODEL_JSON_NAME))
+
+    @staticmethod
+    def is_model_dir(path):
+        """True when the directory holds a model in either supported format (so a graphs_dir can be walked
+        without knowing in advance how deep its model directories sit)."""
+        return (os.path.exists(os.path.join(path, Network.MODEL_JSON_NAME))
+                or os.path.exists(os.path.join(path, "SPECIES_KEY.csv")))
+
+    @staticmethod
+    def parse_model_dir(path):
+        """Load a model directory in either supported format."""
+        if Network.model_dir_format(path) == "json":
+            return Network.load(os.path.join(path, Network.MODEL_JSON_NAME))
+        return Network.parse_boolean_tables(path)
+
+    @staticmethod
+    def model_dir_size(path):
+        """Number of vertices in a model directory, without building any function (see
+        boolean_tables_size for why probing before loading is worth it)."""
+        if Network.model_dir_format(path) == "json":
+            import json
+            with open(os.path.join(path, Network.MODEL_JSON_NAME), 'r') as f:
+                return len(json.load(f)["nodes"])
+        return Network.boolean_tables_size(path)
 
     @staticmethod
     def parse_boolean_tables(path):
@@ -754,18 +796,21 @@ class Vertex(object):
 
     def predecessors(self):
         if not self.precomputed_predecessors:
-            # search using names (asserted to be unique during init) to avoid circular dependencies predecessors <> key
-            name_based_edges = [(u.name, v.name) for (u, v) in self.graph.edges]
-            predecessors = sorted([u for u in self.graph.vertices if (u.name, self.name) in name_based_edges],
+            # compare using names (asserted to be unique during init) to avoid circular dependencies
+            # predecessors <> key. One pass over the graph's edges: the earlier form built a list of every
+            # edge's names and then searched it once per vertex, which is O(vertices * edges) per call and
+            # so O(vertices**2 * edges) to populate a whole network - minutes at 1000 nodes.
+            predecessors = sorted([u for (u, v) in self.graph.edges if v.name == self.name],
                                   key=lambda vertex: vertex.index)
             self.precomputed_predecessors = predecessors
         return self.precomputed_predecessors
 
     def successors(self):
         if not self.precomputed_successors:
-            # search using names (asserted to be unique during init) to avoid circular dependencies predecessors <> key
-            name_based_edges = [(u.name, v.name) for (u, v) in self.graph.edges]
-            successors = [v for v in self.graph.vertices if (self.name, v.name) in name_based_edges]
+            # see predecessors() on why this is one pass over the edges rather than a search per vertex.
+            # Order follows the graph's vertex order, as it did when this scanned self.graph.vertices.
+            successor_names = {v.name for (u, v) in self.graph.edges if u.name == self.name}
+            successors = [v for v in self.graph.vertices if v.name in successor_names]
             self.precomputed_successors = successors
         return self.precomputed_successors
 

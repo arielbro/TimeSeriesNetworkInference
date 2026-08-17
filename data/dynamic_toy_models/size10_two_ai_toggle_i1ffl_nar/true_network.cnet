@@ -1,0 +1,71 @@
+# Boolean network model exported from https://github.com/arielbro/attractor_learning
+
+# total number of nodes
+.v 10
+
+# labels of nodes and names of corresponding components
+# 1 = p53
+# 2 = mdm2
+# 3 = nfkb
+# 4 = ikb
+# 5 = lacI
+# 6 = tetR
+# 7 = ffl_y
+# 8 = pulse
+# 9 = rep
+# 10 = sim_t1
+
+# 1 = p53
+.n 1 1 2
+0 1
+1 0
+
+# 2 = mdm2
+.n 2 1 1
+0 0
+1 1
+
+# 3 = nfkb
+.n 3 1 4
+0 1
+1 0
+
+# 4 = ikb
+.n 4 1 3
+0 0
+1 1
+
+# 5 = lacI
+.n 5 1 6
+0 1
+1 0
+
+# 6 = tetR
+.n 6 1 5
+0 1
+1 0
+
+# 7 = ffl_y
+.n 7 1 3
+0 0
+1 1
+
+# 8 = pulse
+.n 8 2 3 7
+00 0
+01 0
+10 1
+11 0
+
+# 9 = rep
+.n 9 1 9
+0 1
+1 0
+
+# 10 = sim_t1
+.n 10 1 1
+0 0
+1 1
+
+
+

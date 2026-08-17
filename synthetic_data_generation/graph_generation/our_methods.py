@@ -10,14 +10,18 @@ import random
 def generate_random_graphs(graphs_dir, **kwargs):
     reference_graphs = []
     for graph_dir in os.listdir(graphs_dir):
+        # a graphs_dir may hold loose files next to the model directories (e.g. a README)
+        if not os.path.isdir(os.path.join(graphs_dir, graph_dir)):
+            continue
         # max_graph_size bounds the number of nodes; None (the default, i.e. the option left out of the
-        # config) means no filtering. Probed from SPECIES_KEY.csv so an oversized model is never parsed.
+        # config) means no filtering. Probed from the model's index/header so an oversized model is never
+        # parsed, in whichever of the two model-directory formats it is stored.
         if (kwargs['max_graph_size'] is not None) and \
-                (graphs.Network.boolean_tables_size(os.path.join(graphs_dir, graph_dir))
+                (graphs.Network.model_dir_size(os.path.join(graphs_dir, graph_dir))
                  > kwargs['max_graph_size']):
             continue
         print("loading graph {}".format(graph_dir))
-        G = graphs.Network.parse_boolean_tables(os.path.join(graphs_dir, graph_dir))
+        G = graphs.Network.parse_model_dir(os.path.join(graphs_dir, graph_dir))
         reference_graphs.append(G)
 
     for G in reference_graphs:
@@ -51,8 +55,11 @@ def generate_scaffold_network(G, **kwargs):
     removed_edges = random.sample(scaffold.edges, n_removed_edges)
 
     n_added_edges = int(len(scaffold.edges) * added_edge_frac)
+    # membership against a set: scaffold.edges is a list, and an `in` test per candidate pair is
+    # O(#edges), which on a 1000-node graph turns this into ~10**9 comparisons
+    existing_edges = set(scaffold.edges)
     optional_added_edges = list((a, b) for (a, b) in itertools.combinations(scaffold.vertices, 2) if
-                      (a, b) not in scaffold.edges)
+                      (a, b) not in existing_edges)
     if preserve_input_nodes_on_add:
         optional_added_edges = [(a, b) for (a, b) in optional_added_edges if len(b.predecessors()) > 0]
     if n_added_edges > len(optional_added_edges):

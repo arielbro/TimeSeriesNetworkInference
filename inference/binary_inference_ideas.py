@@ -121,7 +121,8 @@ def _scaffold_warm_start_values(data_matrices, scaffold_network, timeout_secs, l
     The sign of edge j->i is stored under index j (so it maps directly onto signs_vars[j] of vertex i).
     Thresholds are clamped into the unknown model's feasible [1, degree] range for nodes with inputs: the
     known model may return a constant function (threshold 0 or degree+1) while keeping nonzero signs, and
-    feeding such a threshold back would make the whole seeded MIP start infeasible (Gurobi would discard it).
+    feeding such a threshold back would make the whole seeded MIP start infeasible (Gurobi would discard it,
+    reporting that the user MIP start did not produce a new incumbent).
     Degree-0 (input) nodes get no signs and threshold 0."""
     scaffold_model = infer_known_topology_symmetric(
         data_matrices, scaffold_network, timeout_secs=timeout_secs, log_file=log_file,
@@ -211,6 +212,43 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
             functions_variables.append([signs, threshold])
         model.update()
 
+        # The edge indicators (|sign|) are built before the data constraints, because the per-node "unused"
+        # indicator derived from them is needed while the transitions are added: a node that ends up using
+        # no input holds its value there, the way an input node does in Network.next_state.
+        included_edges_indicators = []
+        added_edges_indicators = []
+        edge_indicators = dict()
+        unused_node_indicators = []
+        for i in range(len(scaffold_network)):
+            for j in range(len(scaffold_network)):
+                edge_indicators[i, j] = model.addVar(
+                    lb=0, ub=1, vtype=gurobipy.GRB.INTEGER, name="edge_{}_{}_indicator_var".format(i, j))
+        for j in range(len(scaffold_network)):
+            unused_node_indicators.append(model.addVar(
+                vtype=gurobipy.GRB.BINARY, name="vertex_{}_unused_indicator_var".format(j)))
+        model.update()  # repeat loop after update, so that there's one update
+        for i in range(len(scaffold_network)):
+            for j in range(len(scaffold_network)):
+                model.addGenConstrAbs(edge_indicators[i, j], functions_variables[j][0][i],
+                                      name="edge_{}_{}_abs_var".format(i, j))
+                if (scaffold_network.vertices[i], scaffold_network.vertices[j]) in scaffold_network.edges:
+                    included_edges_indicators.append(edge_indicators[i, j])
+                else:
+                    if allow_additional_edges:
+                        added_edges_indicators.append(edge_indicators[i, j])
+                    else:
+                        model.addConstr(edge_indicators[i, j] == 0)
+                        added_edges_indicators.append(0)
+        for j in range(len(scaffold_network)):
+            # unused_node_indicators[j] is 1 iff node j's in-degree is 0, and is handed to the transition
+            # constraints as the third element of the node's function variables.
+            degree = gurobipy.quicksum(edge_indicators[i, j] for i in range(len(scaffold_network)))
+            model.addConstr(degree <= len(scaffold_network) * (1 - unused_node_indicators[j]),
+                            name="node_{}_unused_indicator_constraint_<=".format(j))
+            model.addConstr(degree >= 1 - unused_node_indicators[j],
+                            name="node_{}_unused_indicator_constraint_>=".format(j))
+            functions_variables[j].append(unused_node_indicators[j])
+
         full_network = Network(vertex_names=[v.name for v in scaffold_network.vertices],
                                edges=[(u.name, v.name) for u, v in itertools.product(scaffold_network.vertices, repeat=2)],
                                vertex_functions=[None for v in scaffold_network.vertices])
@@ -225,34 +263,12 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
         n_cells = float(len(matrix_agreement_indicators))
         data_agreement = gurobipy.quicksum(matrix_agreement_indicators) / n_cells
 
-        included_edges_indicators = []
-        added_edges_indicators = []
-        edge_indicators = dict()
-        for i in range(len(scaffold_network)):
-            for j in range(len(scaffold_network)):
-                edge_indicators[i, j] = model.addVar(
-                    lb=0, ub=1, vtype=gurobipy.GRB.INTEGER, name="edge_{}_{}_indicator_var".format(i, j))
-        model.update()  # repeat loop after update, so that there's one update
-        for i in range(len(scaffold_network)):
-            for j in range(len(scaffold_network)):
-                model.addGenConstrAbs(edge_indicators[i, j], functions_variables[j][0][i],
-                                      name="edge_{}_{}_abs_var".format(i, j))
-                if (scaffold_network.vertices[i], scaffold_network.vertices[j]) in scaffold_network.edges:
-                    included_edges_indicators.append(edge_indicators[i, j])
-                else:
-                    if allow_additional_edges:
-                        added_edges_indicators.append(edge_indicators[i, j])
-                    else:
-                        model.addConstr(edge_indicators[i, j] == 0)
-                        added_edges_indicators.append(0)
-
-        # we need to prevent a non-standard representation of a constant function that doesn't zero the sign variables.
-        # With actual degree d, we want to limit the threshold to range [1, d] if d is positive
-        # and [0, d + 1] if d=0 (to allow for the constant functions). Let n be the network size.
-        # [d/n, d + (1 - d/n)], given an integer threshold, represents both cases, although it might result
-        # in bad linear relaxations. An alternative (not implemented now) is to create some
-        # indicator variable and conditional constraints.
-        # BASICALLY - INDICATOR FOR WHETHER d=0 AND CONDITIONAL CONSTRAINTS.
+        # we need to prevent a non-standard representation of a constant function that doesn't zero the sign
+        # variables. With actual degree d, the threshold is limited to [1, d] when d is positive, and to 0
+        # when d = 0 (a node using no input holds its value, so it needs no threshold at all). Over integers
+        # the pair (threshold <= d, n * threshold >= d) gives that: at d = 0 both force 0, and at
+        # d >= 1 the second forces threshold >= 1 while the first allows every value up to d - including
+        # threshold == d, i.e. an AND over the node's inputs.
         # per-node in-degree cap: -1 means the scaffold's (global) max in-degree, computed per network. Clamped
         # to >= 1 so a degenerate edgeless scaffold (whose max in-degree is 0) doesn't force degree <= 0, which
         # combined with the threshold constraints below would collapse the whole model to constants.
@@ -262,8 +278,7 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
             degree = gurobipy.quicksum(edge_indicators[i, j] for i in range(len(scaffold_network)))
             threshold = functions_variables[j][1]
             model.addConstr(degree <= max_indeg_cap, name="node_{}_max_indegree_constraint".format(j))
-            model.addConstr(threshold <= degree + (1 - degree) / len(scaffold_network),
-                            name="node_{}_threshold_constraint_<=".format(j))
+            model.addConstr(threshold <= degree, name="node_{}_threshold_constraint_<=".format(j))
             model.addConstr(len(scaffold_network) * threshold >= degree, name="node_{}_threshold_constraint_>=".format(j))
 
         # both edge terms are normalized by the number of scaffold edges (see docstring); guard the rare
@@ -281,7 +296,7 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
             # seed signs/threshold from the scaffold solve; Gurobi completes the rest of the partial MIP start
             for i in range(len(scaffold_network)):
                 signs_by_index, threshold_start = warm_start[i]
-                signs_vars, threshold_var = functions_variables[i]
+                signs_vars, threshold_var = functions_variables[i][0], functions_variables[i][1]
                 for j in range(len(scaffold_network)):
                     signs_vars[j].Start = signs_by_index.get(j, 0)
                 threshold_var.Start = threshold_start
@@ -301,7 +316,7 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
         inferred_model = Network(vertex_names=[v.name for v in scaffold_network.vertices], edges=[],
                                  vertex_functions=[None for v in scaffold_network.vertices])
         for i in range(len(inferred_model)):
-            signs, threshold = functions_variables[i]
+            signs, threshold = functions_variables[i][0], functions_variables[i][1]
             float_signs = [get_value_of_gurobi_entity(sign) for sign in signs]
             signs = [int(round(sign, 3)) for sign in float_signs]
             # gurobi can give "almost" integer values even for variables defined as integer type

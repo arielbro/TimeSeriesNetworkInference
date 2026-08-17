@@ -611,7 +611,12 @@ def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, last_s
 
                 if (v_funcs_restrictions is not None) and (
                         v_funcs_restrictions[i] == FunctionTypeRestriction.SYMMETRIC_THRESHOLD):
-                    signs, threshold = model_f_vars[i]
+                    signs, threshold = model_f_vars[i][0], model_f_vars[i][1]
+                    # optional third element: an indicator that is 1 iff the node ends up using no input at
+                    # all (all its signs are zero). Such a node holds its value, exactly as an input node
+                    # does in Network.next_state, instead of being constant True (an empty signed sum meets
+                    # the threshold, which is forced to 0 at degree 0).
+                    unused_node = model_f_vars[i][2] if len(model_f_vars[i]) > 2 else None
                     # v * s + (1-s)/2 gives v if s=1 and (1-v) if s=-1
                     # !!! This only works if s\in {-1, 1}, if we're learning the topology and s=0 is possible, breaks.
                     # instead, divide to cases based on the value of v and an extra variable.
@@ -621,7 +626,7 @@ def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, last_s
                                          for j in range(len(predecessor_vars))]
                     for j, (sign, var, signed_input) in enumerate(zip(signs, predecessor_vars, signed_input_vars)):
                         # we want signed_input = 1 <-> (s = 1 and v = 1) or (s = -1 and v = 0)
-                        # v is binary, and s can take -1, 0, 1
+                        # v is binary, and s can take -1, 1
                         # (2v - 1)s yields 1 when v and s "agree" (1 and 1 or 0 and -1), otherwise less.
                         # And so, forcing signed_input to be 1 iff (2v - 1)s is 1 works, but that'd probably be harder
                         # to solve (since constraint-heavy expressions generally yield better relaxations).
@@ -662,11 +667,20 @@ def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, last_s
                     # which is invariably bounded by [-len(predecessor_vars), len(predecessor_vars) + 1]
                     # It's strictly positive iff output should be 1.
                     input_to_threshold_comparison = gurobipy.quicksum(signed_input_vars) - threshold + 1
-                    model.addConstr((len(predecessor_vars) + 1) * next_state_vars[i] >= input_to_threshold_comparison,
+                    # big_m * unused_node relaxes both comparisons for a node that uses no input (the
+                    # comparison then ranges in [-degree, degree + 1], so big_m makes them vacuous), leaving
+                    # the indicator constraint below to hold its value instead.
+                    big_m = len(predecessor_vars) + 1
+                    unused_slack = 0 if unused_node is None else big_m * unused_node
+                    model.addConstr(big_m * next_state_vars[i] >= input_to_threshold_comparison - unused_slack,
                         name="{}_threshold_function_path_constraint_>=".format(name_prefix))
-                    model.addConstr((len(predecessor_vars) + 1) * next_state_vars[i] <=
-                                    (len(predecessor_vars) + 1) + input_to_threshold_comparison - 1,
+                    model.addConstr(big_m * next_state_vars[i] <=
+                                    big_m + input_to_threshold_comparison - 1 + unused_slack,
                                     name="{}_threshold_function_path_constraint_<=".format(name_prefix))
+                    if unused_node is not None:
+                        model.addGenConstrIndicator(
+                            unused_node, True, next_state_vars[i] == previous_state_vars[i],
+                            name="{}_unused_node_holds_value_{}_{}".format(name_prefix, l, i))
 
                 elif (v_funcs_restrictions is not None) and (
                         v_funcs_restrictions[i] == FunctionTypeRestriction.SIMPLE_GATES):
