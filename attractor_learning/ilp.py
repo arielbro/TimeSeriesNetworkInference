@@ -573,7 +573,7 @@ def add_hashed_state_inclusion_indicator(model, first_state, second_state_set, s
 
 
 def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, last_state_vars=None,
-                      v_funcs_restrictions=None, name_prefix=""):
+                      v_funcs_restrictions=None, name_prefix="", max_indegree=None):
     """
     Adds a path from first_state_vars to last_state_vars to the model, i.e. requires that last_state_vars
     represents the state resulting after path_len time steps from first_state_vars.
@@ -587,6 +587,10 @@ def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, last_s
     :param first_state_vars:
     :param last_state_vars:
     :param model_f_vars:
+    :param max_indegree: upper bound on how many inputs a node may end up using, when the caller constrains
+        it (the symmetric-threshold formulation lets a node zero out inputs it doesn't use). Only tightens
+        the big-M of the threshold comparison, which is otherwise sized by the candidate count; None leaves
+        it at the candidate count.
     :return:
     """
     start = time.time()
@@ -670,7 +674,11 @@ def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, last_s
                     # big_m * unused_node relaxes both comparisons for a node that uses no input (the
                     # comparison then ranges in [-degree, degree + 1], so big_m makes them vacuous), leaving
                     # the indicator constraint below to hold its value instead.
-                    big_m = len(predecessor_vars) + 1
+                    # the comparison ranges within +/- (degree + 1), and the degree cannot exceed the
+                    # candidate count nor, where the caller imposes one, max_indegree - so the smaller of
+                    # the two is a valid and tighter big-M
+                    degree_bound = len(predecessor_vars) if max_indegree is None                         else min(len(predecessor_vars), max_indegree)
+                    big_m = degree_bound + 1
                     unused_slack = 0 if unused_node is None else big_m * unused_node
                     model.addConstr(big_m * next_state_vars[i] >= input_to_threshold_comparison - unused_slack,
                         name="{}_threshold_function_path_constraint_>=".format(name_prefix))

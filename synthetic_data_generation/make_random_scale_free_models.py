@@ -32,6 +32,11 @@ OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
                           "random_scale_free_models")
 SIZES = [5, 10, 50, 250, 1000]
 MODELS_PER_SIZE = 10
+# One directory per size, holding that size's models. Data generation mirrors a graphs_dir's grouping into
+# the generated data, and inference mirrors it again into its output, so this level survives all the way to
+# the analysis - and written as key=value it arrives there as a swept parameter (an axis a figure can put
+# accuracy or run time against) rather than as an opaque grouping level.
+SIZE_DIR = "size={}"
 ENUMERATE_UP_TO = 10        # full state space only where 2**n is small enough to walk
 DRAW_GRAPH_UP_TO = 12       # above this a node-link picture says nothing; draw the degree profile instead
 
@@ -185,6 +190,9 @@ def main():
              "symmetric threshold function (random signs, threshold uniform in [1, in-degree]).".format(
                  len(SIZES) * MODELS_PER_SIZE, MODELS_PER_SIZE,
                  ", ".join(str(s) for s in SIZES)), "",
+             "Grouped one directory per size (`{}`). Data generation and inference both mirror a "
+             "graphs_dir's grouping into their output, so the size reaches the analysis notebook as a "
+             "swept parameter and can be an axis there.".format(SIZE_DIR.format("<nodes>")), "",
              "Stored as `network.json` (each function as signs + threshold), not as cellcollective truth "
              "tables: hub nodes here have in-degrees in the dozens, and a truth table needs 2**in-degree "
              "rows. `Network.parse_model_dir` / `Network.model_dir_size` read either format, so this "
@@ -200,7 +208,7 @@ def main():
             network = random_scale_free_network(size, seed)
             info = stats(network)
             attractors = attractor_summary(network)
-            model_dir = os.path.join(OUTPUT_DIR, name)
+            model_dir = os.path.join(OUTPUT_DIR, SIZE_DIR.format(size), name)
             os.makedirs(model_dir)
             network.save(os.path.join(model_dir, Network.MODEL_JSON_NAME))
             draw(network, info, os.path.join(model_dir, "network.png"),
@@ -216,8 +224,9 @@ def main():
                 assert [int(bool(v)) for v in reloaded.next_state(state)] == \
                        [int(bool(v)) for v in network.next_state(state)], \
                     "{}: json round trip changed dynamics".format(name)
+            relative = "{}/{}".format(SIZE_DIR.format(size), name)
             index.append("| [{}]({}/README.md) | {} | {} | {} | {:.2f} | {} | {} |".format(
-                name, name, info["n"], info["edges"], info["inputs"], info["mean_in"], info["max_in"],
+                name, relative, info["n"], info["edges"], info["inputs"], info["mean_in"], info["max_in"],
                 attractors[0] if attractors is not None else "not enumerated"))
             per_size.append(info)
         print("size {:>4}: {} models, edges {}-{}, max in-degree {}-{}".format(

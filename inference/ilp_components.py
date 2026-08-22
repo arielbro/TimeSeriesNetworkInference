@@ -25,7 +25,8 @@ def _row_input_state(matrix, denoised_rows, t):
 
 def add_matrices_as_model_paths(graph, model, data_matrices, function_vars, model_to_data_sample_rate_ratio=1,
                                 function_type_restrictions=None, model_addition_type=ModelAdditionType.CONSTRAINT,
-                                per_cell_indicators=False, allow_input_flips=False, no_anchoring=False):
+                                per_cell_indicators=False, allow_input_flips=False, no_anchoring=False,
+                                max_indegree=None):
     """
     Adds the data matrices to the model as model transitions.
 
@@ -99,13 +100,13 @@ def add_matrices_as_model_paths(graph, model, data_matrices, function_vars, mode
             for t in range(n_rows - 1):
                 ilp.add_path_to_model(graph, model, path_len=1,
                                       first_state_vars=_row_input_state(matrix, denoised_rows, t), model_f_vars=None,
-                                      last_state_vars=matrix[t + 1], v_funcs_restrictions=function_type_restrictions,
+                                      last_state_vars=matrix[t + 1], v_funcs_restrictions=function_type_restrictions, max_indegree=max_indegree,
                                       name_prefix="matrix_{}_time_{}".format(matrix_index, t))
         elif model_addition_type == ModelAdditionType.INDICATORS and no_anchoring:
             # single free-running trajectory: the model is fed its own predictions after the initial state
             predicted_states = ilp.add_path_to_model(graph, model, path_len=n_rows - 1,
                                   first_state_vars=_row_input_state(matrix, denoised_rows, 0), last_state_vars=None,
-                                  v_funcs_restrictions=function_type_restrictions, model_f_vars=function_vars,
+                                  v_funcs_restrictions=function_type_restrictions, max_indegree=max_indegree, model_f_vars=function_vars,
                                   name_prefix="matrix_{}_freerun".format(matrix_index))
             for t in range(1, n_rows):
                 add_agreement(predicted_states[t - 1], matrix[t], t)
@@ -113,7 +114,7 @@ def add_matrices_as_model_paths(graph, model, data_matrices, function_vars, mode
             for t in range(n_rows - 1):
                 next_step_vars = ilp.add_path_to_model(graph, model, path_len=1,
                                       first_state_vars=_row_input_state(matrix, denoised_rows, t),
-                                      last_state_vars=None, v_funcs_restrictions=function_type_restrictions,
+                                      last_state_vars=None, v_funcs_restrictions=function_type_restrictions, max_indegree=max_indegree,
                                       model_f_vars=function_vars,
                                       name_prefix="matrix_{}_time_{}".format(matrix_index, t))[0]
                 # the target is the denoised next row where it exists (i.e. the next row is itself a model

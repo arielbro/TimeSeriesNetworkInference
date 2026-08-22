@@ -5,7 +5,6 @@ from inference import ilp_components
 from attractor_learning.graphs import FunctionTypeRestriction, Network
 from inference.ilp_components import ModelAdditionType, get_value_of_gurobi_entity
 from attractor_learning.logic import BooleanSymbolicFunc, SymmetricThresholdFunction
-import itertools
 import time
 
 
@@ -195,19 +194,42 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
             # give the (harder) unknown-topology solve whatever of the budget the scaffold solve left unused
             main_timeout_secs = max(timeout_secs - (time.time() - scaffold_start), 0.0)
 
+    n_vertices = len(scaffold_network)
+    # Candidate inputs per node. With additional edges allowed this is every vertex - the topology-free
+    # search the method is for. Without them inference may only keep or drop scaffold edges, so the
+    # candidates are the node's scaffold predecessors, and building the model over just those is what keeps
+    # it proportional to the scaffold rather than to n**2 (the earlier formulation built every pair and
+    # constrained the disallowed ones to zero, which costs the memory before presolve can remove them).
+    # Sorted by vertex index, because add_path_to_model zips a node's sign variables against its
+    # predecessors in index order.
+    if allow_additional_edges:
+        candidate_inputs = [list(range(n_vertices)) for _ in range(n_vertices)]
+    else:
+        candidate_inputs = [sorted(u.index for u in v.predecessors())
+                            for v in scaffold_network.vertices]
+    candidate_position = [{index: position for position, index in enumerate(candidates)}
+                          for candidates in candidate_inputs]
+    scaffold_edge_set = set(scaffold_network.edges)  # membership test inside the per-pair loops below
+
+    # per-node in-degree cap: -1 means the scaffold's (global) max in-degree, computed per network. Clamped
+    # to >= 1 so a degenerate edgeless scaffold (whose max in-degree is 0) doesn't force degree <= 0, which
+    # combined with the threshold constraints below would collapse the whole model to constants.
+    max_indeg_cap = max_indegree if max_indegree != -1 else scaffold_network.max_in_degree()
+    max_indeg_cap = max(1, max_indeg_cap)
+
     # create function variables
     functions_variables = []
     model = gurobipy.Model()
     try:
-        for i in range(len(scaffold_network)):
+        for i in range(n_vertices):
             # use ternary signs, zero means the input isn't used
             signs = [model.addVar(lb=-1, ub=1, vtype=gurobipy.GRB.INTEGER,
                                   name="vertex_{}_input_{}_sign_var".format(i, j))
-                                  for j in range(len(scaffold_network))]
+                                  for j in candidate_inputs[i]]
             # technically can have a constant False function with all nodes as input, which
-            # will have a threshold of len(scaffold_network) + 1, but that function is
+            # will have a threshold of len(candidate_inputs[i]) + 1, but that function is
             # (better) representable with less inputs.
-            threshold = model.addVar(lb=0, ub=len(scaffold_network), vtype=gurobipy.GRB.INTEGER,
+            threshold = model.addVar(lb=0, ub=len(candidate_inputs[i]), vtype=gurobipy.GRB.INTEGER,
                                      name="vertex_{}_threshold_var".format(i))
             functions_variables.append([signs, threshold])
         model.update()
@@ -219,47 +241,59 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
         added_edges_indicators = []
         edge_indicators = dict()
         unused_node_indicators = []
-        for i in range(len(scaffold_network)):
-            for j in range(len(scaffold_network)):
+        for j in range(n_vertices):
+            for i in candidate_inputs[j]:
                 edge_indicators[i, j] = model.addVar(
                     lb=0, ub=1, vtype=gurobipy.GRB.INTEGER, name="edge_{}_{}_indicator_var".format(i, j))
-        for j in range(len(scaffold_network)):
+        for j in range(n_vertices):
+            # a node with no candidate inputs can only hold its value, which add_path_to_model does for it
+            # directly (it has no predecessors there), so it needs no indicator
             unused_node_indicators.append(model.addVar(
-                vtype=gurobipy.GRB.BINARY, name="vertex_{}_unused_indicator_var".format(j)))
+                vtype=gurobipy.GRB.BINARY, name="vertex_{}_unused_indicator_var".format(j))
+                if candidate_inputs[j] else None)
         model.update()  # repeat loop after update, so that there's one update
-        for i in range(len(scaffold_network)):
-            for j in range(len(scaffold_network)):
-                model.addGenConstrAbs(edge_indicators[i, j], functions_variables[j][0][i],
+        for j in range(n_vertices):
+            for i in candidate_inputs[j]:
+                model.addGenConstrAbs(edge_indicators[i, j],
+                                      functions_variables[j][0][candidate_position[j][i]],
                                       name="edge_{}_{}_abs_var".format(i, j))
-                if (scaffold_network.vertices[i], scaffold_network.vertices[j]) in scaffold_network.edges:
+                if (scaffold_network.vertices[i], scaffold_network.vertices[j]) in scaffold_edge_set:
                     included_edges_indicators.append(edge_indicators[i, j])
                 else:
-                    if allow_additional_edges:
-                        added_edges_indicators.append(edge_indicators[i, j])
-                    else:
-                        model.addConstr(edge_indicators[i, j] == 0)
-                        added_edges_indicators.append(0)
-        for j in range(len(scaffold_network)):
+                    # only reachable with allow_additional_edges: otherwise the candidates are exactly the
+                    # scaffold's edges, so a non-scaffold pair has no variable to constrain in the first place
+                    added_edges_indicators.append(edge_indicators[i, j])
+        for j in range(n_vertices):
             # unused_node_indicators[j] is 1 iff node j's in-degree is 0, and is handed to the transition
             # constraints as the third element of the node's function variables.
-            degree = gurobipy.quicksum(edge_indicators[i, j] for i in range(len(scaffold_network)))
-            model.addConstr(degree <= len(scaffold_network) * (1 - unused_node_indicators[j]),
+            functions_variables[j].append(unused_node_indicators[j])
+            if not candidate_inputs[j]:
+                continue
+            degree = gurobipy.quicksum(edge_indicators[i, j] for i in candidate_inputs[j])
+            model.addConstr(degree <= len(candidate_inputs[j]) * (1 - unused_node_indicators[j]),
                             name="node_{}_unused_indicator_constraint_<=".format(j))
             model.addConstr(degree >= 1 - unused_node_indicators[j],
                             name="node_{}_unused_indicator_constraint_>=".format(j))
-            functions_variables[j].append(unused_node_indicators[j])
 
-        full_network = Network(vertex_names=[v.name for v in scaffold_network.vertices],
-                               edges=[(u.name, v.name) for u, v in itertools.product(scaffold_network.vertices, repeat=2)],
-                               vertex_functions=[None for v in scaffold_network.vertices])
+        candidate_network = Network(
+            vertex_names=[v.name for v in scaffold_network.vertices],
+            edges=[(scaffold_network.vertices[i].name, v.name)
+                   for j, v in enumerate(scaffold_network.vertices) for i in candidate_inputs[j]],
+            vertex_functions=[None for v in scaffold_network.vertices])
+        # add_path_to_model pairs a node's sign variables with its predecessors positionally, so the two
+        # orderings have to agree; both are by vertex index, but assert it rather than rely on it.
+        for j, vertex in enumerate(candidate_network.vertices):
+            assert [u.index for u in vertex.predecessors()] == candidate_inputs[j], \
+                "candidate order does not match predecessor order for vertex {}".format(vertex.name)
         matrix_agreement_indicators, flip_cost_terms = ilp_components.add_matrices_as_model_paths(
-           full_network, model, data_matrices,
+           candidate_network, model, data_matrices,
            function_vars=functions_variables,
            model_to_data_sample_rate_ratio=1,
-           function_type_restrictions=[FunctionTypeRestriction.SYMMETRIC_THRESHOLD] * len(scaffold_network),
+           function_type_restrictions=[FunctionTypeRestriction.SYMMETRIC_THRESHOLD] * n_vertices,
            model_addition_type=ModelAdditionType.INDICATORS,
-           per_cell_indicators=True, allow_input_flips=allow_input_flips, no_anchoring=no_anchoring)
-        del full_network  # only needed to build the model; free it before the (heavy) solve
+           per_cell_indicators=True, allow_input_flips=allow_input_flips, no_anchoring=no_anchoring,
+           max_indegree=max_indeg_cap)
+        del candidate_network  # only needed to build the model; free it before the (heavy) solve
         n_cells = float(len(matrix_agreement_indicators))
         data_agreement = gurobipy.quicksum(matrix_agreement_indicators) / n_cells
 
@@ -269,17 +303,16 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
         # the pair (threshold <= d, n * threshold >= d) gives that: at d = 0 both force 0, and at
         # d >= 1 the second forces threshold >= 1 while the first allows every value up to d - including
         # threshold == d, i.e. an AND over the node's inputs.
-        # per-node in-degree cap: -1 means the scaffold's (global) max in-degree, computed per network. Clamped
-        # to >= 1 so a degenerate edgeless scaffold (whose max in-degree is 0) doesn't force degree <= 0, which
-        # combined with the threshold constraints below would collapse the whole model to constants.
-        max_indeg_cap = max_indegree if max_indegree != -1 else scaffold_network.max_in_degree()
-        max_indeg_cap = max(1, max_indeg_cap)
-        for j in range(len(scaffold_network)):
-            degree = gurobipy.quicksum(edge_indicators[i, j] for i in range(len(scaffold_network)))
+        for j in range(n_vertices):
+            if not candidate_inputs[j]:
+                continue
+            degree = gurobipy.quicksum(edge_indicators[i, j] for i in candidate_inputs[j])
             threshold = functions_variables[j][1]
             model.addConstr(degree <= max_indeg_cap, name="node_{}_max_indegree_constraint".format(j))
             model.addConstr(threshold <= degree, name="node_{}_threshold_constraint_<=".format(j))
-            model.addConstr(len(scaffold_network) * threshold >= degree, name="node_{}_threshold_constraint_>=".format(j))
+            # the multiplier only has to dominate the degree, which the node's own candidate count does
+            model.addConstr(len(candidate_inputs[j]) * threshold >= degree,
+                            name="node_{}_threshold_constraint_>=".format(j))
 
         # both edge terms are normalized by the number of scaffold edges (see docstring); guard the rare
         # empty-scaffold case, where there are no included edges to normalize by and these terms are vacuous.
@@ -294,12 +327,15 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
 
         if warm_start is not None:
             # seed signs/threshold from the scaffold solve; Gurobi completes the rest of the partial MIP start
-            for i in range(len(scaffold_network)):
+            for i in range(n_vertices):
                 signs_by_index, threshold_start = warm_start[i]
                 signs_vars, threshold_var = functions_variables[i][0], functions_variables[i][1]
-                for j in range(len(scaffold_network)):
-                    signs_vars[j].Start = signs_by_index.get(j, 0)
-                threshold_var.Start = threshold_start
+                # the warm start keys signs by vertex index; map through to this node's candidate positions,
+                # dropping any index that isn't a candidate here (it cannot be, when the warm start comes
+                # from the same scaffold, but the seeding must not depend on that)
+                for position, j in enumerate(candidate_inputs[i]):
+                    signs_vars[position].Start = signs_by_index.get(j, 0)
+                threshold_var.Start = min(threshold_start, len(candidate_inputs[i]))
 
         if log_file is not None:
             model.Params.LogFile = log_file
@@ -328,13 +364,15 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
 
             assert threshold <= sum(abs(s) for s in signs)
 
-            for j in range(len(inferred_model.vertices)):
-                if signs[j] != 0:
+            for position, j in enumerate(candidate_inputs[i]):
+                if signs[position] != 0:
                     inferred_model.edges.append((inferred_model.vertices[j], inferred_model.vertices[i]))
             signs = [s for s in signs if s != 0]
             # threshold = max(-len(signs), min(threshold, len(signs) + 1))
-            func = SymmetricThresholdFunction(signs, threshold)
-            inferred_model.vertices[i].function = func
+            # a node that ended up using no input holds its value, which is what an absent function means in
+            # Network.next_state - the same semantics the unused-node indicator gave it in the model
+            inferred_model.vertices[i].function = (
+                SymmetricThresholdFunction(signs, threshold) if signs else None)
     finally:
         model.dispose()
     return inferred_model
