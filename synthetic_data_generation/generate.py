@@ -10,6 +10,7 @@ import numpy as np
 import logging
 import enum
 import configargparse
+import json
 from attractor_learning.graphs import FunctionTypeRestriction
 import itertools
 import re
@@ -48,6 +49,74 @@ def find_model_dirs(graphs_dir):
     return sorted(found)
 
 
+# Files generate_data writes for one network. A directory holding all of them (non-empty) is finished and
+# is skipped on a re-run.
+NETWORK_OUTPUT_FILES = ("source_model.txt", "true_network.json", "scaffold_network.json",
+                        "real_matrices.npz", "noisy_matrices.npz")
+
+# Parameters recorded beside the generated data, so a re-run can tell whether it is continuing the same job.
+# The config file's path and the output location are excluded: neither changes what gets generated, and
+# requiring them to match would refuse a resume that is actually valid.
+GENERATION_PARAMS_FILE = "generation_params.json"
+_FINGERPRINT_EXCLUDED = {"config", "data_output_parent_dir", "regenerate"}
+
+
+def network_data_is_complete(graph_path):
+    """True iff graph_path already holds every (non-empty) file generation writes for one network, so it can
+    be skipped. A network killed part-way through is missing at least one and is regenerated from scratch."""
+    return all(os.path.exists(os.path.join(graph_path, name)) and
+               os.path.getsize(os.path.join(graph_path, name)) > 0
+               for name in NETWORK_OUTPUT_FILES)
+
+
+def generation_fingerprint(kwargs):
+    """JSON-serializable record of the parameters a data directory was generated with."""
+    return {key: (value.name if isinstance(value, enum.Enum) else value)
+            for key, value in sorted(kwargs.items()) if key not in _FINGERPRINT_EXCLUDED}
+
+
+def prepare_data_dir(data_dir_path, kwargs, regenerate):
+    """Make data_dir_path ready to be written into, and return whether finished networks in it may be kept.
+
+    Resuming is only safe when the run is the same job: the directory name carries the swept parameters, but
+    the constant ones (graphs_dir, state_sample_type, sample_to_model_freq_ratio, ...) are not in it, so a
+    changed constant would otherwise mix data from two different configurations under one name. The
+    parameters are therefore recorded in the directory and compared; anything that does not match, including
+    a directory written before this file existed, is regenerated rather than continued.
+
+    use_random_network never resumes, whatever the parameters say. There the reference graphs are randomized
+    afresh on every run, so network_<index> is a different network each time: the networks kept from an
+    earlier run would not be the ones this run produced, and the folder would end up holding graphs from two
+    unrelated draws with nothing recording which came from where."""
+    fingerprint = generation_fingerprint(kwargs)
+    fingerprint_path = os.path.join(data_dir_path, GENERATION_PARAMS_FILE)
+    if os.path.exists(data_dir_path) and not regenerate and not kwargs.get('use_random_network'):
+        stored = None
+        if os.path.exists(fingerprint_path):
+            try:
+                with open(fingerprint_path) as f:
+                    stored = json.load(f)
+            except ValueError:
+                stored = None
+        if stored == fingerprint:
+            print("Continuing {}: finished networks in it will be kept".format(data_dir_path))
+            return True
+        reason = "it was generated with different parameters" if stored is not None else \
+            "it holds no record of the parameters it was generated with"
+        print("Regenerating {} from scratch: {}".format(data_dir_path, reason))
+    if os.path.exists(data_dir_path):
+        if regenerate:
+            print("Regenerating {} from scratch: --regenerate was given".format(data_dir_path))
+        elif kwargs.get('use_random_network'):
+            print("Regenerating {} from scratch: use_random_network randomizes the reference graphs per "
+                  "run, so networks from an earlier run cannot be continued".format(data_dir_path))
+        shutil.rmtree(data_dir_path, ignore_errors=True)
+    os.makedirs(data_dir_path)
+    with open(fingerprint_path, 'w') as f:
+        json.dump(fingerprint, f, indent=1)
+    return False
+
+
 def main():
     p = configargparse.ArgParser(default_config_files=['./config.txt'])
     p.add_argument('-c', '--config', required=False, is_config_file=True, help='config file path to override defaults')
@@ -81,6 +150,9 @@ def main():
     p.add_argument('--only_attractors', required=False, default=None, type=parse_bool_option,
                    action='append')
     p.add_argument('--attractor_estimation_n_walks', required=False, type=int)
+    # by default a re-run continues a data directory generated with the same parameters, skipping the
+    # networks already finished in it; this forces the directory to be rebuilt from scratch instead
+    p.add_argument('--regenerate', required=False, default=False, type=parse_bool_option)
     options = p.parse_args()
     if options.only_attractors is None:
         options.only_attractors = [False]  # kept a list so it stays a (single-valued) varying option
@@ -131,9 +203,7 @@ def main():
         kwargs.update(constant_options)
 
         data_dir_path = os.path.join(kwargs['data_output_parent_dir'], comb_str)
-        if os.path.exists(data_dir_path):
-            shutil.rmtree(data_dir_path, ignore_errors=True)
-        os.makedirs(data_dir_path)
+        resuming = prepare_data_dir(data_dir_path, kwargs, kwargs['regenerate'])
 
         logger = logging.getLogger()
         logging.basicConfig(filename=os.path.join(kwargs['data_output_parent_dir'], comb_str, "log.txt"),
@@ -161,12 +231,19 @@ def main():
         # network_<index> numbering restarts inside each group, so a grouped graphs_dir keeps its shape
         # here: data_dir_path/<group>/network_<index>. Flat graphs_dirs (group "") are unchanged.
         index_in_group = dict()
+        n_skipped = 0
         for relative_path, reference_graph in reference_graphs:
             group = os.path.dirname(relative_path) if relative_path else ""
             graph_index = index_in_group.get(group, 0)
             index_in_group[group] = graph_index + 1
             graph_path = os.path.join(data_dir_path, group, "network_{}".format(graph_index))
-            os.makedirs(graph_path)
+            # the index is positional, so it has to be advanced for every reference graph whether or not
+            # this one is regenerated - hence the skip here rather than earlier
+            if resuming and network_data_is_complete(graph_path):
+                logger.info("skipping {}: already generated".format(graph_path))
+                n_skipped += 1
+                continue
+            os.makedirs(graph_path, exist_ok=True)
             # the index is positional, so record which model it came from - otherwise a folder of named
             # models (the toy families, say) is unreadable downstream
             with open(os.path.join(graph_path, "source_model.txt"), 'w') as source_file:
@@ -186,6 +263,10 @@ def main():
 
             np.savez(os.path.join(graph_path, "real_matrices"), **named_real_matrices)
             np.savez(os.path.join(graph_path, "noisy_matrices"), **named_noisy_matrices)
+
+        if n_skipped:
+            print("Kept {} of {} networks already generated in {}".format(
+                n_skipped, len(reference_graphs), data_dir_path))
 
 
 if __name__ == "__main__":
