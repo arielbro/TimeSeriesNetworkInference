@@ -39,13 +39,20 @@ def generate_random_graphs(graphs_dir, **kwargs):
 
     for G in reference_graphs:
         for _ in range(kwargs['random_networks_per_reference']):
-            random_graph = G.copy()
-            random_graph.randomize_edges_by_switching(n_attempts=1000)
-            random_graph.randomize_functions(mutate_input_nodes=kwargs['mutate_input_nodes'],
-                                             preserve_truth_ratio=kwargs['preserve_truth_ratio'],
-                                             function_type_restriction=kwargs['function_type_restriction'])
-            assert random_graph != G
-            yield random_graph
+            yield randomize_reference_graph(G, **kwargs)
+
+
+def randomize_reference_graph(reference, **kwargs):
+    """One randomization of a reference graph: degree-preserving edge switching, then fresh functions.
+    Split out of generate_random_graphs so a worker process can randomize a reference it parsed itself -
+    a Network holding truth-table functions cannot be pickled, so it cannot be handed to one."""
+    random_graph = reference.copy()
+    random_graph.randomize_edges_by_switching(n_attempts=1000)
+    random_graph.randomize_functions(mutate_input_nodes=kwargs['mutate_input_nodes'],
+                                     preserve_truth_ratio=kwargs['preserve_truth_ratio'],
+                                     function_type_restriction=kwargs['function_type_restriction'])
+    assert random_graph != reference
+    return random_graph
 
 
 def generate_scaffold_network(G, **kwargs):

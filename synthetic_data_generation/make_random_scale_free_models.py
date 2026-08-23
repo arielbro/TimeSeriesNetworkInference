@@ -30,7 +30,7 @@ from attractor_learning.logic import SymmetricThresholdFunction
 
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data",
                           "random_scale_free_models")
-SIZES = [5, 10, 50, 250, 1000]
+SIZES = [5, 10, 50, 250]
 MODELS_PER_SIZE = 10
 # One directory per size, holding that size's models. Data generation mirrors a graphs_dir's grouping into
 # the generated data, and inference mirrors it again into its output, so this level survives all the way to
