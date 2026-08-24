@@ -323,7 +323,7 @@ def main():
 
         if n_skipped:
             print("Kept {} of {} networks already generated in {}".format(
-                n_skipped, len(reference_graphs), data_dir_path))
+                n_skipped, len(references), data_dir_path))
 
 
 if __name__ == "__main__":
