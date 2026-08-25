@@ -37,32 +37,39 @@ def walk_to_attractor(G, initial_state, max_walk=None, state_to_attractor_mappin
         state_to_attractor_mapping = dict()
 
     step_number = 0
-    # TODO: optimize with hash table while still keeping an ordered list alongside.
-    visited_states = [initial_state]
-    current_state = G.next_state(initial_state)
-    while current_state not in visited_states and current_state not in state_to_attractor_mapping and \
+    # states are used as dict keys here, and callers pass lists as well as tuples
+    current_state = tuple(initial_state)
+    # The list keeps the order, which the cycle needs; the index beside it answers "have I been here?" in
+    # constant time. Scanning the list for that, as this did before, costs O(walk length ** 2) comparisons
+    # of n-element tuples, which dominates the run time on a network whose transients are long - a chaotic
+    # NK network, say, where a walk visits hundreds of states before it closes a cycle.
+    visited_states = [current_state]
+    visited_index = {current_state: 0}
+    current_state = G.next_state(current_state)
+    while current_state not in visited_index and current_state not in state_to_attractor_mapping and \
             (step_number < max_walk if max_walk is not None else True):
+        visited_index[current_state] = len(visited_states)
         visited_states.append(current_state)
         current_state = G.next_state(current_state)
         step_number += 1
 
     if current_state in state_to_attractor_mapping:
         # stepped into the basin of a known attractor (including inside the attractor).
+        attractor = state_to_attractor_mapping[current_state]
         for state in visited_states:
-            state_to_attractor_mapping[state] = state_to_attractor_mapping[current_state]
-        return state_to_attractor_mapping[current_state]
+            state_to_attractor_mapping[state] = attractor
+        return attractor
     elif (max_walk is not None) and step_number == max_walk:
         # An exhausting walk.
         return None
-    elif current_state in visited_states:
+    elif current_state in visited_index:
         # A new attractor!
-        cycle_start_index = visited_states.index(current_state)
-        attractor = tuple(visited_states[cycle_start_index:])
+        attractor = tuple(visited_states[visited_index[current_state]:])
         # print("walked attractor: {}".format(attractor))
         # for state in attractor:
         #     print("source: {}. next: {}".format(state, G.next_state(state)))
         for state in visited_states:
-            state_to_attractor_mapping[tuple(state)] = attractor
+            state_to_attractor_mapping[state] = attractor
         return attractor
     else:
         raise ValueError("Reached impossible case after network simulation")
@@ -85,21 +92,16 @@ def estimate_attractors(G, n_walks, max_walk_len=None, with_basins=True):
     n = len(G.vertices)
     if max_walk_len is None:
         max_walk_len = 2**n
-    attractors = list()
     # TODO: find how far we are from finding all (using sum(len(attractor)) for those found)
+    # The shared mapping is what deduplicates: discovering a cycle records every one of its states, so a
+    # later walk entering that cycle from any point returns the very same attractor object. A
+    # rotation-invariant rescan of every attractor found so far used to run here too, costing
+    # O(walks * attractors) comparisons, each trying every rotation of both cycles - and its result was
+    # never read, since both returns below are built from the mapping instead.
     state_to_attractor_mapping = dict()  # used to stop walks early as soon as you know who's basin it is.
     for walk in range(n_walks):
-        initial_state = random_state(G)
-        attractor = walk_to_attractor(G, initial_state, max_walk=max_walk_len,
-                                      state_to_attractor_mapping=state_to_attractor_mapping)
-        if attractor is not None:
-            is_new = True
-            for other_attractor in attractors:
-                if utility.is_same_attractor(attractor, other_attractor):
-                    is_new = False
-                    break
-            if is_new:
-                attractors.append(attractor)
+        walk_to_attractor(G, random_state(G), max_walk=max_walk_len,
+                          state_to_attractor_mapping=state_to_attractor_mapping)
 
     attractor_to_basin = dict()
     for state, attractor in state_to_attractor_mapping.items():

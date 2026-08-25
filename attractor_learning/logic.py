@@ -10,11 +10,16 @@ import random
 class BooleanSymbolicFunc(object):
     def __init__(self, input_names=None, boolean_outputs=None, formula=None, simplify_boolean_outputs=False):
         # make all fields immutable, so the function can be shallow copied safely.
-        self._boolean_outputs = None if boolean_outputs is None else tuple(boolean_outputs)
+        # Kept aside rather than assigned here: the formula setter below clears _boolean_outputs, so a table
+        # stored before it would be thrown away, and __call__ would be left evaluating the lambdified sympy
+        # formula on every call - about ten times the cost of a lookup, in the inner loop of every simulation.
+        given_outputs = None if boolean_outputs is None else tuple(boolean_outputs)
+        self._boolean_outputs = given_outputs
 
         if formula is not None:
             self.input_vars = tuple(sorted(formula.free_symbols, key=lambda x: x.name))
             self.formula = formula
+            self._boolean_outputs = given_outputs
             return
 
         if input_names is None:
@@ -31,6 +36,7 @@ class BooleanSymbolicFunc(object):
         if n_inputs == 0:
             assert len(boolean_outputs) == 1
             self.formula = boolean_outputs[0]
+            self._boolean_outputs = given_outputs
             return
         # TODO: Karnaugh maps? Sympy simplification?
         positive_row_clauses = [sympy.And(*terms) for b_output, terms in zip(
@@ -39,6 +45,7 @@ class BooleanSymbolicFunc(object):
         if simplify_boolean_outputs:
             start = time.time()
             self.formula = sympy.simplify(self.formula)
+        self._boolean_outputs = given_outputs
 
     @property
     def boolean_outputs(self):
@@ -64,6 +71,16 @@ class BooleanSymbolicFunc(object):
     def __call__(self, *input_values):
         if isinstance(self.formula, bool) or (len(self.input_vars) == 0):
             return self.formula
+        if self._boolean_outputs is not None:
+            # Straight truth-table lookup, first input as the most significant bit - the order
+            # boolean_outputs is built in, both here (itertools.product over the inputs) and everywhere it
+            # is read. Only taken when the table is already held: the property would otherwise build it by
+            # evaluating the formula over all 2**in-degree rows, which is exactly what must not happen for
+            # a node with a large in-degree.
+            row = 0
+            for value in input_values:
+                row = (row << 1) | (1 if value else 0)
+            return self._boolean_outputs[row]
         # print self.formula
         # print type(self.formula)
         if self.formula is not None:
