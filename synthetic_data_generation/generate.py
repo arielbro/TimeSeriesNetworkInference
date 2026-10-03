@@ -74,10 +74,40 @@ def network_data_is_complete(graph_path):
                for name in NETWORK_OUTPUT_FILES)
 
 
+# Options added after data was already being generated, with the default that reproduces the earlier
+# behavior. At that default they are left out of the fingerprint, so a directory recorded before the option
+# existed still matches and is continued rather than regenerated.
+_FINGERPRINT_OMITTED_AT_DEFAULT = {"hide_scaffold_directions": False}
+
+
 def generation_fingerprint(kwargs):
     """JSON-serializable record of the parameters a data directory was generated with."""
     return {key: (value.name if isinstance(value, enum.Enum) else value)
-            for key, value in sorted(kwargs.items()) if key not in _FINGERPRINT_EXCLUDED}
+            for key, value in sorted(kwargs.items()) if key not in _FINGERPRINT_EXCLUDED and
+            not (key in _FINGERPRINT_OMITTED_AT_DEFAULT and value == _FINGERPRINT_OMITTED_AT_DEFAULT[key])}
+
+
+# Boolean options that change what is generated, with the abbreviation each takes in the data directory
+# name, and whether it only has an effect with use_random_network (the other options there act on the
+# randomization, which does not happen without it).
+_NAMED_FLAGS = (
+    ("use_random_network", "randnet", False),
+    ("mutate_input_nodes", "mutinputs", True),
+    ("preserve_truth_ratio", "keeptruthratio", True),
+    ("preserve_input_nodes_on_add", "keepinputs", False),
+    ("hide_scaffold_directions", "hidedir", False),
+)
+
+
+def set_flags_name_parts(kwargs):
+    """"<abbreviation>=True" for each flag in _NAMED_FLAGS that is set and takes effect, to be appended to
+    the data directory name. Each is a constant option, so it would otherwise be missing from the name and
+    data generated with and without it would land in the same directory.
+
+    A flag at its default (False) is left out, so a directory generated with none of them set keeps the
+    name it had before flags were added to it, and a run that is continued still finds its data."""
+    return ["{}=True".format(short_name) for name, short_name, needs_random_network in _NAMED_FLAGS
+            if kwargs.get(name) and (kwargs.get('use_random_network') or not needs_random_network)]
 
 
 def prepare_data_dir(data_dir_path, kwargs, regenerate):
@@ -207,6 +237,9 @@ def main():
     p.add_argument('--preserve_truth_ratio', required=False, default=False,  type=parse_bool_option)
     p.add_argument('--function_type_restriction', required=False, type=str, action='append')
     p.add_argument('--preserve_input_nodes_on_add', required=False, default=False,  type=parse_bool_option)
+    p.add_argument('--hide_scaffold_directions', required=False, default=False, type=parse_bool_option,
+                   help='after the scaffold edge noise, add (v, u) for every scaffold edge (u, v), so inference '
+                        'is given which nodes interact but not in which direction')
     p.add_argument('--scaffold_network_added_edge_fraction', required=False,
                    type=parse_added_edge_fraction, action='append',
                    help='fraction of the reference graph\'s edges to add to the scaffold, or "all" for a '
@@ -274,6 +307,7 @@ def main():
         # kwargs = options_combination | constant_options (works on python>=3.9)
         kwargs = options_combination.copy()
         kwargs.update(constant_options)
+        comb_str = "-".join([comb_str] + set_flags_name_parts(kwargs))
 
         data_dir_path = os.path.join(kwargs['data_output_parent_dir'], comb_str)
         resuming = prepare_data_dir(data_dir_path, kwargs, kwargs['regenerate'])

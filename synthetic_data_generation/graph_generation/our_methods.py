@@ -62,6 +62,8 @@ def generate_scaffold_network(G, **kwargs):
     :param added_edge_frac: fraction of current amount of edges to add. |E'|=(1+added_edge_frac)|E|.
         The string "all" instead gives the full scaffold - every possible edge, so inference is
         unconstrained by the scaffold's topology - in which case removed_edge_frac is ignored.
+    :param hide_scaffold_directions: (kwarg, default False) after the noise, add (v, u) for every edge (u, v),
+        so the scaffold carries no edge directions. See _finalize_scaffold.
     :param G:
     :return:
     """
@@ -80,10 +82,7 @@ def generate_scaffold_network(G, **kwargs):
         targets = [v for v in scaffold.vertices
                    if (not preserve_input_nodes_on_add) or len(v.predecessors()) > 0]
         scaffold.edges = [(u, v) for v in targets for u in scaffold.vertices]
-        for node in scaffold.vertices:
-            node.precomputed_predecessors = None
-            node.precomputed_successors = None
-        return scaffold
+        return _finalize_scaffold(scaffold, **kwargs)
 
     n_removed_edges = int(len(scaffold.edges) * removed_edge_frac)
     removed_edges = random.sample(scaffold.edges, n_removed_edges)
@@ -112,6 +111,24 @@ def generate_scaffold_network(G, **kwargs):
     for edge in removed_edges:
         scaffold.edges.remove(edge)
     scaffold.edges.extend(added_edges)
+    return _finalize_scaffold(scaffold, **kwargs)
+
+
+def _finalize_scaffold(scaffold, **kwargs):
+    """Last step of generate_scaffold_network, after the edge addition and removal noise.
+
+    With hide_scaffold_directions, every edge (u, v) also puts (v, u) in the scaffold, so inference sees
+    which pairs interact but not which way. That is applied to the noisy edge set, so an edge the noise added
+    is mirrored like any other, and an edge it removed in both directions stays out. It overrides
+    preserve_input_nodes_on_add: an input node with an outgoing edge gets the mirrored edge as an input."""
+    if kwargs.get('hide_scaffold_directions', False):
+        existing_edges = set(scaffold.edges)
+        mirrored_edges = []
+        for (u, v) in scaffold.edges:
+            if (v, u) not in existing_edges:
+                existing_edges.add((v, u))
+                mirrored_edges.append((v, u))
+        scaffold.edges.extend(mirrored_edges)
     for node in scaffold.vertices:
         node.precomputed_predecessors = None
         node.precomputed_successors = None
