@@ -7,7 +7,9 @@ transition is a consecutive pair of rows within one matrix.
 
 Two families live here:
   * Scaffold-topology baselines (random_model, exact_match_else_random, linear_classifier): keep the
-    scaffold's edges and only decide each node's Boolean function.
+    scaffold's edges and only decide each node's Boolean function. linear_classifier leaves that family with
+    allow_additional_edges on: it then takes every node as a feature and its regulators are the features
+    the lasso keeps, under the same in-degree bound as REVEAL / Best-Fit.
   * Published topology-inferring methods (REVEAL, Best-Fit): infer each node's regulators by searching
     regulator sets of size up to an in-degree bound. With allow_additional_edges on (the published,
     topology-free behaviour) the scaffold is used only to derive that bound when max_indegree == -1 (its
@@ -127,14 +129,22 @@ def exact_match_else_random_inference(data_matrices, scaffold_network, **kwargs)
     return inferred_model
 
 
-def linear_classifier_inference(data_matrices, scaffold_network, lasso_C=DEFAULT_LASSO_C, **kwargs):
+def linear_classifier_inference(data_matrices, scaffold_network, lasso_C=DEFAULT_LASSO_C,
+                                allow_additional_edges=False, max_indegree=-1,
+                                emit_static_as_input=EMIT_STATIC_GENES_AS_INPUTS, **kwargs):
     """For each node, fit a logistic regression (cross-entropy loss, L1/lasso regularization) predicting the
     node's next value from its scaffold predecessors' current values, then realize the learned classifier as
     a full truth table (predicting all 2**degree input rows).
 
     Degenerate cases keep the classifier's spirit: a node whose training outputs are all one class becomes
     the corresponding constant function; a node with no training transitions falls back to a fair-coin table.
+
+    allow_additional_edges=True instead uses every node as a feature - see
+    _linear_classifier_all_features_inference, which max_indegree and emit_static_as_input apply to.
     """
+    if allow_additional_edges:
+        return _linear_classifier_all_features_inference(data_matrices, scaffold_network, lasso_C,
+                                                         max_indegree, emit_static_as_input)
     inferred_model = scaffold_network.copy()
     data_matrices = [np.asarray(matrix) for matrix in data_matrices]
     for vertex in inferred_model.vertices:
@@ -166,6 +176,62 @@ def linear_classifier_inference(data_matrices, scaffold_network, lasso_C=DEFAULT
         vertex.function = BooleanSymbolicFunc(input_names=[u.name for u in predecessors],
                                               boolean_outputs=outputs)
     return inferred_model
+
+
+def _linear_classifier_all_features_inference(data_matrices, scaffold_network, lasso_C, max_indegree,
+                                              emit_static_as_input):
+    """linear_classifier with allow_additional_edges: each node's classifier is fit on every node's current
+    value (itself included), so the scaffold's edges play no part, and the node's regulators are the features
+    the lasso keeps.
+
+    The truth table is built over those regulators only, never over all n features. That is exact, not an
+    approximation: a feature with a zero coefficient cannot change a prediction. The scaffold still sets the
+    bound on how many are kept, exactly as for REVEAL and Best-Fit - max_indegree, or the scaffold's max
+    in-degree when -1 - so the table is never larger than the scaffold-restricted classifier's would be. A
+    node whose lasso keeps more than that is refit on the ones with the largest |coefficient|. (Refitting on
+    the kept features alone also reproduces the classifier when nothing was dropped, since the full fit is
+    already optimal on them.)
+
+    emit_static_as_input is the REVEAL / Best-Fit treatment of a node that only ever holds its value: with
+    every node a feature, its own current value predicts it perfectly, and it would otherwise come out as a
+    false-positive self-loop. A node that ends up constant - one output class in the data, or no feature kept
+    - is given one randomly chosen input, the way inference_scoring.prune_ignored_inputs represents a
+    constant (a node with no inputs holds its value instead). A run with no transitions at all returns every
+    node as an input node, as REVEAL and Best-Fit do."""
+    vertices = list(scaffold_network.vertices)
+    names = [v.name for v in vertices]
+    n = len(names)
+    X, Y = _transition_table(list(data_matrices))
+    k = max_indegree if max_indegree != -1 else scaffold_network.max_in_degree()
+    k = min(k, n)
+
+    edges, functions = [], [None] * n
+    if X is None or k < 1:
+        return Network(vertex_names=names, edges=edges, vertex_functions=functions)
+    for i in range(n):
+        y = Y[:, i]
+        if emit_static_as_input and np.all(y == X[:, i]):
+            continue  # only ever holds its value (source node / constant) -> input node
+        regulators, outputs = [], None
+        if len(np.unique(y)) == 2:
+            full_classifier = _fit_l1_logistic(X, y, lasso_C)
+            coefficients = np.abs(full_classifier.coef_[0])
+            kept = [j for j in np.argsort(-coefficients, kind='stable')[:k] if coefficients[j] > 0]
+            regulators = sorted(int(j) for j in kept)  # ascending -> first regulator is MSB
+            if regulators:
+                rows = np.array(list(itertools.product([0, 1], repeat=len(regulators))), dtype=int)
+                classifier = _fit_l1_logistic(X[:, regulators], y, lasso_C)
+                outputs = [bool(prediction) for prediction in classifier.predict(rows)]
+            else:
+                # every coefficient is zero, so the prediction is the same on any row
+                constant = bool(full_classifier.predict(X[:1])[0])
+        else:
+            constant = bool(y[0])
+        if not regulators:
+            regulators, outputs = [random.randrange(n)], [constant, constant]
+        functions[i] = BooleanSymbolicFunc(input_names=[names[j] for j in regulators], boolean_outputs=outputs)
+        edges.extend((names[j], names[i]) for j in regulators)
+    return Network(vertex_names=names, edges=edges, vertex_functions=functions)
 
 
 # ---------------------------------------------------------------------------------------------------------
