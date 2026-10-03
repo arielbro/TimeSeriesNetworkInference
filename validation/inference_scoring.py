@@ -240,6 +240,76 @@ def sparse_accuracy_score(x, y):
         return accuracy_score(x, y)
 
 
+def varying_columns(matrix):
+    """Boolean mask over the columns of one time-series matrix, True where the node is not constant down
+    the matrix's rows - i.e. neither all zeros nor all ones, the two constant cases a binary matrix has.
+
+    A node that holds the same value at every scored timepoint says nothing about whether the model got
+    the dynamics right: any model that happens to hold it there scores it perfectly. In a sparse regime
+    those nodes are most of the matrix, so they dominate the full-matrix accuracy; masking to the varying
+    ones scores only the positions where the prediction had something to get wrong.
+    """
+    arr = np.asarray(matrix)
+    if arr.shape[0] == 0:
+        return np.zeros(arr.shape[1], dtype=bool)
+    return np.any(arr != arr[0], axis=0)
+
+
+def timeseries_score_vectors(ref_matrices, pred_matrices, keys=None, varying_only=False):
+    """Flattened (y_true, y_pred) over the predicted part of a group of time-series matrices, the pair
+    every time-series accuracy in this project is computed from.
+
+    Scoring starts at row 1: row 0 is the state the model was seeded with, not something it predicted.
+    With varying_only, each matrix additionally keeps only its varying columns (see varying_columns),
+    taken from the GROUND TRUTH matrix and over the same rows that are scored - so the varying score
+    always covers a subset of the positions the full score covers, and a node counts as varying only if
+    it varies where the model is being graded. The mask is per matrix, as one trajectory's constant node
+    is another's varying one.
+
+    ref_matrices and pred_matrices are anything mapping a key to a (timepoints x nodes) array - a dict or
+    an open .npz. keys defaults to the predicted matrices' own keys, which is what identifies the group
+    (train/test) a set of predictions was made for.
+    """
+    keys = list(pred_matrices.keys()) if keys is None else list(keys)
+    refs, preds = [], []
+    for key in keys:
+        ref = np.asarray(ref_matrices[key])[1:, ]
+        pred = np.asarray(pred_matrices[key])[1:, ]
+        assert ref.shape == pred.shape, \
+            "reference and prediction matrices differ in shape for key {}: {} vs {}".format(
+                key, ref.shape, pred.shape)
+        if varying_only:
+            mask = varying_columns(ref)
+            ref, pred = ref[:, mask], pred[:, mask]
+        refs.append(ref.flatten())
+        preds.append(pred.flatten())
+    if not refs:
+        return np.empty(0), np.empty(0)
+    return np.concatenate(refs), np.concatenate(preds)
+
+
+def timeseries_accuracy_score(ref_matrices, pred_matrices, keys=None, varying_only=False):
+    """Accuracy of the predicted time series against the reference one, over the full matrices or over
+    the varying nodes alone (see timeseries_score_vectors).
+
+    NaN when nothing is left to score: with varying_only, a group whose every node is constant in every
+    trajectory has no positions the metric is defined over. That is a real (if uninformative) outcome,
+    not a failure, so it is kept apart from the 0.0 the analysis scores an unfinished run as.
+    """
+    y_true, y_pred = timeseries_score_vectors(ref_matrices, pred_matrices, keys=keys,
+                                              varying_only=varying_only)
+    if y_true.size == 0:
+        return float('nan')
+    return sparse_accuracy_score(y_true, y_pred)
+
+
+def timeseries_varying_score_filename(name, group):
+    """Name (no extension) of the file holding one varying-node accuracy score, beside the full-matrix
+    score it accompanies: timeseries_<name>_accuracy_score_<group>.npy gains a _varying counterpart.
+    name is the comparison ('real', 'reference', 'real_start'), group is 'train' or 'test'."""
+    return "timeseries_{}_varying_accuracy_score_{}".format(name, group)
+
+
 def sparse_jaccard_score(x, y):
     """
     Returns the Jaccard index (intersection-over-union) of equal length binary x and y, i.e.

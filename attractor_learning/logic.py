@@ -180,6 +180,104 @@ class BooleanSymbolicFunc(object):
         return BooleanSymbolicFunc(input_names=d["input_names"], boolean_outputs=d["boolean_outputs"])
 
 
+class SparseBooleanFunc(object):
+    """A general Boolean function stored as the truth-table rows that disagree with its majority output.
+
+    Fills the same role as BooleanSymbolicFunc - an arbitrary Boolean function of named inputs, called
+    positionally in predecessor order - but holds neither a 2**in-degree truth table nor a sympy formula.
+    A strongly biased function, which is what criticality demands at a high in-degree, disagrees with its
+    majority value on few rows, so storing those row indices costs O(minority rows) rather than
+    O(2**in-degree), and neither construction nor evaluation ever walks the full table.
+
+    The price is that there is no `formula`. Paths that need a sympy expression - ilp.py's model finding,
+    attractors.py's function perturbation, Network.remove_edge - cannot take one of these. That is the
+    limitation SymmetricThresholdFunction already carries, for the same reason: a function with a large
+    in-degree has no compact DNF to hand them.
+
+    `minority_rows` index the truth table with the FIRST input as the most significant bit - the order
+    BooleanSymbolicFunc.boolean_outputs is built in - so the two representations number rows identically
+    and a function can be converted between them without reordering.
+    """
+
+    def __init__(self, input_names, minority_rows, default_output):
+        self.input_names = tuple(input_names)
+        self.default_output = bool(default_output)
+        self.minority_rows = frozenset(int(row) for row in minority_rows)
+        n_rows = 2 ** len(self.input_names)
+        if self.minority_rows and (min(self.minority_rows) < 0 or max(self.minority_rows) >= n_rows):
+            raise ValueError("minority row index out of range for {} inputs".format(len(self.input_names)))
+        # The stored form is canonical, and that is what lets __eq__ and __hash__ answer without
+        # materializing 2**in-degree rows: once the minority is required to be the smaller side of the
+        # table, with True taking the tie at exactly half, a function has exactly one description here.
+        if (2 * len(self.minority_rows) > n_rows) or \
+                (2 * len(self.minority_rows) == n_rows and not self.default_output):
+            raise ValueError("minority_rows must be the smaller side of the table (got {} of {} rows with "
+                             "default {}); a function that balanced belongs in a BooleanSymbolicFunc"
+                             .format(len(self.minority_rows), n_rows, self.default_output))
+
+    def __call__(self, *input_values):
+        if len(input_values) != len(self.input_names):
+            raise ValueError("expected {} inputs, got {}".format(len(self.input_names), len(input_values)))
+        row = 0
+        for value in input_values:
+            row = (row << 1) | (1 if value else 0)
+        return (not self.default_output) if row in self.minority_rows else self.default_output
+
+    @property
+    def boolean_outputs(self):
+        """The full truth table in BooleanSymbolicFunc's row order. 2**in-degree entries, which is exactly
+        what this class exists to avoid - it is here for the small-in-degree comparisons that want it."""
+        return tuple((not self.default_output) if row in self.minority_rows else self.default_output
+                     for row in range(2 ** len(self.input_names)))
+
+    def _canonical_key(self):
+        """A hashable key identical iff two functions are equal - see the canonical form in __init__."""
+        return (len(self.input_names), self.default_output, self.minority_rows)
+
+    def to_dict(self):
+        """Serialization by minority rows; sorted so the file is byte-identical across runs (the rows are
+        held in a set, whose iteration order is not a promise)."""
+        return {"type": "sparse_boolean",
+                "input_names": list(self.input_names),
+                "default_output": self.default_output,
+                "minority_rows": sorted(self.minority_rows)}
+
+    @staticmethod
+    def from_dict(d):
+        return SparseBooleanFunc(input_names=d["input_names"], minority_rows=d["minority_rows"],
+                                 default_output=d["default_output"])
+
+    def __str__(self):
+        return "default={}, {} minority row(s) of {}".format(
+            self.default_output, len(self.minority_rows), 2 ** len(self.input_names))
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __eq__(self, other):
+        if other is None:
+            return False
+        # compact comparisons (no 2**in-degree truth table) for the cases that occur in bulk
+        if isinstance(other, SparseBooleanFunc):
+            return self._canonical_key() == other._canonical_key()
+        if other in [False, True, sympy.false, sympy.true]:
+            return len(self.minority_rows) == 0 and self.default_output == bool(other)
+        # general fallback for arbitrary callables, at the cost this class is built to avoid
+        try:
+            for input_comb in itertools.product([False, True], repeat=len(self.input_names)):
+                if self(*input_comb) != other(*input_comb):
+                    return False
+        except (ValueError, TypeError):
+            return False
+        return True
+
+    def __hash__(self):
+        return hash(self._canonical_key())
+
+    def __ne__(self, other):
+        return not self == other
+
+
 class SymmetricThresholdFunction(object):
     # TODO: implement in ILP model finding (threshold is not boolean, not supported there ATM)
     def __init__(self, signs, threshold):

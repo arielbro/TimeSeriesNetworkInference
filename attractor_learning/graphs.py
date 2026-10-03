@@ -8,7 +8,7 @@ import sympy
 import os
 import csv
 from scipy.stats import binom
-from .logic import BooleanSymbolicFunc, SymmetricThresholdFunction
+from .logic import BooleanSymbolicFunc, SparseBooleanFunc, SymmetricThresholdFunction
 from .utility import list_repr
 import copy
 
@@ -466,6 +466,10 @@ class Network(object):
             assert len(f.signs) == len(vertex.predecessors()), \
                 "threshold function arity does not match in-degree for vertex {}".format(vertex.name)
             return f.to_dict()
+        if isinstance(f, SparseBooleanFunc):
+            # a general Boolean function too large for a truth table, kept as its disagreeing rows
+            assert len(f.input_names) == len(vertex.predecessors()),                 "sparse function arity does not match in-degree for vertex {}".format(vertex.name)
+            return f.to_dict()
         if isinstance(f, BooleanSymbolicFunc):
             # check arity, not names: general inference builds these with generic input_0.. names, but the
             # call path is positional (predecessor-index order), which to_dict/from_dict preserves.
@@ -483,6 +487,8 @@ class Network(object):
             return bool(descriptor["value"])
         if kind == "symmetric_threshold":
             return SymmetricThresholdFunction.from_dict(descriptor)
+        if kind == "sparse_boolean":
+            return SparseBooleanFunc.from_dict(descriptor)
         if kind == "boolean_symbolic":
             return BooleanSymbolicFunc.from_dict(descriptor)
         raise ValueError("Unknown serialized function type {}".format(kind))
