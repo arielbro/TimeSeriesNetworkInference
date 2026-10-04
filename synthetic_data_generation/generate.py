@@ -314,6 +314,12 @@ def main():
         # kwargs = options_combination | constant_options (works on python>=3.9)
         kwargs = options_combination.copy()
         kwargs.update(constant_options)
+        # Likewise hide_scaffold_directions on a full scaffold: without preserve_input_nodes_on_add that
+        # scaffold already holds every ordered pair, so mirroring adds nothing, and the combination is named
+        # and recorded as the unmirrored one it equals.
+        if kwargs.get('scaffold_network_added_edge_fraction') == FULL_SCAFFOLD and \
+                not kwargs.get('preserve_input_nodes_on_add'):
+            kwargs['hide_scaffold_directions'] = False
         comb_str = "-".join([comb_str] + set_flags_name_parts(kwargs))
         if comb_str in generated_comb_strs:
             print("Skipping {}: already generated in this run (the full scaffold removes no edges, so the "
