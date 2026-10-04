@@ -2,7 +2,7 @@ import os
 import shutil
 from attractor_learning import graphs
 from synthetic_data_generation.graph_generation.our_methods import generate_random_graphs, \
-    generate_scaffold_network, parse_added_edge_fraction, randomize_reference_graph
+    generate_scaffold_network, parse_added_edge_fraction, randomize_reference_graph, FULL_SCAFFOLD
 from concurrent.futures import ProcessPoolExecutor
 import random
 from synthetic_data_generation.time_series_generation.our_methods import generate_experiments_data
@@ -288,9 +288,16 @@ def main():
         constant_options['frequency_handling']]
 
     # run over different combinations of options as specified in the config
+    generated_comb_strs = set()
     for options_combination in options_combinations:
 
         print(options_combinations)
+        # The full scaffold ignores the removed-edge fraction (see generate_scaffold_network), so it is named
+        # with 0.0, the fraction it actually has. Combinations differing only in that fraction then share a
+        # name, and only the first of them is generated - the rest would be the same data under other names.
+        if options_combination.get('scaffold_network_added_edge_fraction') == FULL_SCAFFOLD and \
+                options_combination.get('scaffold_network_removed_edge_fraction') is not None:
+            options_combination['scaffold_network_removed_edge_fraction'] = 0.0
         if 'function_type_restriction' in options_combination:
             options_combination['function_type_restriction'] = FunctionTypeRestriction[
                 options_combination['function_type_restriction']]
@@ -308,6 +315,11 @@ def main():
         kwargs = options_combination.copy()
         kwargs.update(constant_options)
         comb_str = "-".join([comb_str] + set_flags_name_parts(kwargs))
+        if comb_str in generated_comb_strs:
+            print("Skipping {}: already generated in this run (the full scaffold removes no edges, so the "
+                  "removed-edge fraction does not change it)".format(comb_str))
+            continue
+        generated_comb_strs.add(comb_str)
 
         data_dir_path = os.path.join(kwargs['data_output_parent_dir'], comb_str)
         resuming = prepare_data_dir(data_dir_path, kwargs, kwargs['regenerate'])
