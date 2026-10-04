@@ -97,6 +97,7 @@ _NAMED_FLAGS = (
     ("preserve_input_nodes_on_add", "keepinputs", False),
     ("hide_scaffold_directions", "hidedir", False),
 )
+_NAMED_FLAG_OPTIONS = {name for name, _, _ in _NAMED_FLAGS}
 
 
 def set_flags_name_parts(kwargs):
@@ -219,7 +220,8 @@ def reference_models(kwargs):
 def main():
     p = configargparse.ArgParser(default_config_files=['./config.txt'])
     p.add_argument('-c', '--config', required=False, is_config_file=True, help='config file path to override defaults')
-    p.add_argument('--use_random_network', required=False, default=False,  type=parse_bool_option)
+    p.add_argument('--use_random_network', required=False, default=None, type=parse_bool_option,
+                   action='append')
     p.add_argument('--experiments_per_network', required=False, type=int, action='append')
     p.add_argument('--graphs_dir', required=False, type=str)
     p.add_argument('--max_graph_size', required=False, default=None, type=int, action='append',
@@ -233,11 +235,15 @@ def main():
     p.add_argument('--state_noise_chance', required=False, type=float, action='append')
     p.add_argument('--frequency_noise_std', required=False, type=float)
     p.add_argument('--random_networks_per_reference', required=False, type=int)
-    p.add_argument('--mutate_input_nodes', required=False, default=False,  type=parse_bool_option)
-    p.add_argument('--preserve_truth_ratio', required=False, default=False,  type=parse_bool_option)
+    p.add_argument('--mutate_input_nodes', required=False, default=None, type=parse_bool_option,
+                   action='append')
+    p.add_argument('--preserve_truth_ratio', required=False, default=None, type=parse_bool_option,
+                   action='append')
     p.add_argument('--function_type_restriction', required=False, type=str, action='append')
-    p.add_argument('--preserve_input_nodes_on_add', required=False, default=False,  type=parse_bool_option)
-    p.add_argument('--hide_scaffold_directions', required=False, default=False, type=parse_bool_option,
+    p.add_argument('--preserve_input_nodes_on_add', required=False, default=None, type=parse_bool_option,
+                   action='append')
+    p.add_argument('--hide_scaffold_directions', required=False, default=None, type=parse_bool_option,
+                   action='append',
                    help='after the scaffold edge noise, add (v, u) for every scaffold edge (u, v), so inference '
                         'is given which nodes interact but not in which direction')
     p.add_argument('--scaffold_network_added_edge_fraction', required=False,
@@ -262,6 +268,11 @@ def main():
     options = p.parse_args()
     if options.only_attractors is None:
         options.only_attractors = [False]  # kept a list so it stays a (single-valued) varying option
+    # the flags named in the directory by set_flags_name_parts are appendable too, so a config can
+    # grid-search them (`hide_scaffold_directions = [False, True]`); left out, each is a single False
+    for name, _, _ in _NAMED_FLAGS:
+        if getattr(options, name) is None:
+            setattr(options, name, [False])
 
     print(options)
 
@@ -303,7 +314,10 @@ def main():
                 options_combination['function_type_restriction']]
 
         # need to represent the argument combination as a string to use in filename. Need to extract name from enums.
-        comb_str = str({k: (v.name if isinstance(v, enum.Enum) else v) for k, v in options_combination.items()})
+        # the _NAMED_FLAGS are left out here and named by set_flags_name_parts below, only when set - so a
+        # directory generated without them keeps the name it had before they could be grid-searched
+        comb_str = str({k: (v.name if isinstance(v, enum.Enum) else v) for k, v in options_combination.items()
+                        if k not in _NAMED_FLAG_OPTIONS})
         comb_str = comb_str.translate(str.maketrans('', '', "'{}")).replace(": ", "=").replace(", ", "-")
 
         # also replace the variable names with shorter versions using name_replacements
@@ -322,8 +336,8 @@ def main():
             kwargs['hide_scaffold_directions'] = False
         comb_str = "-".join([comb_str] + set_flags_name_parts(kwargs))
         if comb_str in generated_comb_strs:
-            print("Skipping {}: already generated in this run (the full scaffold removes no edges, so the "
-                  "removed-edge fraction does not change it)".format(comb_str))
+            print("Skipping {}: already generated in this run - it differs from that combination only in "
+                  "options that have no effect on it (see above)".format(comb_str))
             continue
         generated_comb_strs.add(comb_str)
 
