@@ -10,11 +10,16 @@ import random
 class BooleanSymbolicFunc(object):
     def __init__(self, input_names=None, boolean_outputs=None, formula=None, simplify_boolean_outputs=False):
         # make all fields immutable, so the function can be shallow copied safely.
-        # Kept aside rather than assigned here: the formula setter below clears _boolean_outputs, so a table
-        # stored before it would be thrown away, and __call__ would be left evaluating the lambdified sympy
-        # formula on every call - about ten times the cost of a lookup, in the inner loop of every simulation.
+        # A function given by its truth table keeps the table and builds no sympy formula: evaluation is a
+        # table lookup (see __call__), and the formula - a DNF over every true row, plus its lambdify - costs
+        # time and memory exponential in the in-degree (seconds per node at 14 inputs, minutes beyond),
+        # which loading a model would otherwise pay for every node whether or not anything reads the
+        # formula. It is built the first time something does (see the formula property).
         given_outputs = None if boolean_outputs is None else tuple(boolean_outputs)
         self._boolean_outputs = given_outputs
+        self._formula = None
+        self._formula_from_table = False   # True while the formula is still to be built from the table
+        self._lambdified_formula = None    # built on first evaluation through the formula
 
         if formula is not None:
             self.input_vars = tuple(sorted(formula.free_symbols, key=lambda x: x.name))
@@ -28,24 +33,17 @@ class BooleanSymbolicFunc(object):
 
         if len(input_names) != math.frexp(len(boolean_outputs))[1] - 1:
             raise ValueError("non-matching length for variable names list and boolean outputs list")
-        # self.truth_table_outputs = boolean_outputs
         # assumes boolean_outputs is a power of 2
-        n_inputs = len(input_names)
-        boolean_inputs = tuple(sympy.symbols(name) for name in input_names)
-        self.input_vars = boolean_inputs
-        if n_inputs == 0:
+        self.input_vars = tuple(sympy.symbols(name) for name in input_names)
+        if len(input_names) == 0:
             assert len(boolean_outputs) == 1
             self.formula = boolean_outputs[0]
             self._boolean_outputs = given_outputs
             return
-        # TODO: Karnaugh maps? Sympy simplification?
-        positive_row_clauses = [sympy.And(*terms) for b_output, terms in zip(
-            boolean_outputs, itertools.product(*[[~var, var] for var in boolean_inputs])) if b_output]
-        self.formula = sympy.Or(*positive_row_clauses)
+        self._formula_from_table = True
         if simplify_boolean_outputs:
-            start = time.time()
             self.formula = sympy.simplify(self.formula)
-        self._boolean_outputs = given_outputs
+            self._boolean_outputs = given_outputs
 
     @property
     def boolean_outputs(self):
@@ -56,34 +54,40 @@ class BooleanSymbolicFunc(object):
 
     @property
     def formula(self):
+        if self._formula_from_table:
+            # the DNF of the truth table: one clause per true row, inputs in input_vars order with the first
+            # as the most significant bit, the order the table is held in. Built once; the table stays.
+            # TODO: Karnaugh maps? Sympy simplification?
+            positive_row_clauses = [sympy.And(*terms) for b_output, terms in zip(
+                self._boolean_outputs, itertools.product(*[[~var, var] for var in self.input_vars])) if b_output]
+            self._formula = sympy.Or(*positive_row_clauses)
+            self._formula_from_table = False
         return self._formula
 
     @formula.setter
     def formula(self, value):
+        # a formula set from outside replaces the function, so the table (if any) no longer describes it
         self._boolean_outputs = None
+        self._formula_from_table = False
         self._formula = value
-        # print "set formula value: {}".format(value)
-        # print "formula type: {}".format(type(value))
-        if isinstance(value, sympy.Basic):
-            # print "set lambdified formula"
-            self._lambdified_formula = sympy.lambdify(self.input_vars, self.formula, modules=['numpy'])
+        self._lambdified_formula = None
 
     def __call__(self, *input_values):
-        if isinstance(self.formula, bool) or (len(self.input_vars) == 0):
-            return self.formula
         if self._boolean_outputs is not None:
             # Straight truth-table lookup, first input as the most significant bit - the order
             # boolean_outputs is built in, both here (itertools.product over the inputs) and everywhere it
             # is read. Only taken when the table is already held: the property would otherwise build it by
             # evaluating the formula over all 2**in-degree rows, which is exactly what must not happen for
-            # a node with a large in-degree.
+            # a node with a large in-degree. (With no inputs the table is the one constant row.)
             row = 0
             for value in input_values:
                 row = (row << 1) | (1 if value else 0)
             return self._boolean_outputs[row]
-        # print self.formula
-        # print type(self.formula)
+        if isinstance(self.formula, bool) or (len(self.input_vars) == 0):
+            return self.formula
         if self.formula is not None:
+            if self._lambdified_formula is None:
+                self._lambdified_formula = sympy.lambdify(self.input_vars, self.formula, modules=['numpy'])
             return self._lambdified_formula(*input_values)
         else:
             return self.boolean_outputs[sum(2**i * val for i, val in range(len(input_values)))]
