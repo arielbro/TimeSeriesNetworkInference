@@ -9,7 +9,8 @@ import enum
 import traceback
 from concurrent.futures import ProcessPoolExecutor
 from inference import dummy_inference, binary_inference_ideas, benchmark_inference
-from inference.binary_inference_ideas import infer_known_topology_symmetric, infer_known_topology_general, infer_unknown_topology_symmetric
+from inference.binary_inference_ideas import infer_known_topology_symmetric, infer_known_topology_general, infer_unknown_topology_symmetric,     infer_unknown_topology_symmetric_in_attractors, infer_unknown_topology_symmetric_contains_attractors
+from inference.ilp_components import AttractorAssumption, check_attractor_assumption_compatible
 from sklearn.model_selection import train_test_split
 from validation import inference_scoring
 import time
@@ -87,6 +88,9 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
                                           warm_start_from_scaffold=kwargs['warm_start_from_scaffold'],
                                           warm_start_time_frac=kwargs['warm_start_time_frac'],
                                           max_indegree=kwargs.get('max_indegree', -1),
+                                          attractor_max_path_len=kwargs.get(
+                                              'attractor_max_path_len',
+                                              binary_inference_ideas.DEFAULT_ATTRACTOR_MAX_PATH_LEN),
                                           gurobi_threads=int(os.environ.get('SLURM_CPUS_PER_TASK') or 0))
         time_taken = time.time() - start
         del scaffold_network
@@ -108,18 +112,31 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
             assert all(pred_mat.shape[0] == reference_data[i].shape[0] for i, pred_mat in inferred_matrices.items())
             np.savez(os.path.join(network_out_dir, "{}_matrices".format(group)), **inferred_matrices)
 
+            # Every comparison below is scored twice: over the full matrices, and over the varying nodes
+            # alone - the columns the ground truth doesn't hold constant across the scored timepoints,
+            # which are the only ones where a prediction could have gone wrong. See
+            # inference_scoring.varying_columns for why the full-matrix number needs that companion.
+
             # compare against non-noisy data
             pred_vec = np.concatenate([inferred_matrices[i][1:, ].flatten() for i in inferred_matrices.keys()])
             ref_vec = np.concatenate([real_data[i][1:, ].flatten() for i in inferred_matrices.keys()])
             timeseries_score = inference_scoring.sparse_accuracy_score(ref_vec, pred_vec)
             np.save(os.path.join(network_out_dir, "timeseries_real_accuracy_score_{}".format(group)),
                     timeseries_score)
+            np.save(os.path.join(network_out_dir,
+                                 inference_scoring.timeseries_varying_score_filename("real", group)),
+                    inference_scoring.timeseries_accuracy_score(real_data, inferred_matrices,
+                                                                varying_only=True))
             del ref_vec
             # compare against given reference data
             ref_vec = np.concatenate([reference_data[i][1:, ].flatten() for i in inferred_matrices.keys()])
             timeseries_score = inference_scoring.sparse_accuracy_score(ref_vec, pred_vec)
             np.save(os.path.join(network_out_dir, "timeseries_reference_accuracy_score_{}".format(group)),
                     timeseries_score)
+            np.save(os.path.join(network_out_dir,
+                                 inference_scoring.timeseries_varying_score_filename("reference", group)),
+                    inference_scoring.timeseries_accuracy_score(reference_data, inferred_matrices,
+                                                                varying_only=True))
             del ref_vec, pred_vec, inferred_matrices
 
             # compare against non-noisy data again, but rolled out from the real first state rather than the
@@ -133,6 +150,10 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
             timeseries_score = inference_scoring.sparse_accuracy_score(ref_vec, pred_vec)
             np.save(os.path.join(network_out_dir, "timeseries_real_start_accuracy_score_{}".format(group)),
                     timeseries_score)
+            np.save(os.path.join(network_out_dir,
+                                 inference_scoring.timeseries_varying_score_filename("real_start", group)),
+                    inference_scoring.timeseries_accuracy_score(real_data, real_start_matrices,
+                                                                varying_only=True))
             del ref_vec, pred_vec, real_start_matrices
 
         del reference_train, real_train, reference_test, real_test
@@ -169,7 +190,12 @@ def append_network_log_to_master(master_log_path, network_name, network_log_path
 
 def expected_output_filenames(kwargs):
     """The files process_network writes for one network on a successful run. The test-group files only
-    exist when there is a test split (train_size != 1)."""
+    exist when there is a test split (train_size != 1).
+
+    Deliberately NOT listing the varying-node score files (timeseries_*_varying_accuracy_score_*.npy).
+    They are derived from matrices that are already saved, so a run that predates them can be brought up
+    to date without re-solving anything (the analysis notebook's backfill cell does exactly that); listing
+    them here would instead mark every such network incomplete and re-run inference on it from scratch."""
     names = ["inferred_network.json", "inference_time.npy", "edge_accuracy_score.npy",
              "train_matrices.npz", "timeseries_real_accuracy_score_train.npy",
              "timeseries_reference_accuracy_score_train.npy"]
@@ -237,6 +263,8 @@ INFERENCE_METHODS = {
     "general": infer_known_topology_general,
     "symmetric": infer_known_topology_symmetric,
     "symmetric_topology": infer_unknown_topology_symmetric,
+    "symmetric_topology_in_attractors": infer_unknown_topology_symmetric_in_attractors,
+    "symmetric_topology_contains_attractors": infer_unknown_topology_symmetric_contains_attractors,
     "all_constants": benchmark_inference.all_constants_inference,
     "random_model": benchmark_inference.random_model_inference,
     "exact_match_else_random": benchmark_inference.exact_match_else_random_inference,
@@ -244,6 +272,24 @@ INFERENCE_METHODS = {
     "reveal": benchmark_inference.reveal_inference,
     "best_fit": benchmark_inference.best_fit_inference,
 }
+
+
+# The inference methods that are symmetric_topology with an attractor assumption, and the assumption each
+# carries. Used to reject an incompatible option combination before any work is scheduled; the methods
+# check it themselves too.
+ATTRACTOR_METHODS = {
+    "symmetric_topology_in_attractors": AttractorAssumption.IN_ATTRACTORS,
+    "symmetric_topology_contains_attractors": AttractorAssumption.CONTAINS_ATTRACTORS,
+}
+
+
+def check_combination(kwargs):
+    """Raise if this option combination cannot run, before it is scheduled. kwargs['inference_method'] may be
+    the config name or the resolved function."""
+    method = kwargs['inference_method']
+    name = method if isinstance(method, str) else inference_method_name(method)
+    check_attractor_assumption_compatible(ATTRACTOR_METHODS.get(name), kwargs['no_anchoring'],
+                                          kwargs['allow_input_flips'])
 
 
 def resolve_inference_method(name):
@@ -278,17 +324,40 @@ COMB_STR_SHORTHANDS = {
     "flip_penalty": "flippen",
     "no_anchoring": "noanchor",
     "max_indegree": "maxindeg",
+    "attractor_max_path_len": "attrpathlen",
     "train_size": "trainsize",
 }
 
 
-def build_comb_str(options_combination):
+# Grid-searchable Boolean flags that name the output directory only when a config gives them more than one
+# value. They were constants (never in the name) until they became appendable, so naming them always would
+# rename the output of every existing config.
+GRID_FLAGS_NAMED_ONLY_WHEN_SWEPT = ("allow_input_flips", "no_anchoring", "warm_start_from_scaffold")
+
+
+def unswept_flags(options):
+    """The GRID_FLAGS_NAMED_ONLY_WHEN_SWEPT that this config gives a single value, for build_comb_str."""
+    return {name for name in GRID_FLAGS_NAMED_ONLY_WHEN_SWEPT if len(set(getattr(options, name))) <= 1}
+
+
+# Options that only some inference methods read, and those methods. A directory of any other method leaves
+# the option out of its name: it has no effect there, so naming it would only split identical runs apart.
+METHOD_SPECIFIC_OPTIONS = {
+    "attractor_max_path_len": {"symmetric_topology_in_attractors"},
+}
+
+
+def build_comb_str(options_combination, omitted_keys=()):
     """Directory-name fragment for one inference-parameter combination (inference_method given as the
     function). Parameter names are abbreviated via COMB_STR_SHORTHANDS and the method is written with its
-    short config name, so the folder stays readable when several parameters vary."""
+    short config name, so the folder stays readable when several parameters vary. omitted_keys are left out
+    of the name (see GRID_FLAGS_NAMED_ONLY_WHEN_SWEPT)."""
     rendered = {}
+    method_name = inference_method_name(options_combination.get('inference_method'))
     for key, value in options_combination.items():
-        if key == 'data_parent_dir':
+        if key == 'data_parent_dir' or key in omitted_keys:
+            continue
+        if key in METHOD_SPECIFIC_OPTIONS and method_name not in METHOD_SPECIFIC_OPTIONS[key]:
             continue
         if key == 'inference_method':
             value = inference_method_name(value)
@@ -317,14 +386,21 @@ def enumerate_problems(options):
     problems = []
     prevalidation_errors = []
     matrix_count_cache = {}  # net_path -> matrix count; the count is a property of the data, reused across combos
+    seen_combinations = set()
     for combo_values in itertools.product(*variable_options.values()):
         options_combination = dict(zip(variable_options.keys(), combo_values))
         resolved = dict(options_combination)
         resolved['inference_method'] = resolve_inference_method(resolved['inference_method'])
-        comb_str = build_comb_str(resolved)
+        comb_str = build_comb_str(resolved, unswept_flags(options))
+        # combinations differing only in an option their method ignores (METHOD_SPECIFIC_OPTIONS) share a
+        # name and are the same problem, so only the first is enumerated
+        if (comb_str, options_combination['data_parent_dir']) in seen_combinations:
+            continue
+        seen_combinations.add((comb_str, options_combination['data_parent_dir']))
 
         kwargs = dict(options_combination)
         kwargs.update(constant_options)
+        check_combination(kwargs)
         manifest_kwargs = {k: v for k, v in kwargs.items() if k not in _CONTROL_ARGS}
 
         data_parent_dir = kwargs['data_parent_dir']
@@ -659,16 +735,23 @@ def main():
                    action='append')
     p.add_argument('--included_edges_relative_weight', required=False, type=float, action='append')
     p.add_argument('--added_edges_relative_weight', required=False, type=float, action='append')
-    p.add_argument('--allow_input_flips', required=False, default=False, type=parse_bool_option)
+    p.add_argument('--allow_input_flips', required=False, default=None, type=parse_bool_option,
+                   action='append')
     # appendable and recorded for the same reasons as allow_additional_edges above: `flip_penalty = [0.5,
     # 1.0]` sweeps both, and the value reaches the output directory name (as flippen) either way.
     p.add_argument('--flip_penalty', required=False, default=None, type=float, action='append')
-    p.add_argument('--no_anchoring', required=False, default=False, type=parse_bool_option)
-    p.add_argument('--warm_start_from_scaffold', required=False, default=False, type=parse_bool_option)
+    p.add_argument('--no_anchoring', required=False, default=None, type=parse_bool_option, action='append')
+    p.add_argument('--warm_start_from_scaffold', required=False, default=None, type=parse_bool_option,
+                   action='append')
     p.add_argument('--warm_start_time_frac', required=False, default=0.2, type=float)
     # max in-degree bound; only used by reveal / best_fit (regulator-set size cap) and symmetric_topology
     # (per-node MILP constraint). -1 = use the scaffold network's max in-degree, computed per network.
     p.add_argument('--max_indegree', required=False, default=-1, type=int)
+    # symmetric_topology_in_attractors only: the longest path the model may take from a matrix's last state
+    # back to its first
+    # appendable, so it can be grid-searched; named (as attrpathlen) only on symmetric_topology_in_attractors,
+    # the one method that reads it (see METHOD_SPECIFIC_OPTIONS)
+    p.add_argument('--attractor_max_path_len', required=False, type=int, default=None, action='append')
     p.add_argument('--n_processes', required=False, type=int, default=1)
     # SLURM-array modes (each exits after running; otherwise a normal whole-grid in-process run happens):
     p.add_argument('--emit_manifest', required=False, type=str, default=None,
@@ -693,6 +776,14 @@ def main():
         options.allow_additional_edges = [False]  # kept a list so it stays a (single-valued) varying option
     if options.flip_penalty is None:
         options.flip_penalty = [1.0]  # likewise
+    if options.attractor_max_path_len is None:
+        options.attractor_max_path_len = [binary_inference_ideas.DEFAULT_ATTRACTOR_MAX_PATH_LEN]  # likewise
+    # Boolean flags that were constants before they could be grid-searched; left out, each is a single False.
+    # Their names are kept out of the output directory unless the config gives them more than one value
+    # (see build_comb_str), so the output of a config that sets each to one value keeps its earlier name.
+    for name in GRID_FLAGS_NAMED_ONLY_WHEN_SWEPT:
+        if getattr(options, name) is None:
+            setattr(options, name, [False])
 
     if options.summarize_errors is not None:
         if options.run_manifest is None:
@@ -726,17 +817,22 @@ def main():
     output_bases = set()
 
     # run over different combinations of options as specified in the config
+    seen_combinations = set()
     for options_combination in options_combinations:
-        print("Current parameters: ", options_combination)
-
         options_combination['inference_method'] = resolve_inference_method(options_combination['inference_method'])
 
         # represent the argument combination as a string to use in the output directory name
-        comb_str = build_comb_str(options_combination)
+        comb_str = build_comb_str(options_combination, unswept_flags(options))
+        # the same problem under another option its method ignores (see enumerate_problems): run it once
+        if (comb_str, options_combination['data_parent_dir']) in seen_combinations:
+            continue
+        seen_combinations.add((comb_str, options_combination['data_parent_dir']))
+        print("Current parameters: ", options_combination)
 
         # kwargs = options_combination | constant_options (works on python>=3.9)
         kwargs = options_combination.copy()
         kwargs.update(constant_options)
+        check_combination(kwargs)
 
         for data_dir in os.scandir(kwargs['data_parent_dir']):
             print("Processing data in {}".format(data_dir.path))

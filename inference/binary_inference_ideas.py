@@ -3,7 +3,7 @@ import attractor_learning.ilp
 import gurobipy
 from inference import ilp_components
 from attractor_learning.graphs import FunctionTypeRestriction, Network
-from inference.ilp_components import ModelAdditionType, get_value_of_gurobi_entity
+from inference.ilp_components import ModelAdditionType, AttractorAssumption, get_value_of_gurobi_entity
 from attractor_learning.logic import BooleanSymbolicFunc, SymmetricThresholdFunction
 import time
 
@@ -143,12 +143,33 @@ def _scaffold_warm_start_values(data_matrices, scaffold_network, timeout_secs, l
     return warm_start
 
 
+# Default bound on the path IN_ATTRACTORS lets the model take from a matrix's last state back to its first.
+DEFAULT_ATTRACTOR_MAX_PATH_LEN = 10
+
+
+def infer_unknown_topology_symmetric_in_attractors(data_matrices, scaffold_network, **kwargs):
+    """infer_unknown_topology_symmetric, with every data matrix assumed to lie on an attractor: from its
+    denoised last state the model returns to its denoised first state within attractor_max_path_len steps
+    (AttractorAssumption.IN_ATTRACTORS). Free-run with input flips only."""
+    return infer_unknown_topology_symmetric(data_matrices, scaffold_network,
+                                            attractor_assumption=AttractorAssumption.IN_ATTRACTORS, **kwargs)
+
+
+def infer_unknown_topology_symmetric_contains_attractors(data_matrices, scaffold_network, **kwargs):
+    """infer_unknown_topology_symmetric, with every data matrix assumed to end in, and fully cover, an
+    attractor: its denoised last state repeats an earlier one (AttractorAssumption.CONTAINS_ATTRACTORS).
+    Free-run with input flips only."""
+    return infer_unknown_topology_symmetric(data_matrices, scaffold_network,
+                                            attractor_assumption=AttractorAssumption.CONTAINS_ATTRACTORS, **kwargs)
+
+
 def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_additional_edges=False,
                                    included_edges_relative_weight=1, added_edges_relative_weight=-1,
                                    timeout_secs=None, log_file=None, allow_input_flips=False, flip_penalty=1.0,
                                    no_anchoring=False, gurobi_threads=0,
                                    warm_start_from_scaffold=False, warm_start_time_frac=0.2,
-                                   max_indegree=-1, **kwargs):
+                                   max_indegree=-1, attractor_assumption=None,
+                                   attractor_max_path_len=DEFAULT_ATTRACTOR_MAX_PATH_LEN, **kwargs):
     """
     Find a symmetric threshold model with best fit to data_matrices and scaffold_network,
     by finding both the Boolean function and the incoming edges for each node.
@@ -178,8 +199,14 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
     :param warm_start_time_frac: fraction of timeout_secs given to the scaffold (warm-start) solve; this solve's
         actual elapsed time is then subtracted from timeout_secs to budget the main solve. Ignored when
         warm_start_from_scaffold is False or timeout_secs is None.
+    :param attractor_assumption: None, or an ilp_components.AttractorAssumption imposed as a hard constraint
+        on every data matrix's denoised trajectory. Requires no_anchoring and allow_input_flips. The
+        symmetric_topology_in_attractors / _contains_attractors methods are this function with it set.
+    :param attractor_max_path_len: for AttractorAssumption.IN_ATTRACTORS, the longest path the model may take
+        from a matrix's last state back to its first.
     :return:
     """
+    ilp_components.check_attractor_assumption_compatible(attractor_assumption, no_anchoring, allow_input_flips)
     warm_start = None
     main_timeout_secs = timeout_secs
     if warm_start_from_scaffold:
@@ -229,7 +256,7 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
             # technically can have a constant False function with all nodes as input, which
             # will have a threshold of len(candidate_inputs[i]) + 1, but that function is
             # (better) representable with less inputs.
-            threshold = model.addVar(lb=0, ub=len(candidate_inputs[i]), vtype=gurobipy.GRB.INTEGER,
+            threshold = model.addVar(lb=0, ub=max_indeg_cap + 1, vtype=gurobipy.GRB.INTEGER,
                                      name="vertex_{}_threshold_var".format(i))
             functions_variables.append([signs, threshold])
         model.update()
@@ -285,14 +312,20 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
         for j, vertex in enumerate(candidate_network.vertices):
             assert [u.index for u in vertex.predecessors()] == candidate_inputs[j], \
                 "candidate order does not match predecessor order for vertex {}".format(vertex.name)
-        matrix_agreement_indicators, flip_cost_terms = ilp_components.add_matrices_as_model_paths(
+        function_type_restrictions = [FunctionTypeRestriction.SYMMETRIC_THRESHOLD] * n_vertices
+        matrix_agreement_indicators, flip_cost_terms, trajectories = ilp_components.add_matrices_as_model_paths(
            candidate_network, model, data_matrices,
            function_vars=functions_variables,
            model_to_data_sample_rate_ratio=1,
-           function_type_restrictions=[FunctionTypeRestriction.SYMMETRIC_THRESHOLD] * n_vertices,
+           function_type_restrictions=function_type_restrictions,
            model_addition_type=ModelAdditionType.INDICATORS,
            per_cell_indicators=True, allow_input_flips=allow_input_flips, no_anchoring=no_anchoring,
-           max_indegree=max_indeg_cap)
+           max_indegree=max_indeg_cap, return_trajectories=True)
+        if attractor_assumption is not None:
+            ilp_components.add_attractor_assumption(
+                candidate_network, model, trajectories, attractor_assumption, functions_variables,
+                attractor_max_path_len=attractor_max_path_len,
+                function_type_restrictions=function_type_restrictions, max_indegree=max_indeg_cap)
         del candidate_network  # only needed to build the model; free it before the (heavy) solve
         n_cells = float(len(matrix_agreement_indicators))
         data_agreement = gurobipy.quicksum(matrix_agreement_indicators) / n_cells
@@ -311,7 +344,7 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
             model.addConstr(degree <= max_indeg_cap, name="node_{}_max_indegree_constraint".format(j))
             model.addConstr(threshold <= degree, name="node_{}_threshold_constraint_<=".format(j))
             # the multiplier only has to dominate the degree, which the node's own candidate count does
-            model.addConstr(len(candidate_inputs[j]) * threshold >= degree,
+            model.addConstr(max_indeg_cap * threshold >= degree,
                             name="node_{}_threshold_constraint_>=".format(j))
 
         # both edge terms are normalized by the number of scaffold edges (see docstring); guard the rare

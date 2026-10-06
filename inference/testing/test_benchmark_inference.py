@@ -91,6 +91,42 @@ class TestBenchmarkInference(TestCase):
         inferred = linear_classifier_inference([matrix], network)
         self.assertEqual({bool(o) for o in inferred.get_vertex("c").function.boolean_outputs}, {False})
 
+    def test_linear_classifier_all_features_ignores_the_scaffold(self):
+        # the scaffold offers c only the wrong input; with additional edges allowed every node is a feature,
+        # so the lasso finds c's real regulators a, b anyway, and the source nodes a, b come out as inputs
+        random.seed(6)
+        network = _make_network()
+        scaffold = Network(vertex_names=["a", "b", "c", "d", "e"],
+                           edges=[("d", "c"), ("d", "e"), ("a", "d"), ("b", "d")])  # max in-degree 2
+        inferred = linear_classifier_inference(_transition_matrices(network), scaffold,
+                                               allow_additional_edges=True)
+        for name in LEARNED_NODES:
+            vertex = inferred.get_vertex(name)
+            self.assertEqual([u.name for u in vertex.predecessors()], ["a", "b"], name)
+            self.assertEqual(tuple(bool(o) for o in vertex.function.boolean_outputs),
+                             network.get_vertex(name).function.boolean_outputs, name)
+        for name in ("a", "b"):
+            self.assertEqual(len(inferred.get_vertex(name).predecessors()), 0, name)
+            self.assertIsNone(inferred.get_vertex(name).function, name)
+
+    def test_linear_classifier_all_features_respects_max_indegree(self):
+        random.seed(7)
+        network = _make_network()
+        inferred = linear_classifier_inference(_transition_matrices(network), network,
+                                               allow_additional_edges=True, max_indegree=1)
+        for name in LEARNED_NODES:
+            vertex = inferred.get_vertex(name)
+            self.assertEqual(len(vertex.predecessors()), 1, name)
+            self.assertEqual(len(vertex.function.boolean_outputs), 2, name)
+
+    def test_linear_classifier_scaffold_mode_is_the_default(self):
+        # without the flag, only the scaffold's (wrong) input is available to c
+        random.seed(8)
+        network = _make_network()
+        scaffold = Network(vertex_names=["a", "b", "c", "d", "e"], edges=[("d", "c"), ("a", "d"), ("b", "d")])
+        inferred = linear_classifier_inference(_transition_matrices(network), scaffold)
+        self.assertEqual([u.name for u in inferred.get_vertex("c").predecessors()], ["d"])
+
     def test_predictions_are_consistent_with_next_state(self):
         # end-to-end guard on row ordering: the recovered functions must reproduce the true transitions
         random.seed(5)
@@ -212,3 +248,144 @@ class TestRevealBestFit(TestCase):
         model = reveal_inference([np.array([[0, 0, 0, 0]], dtype=float)], net, max_indegree=-1)  # single row
         self.assertEqual(model.edges, [])
         self.assertTrue(all(v.function is None for v in model.vertices))
+
+
+class TestBreadthFirstSubsetSearch(TestCase):
+    """REVEAL and Best-Fit sweep regulator-set sizes breadth-first: every gene at size 1, then every gene at
+    size 2, and so on. Depth-first per gene would spend a bounded budget on whichever genes come first and
+    leave the rest at size 1, making the result depend on gene order."""
+
+    def setUp(self):
+        names = ["v%d" % i for i in range(4)]
+        self.network = Network(vertex_names=names,
+                               edges=[("v0", "v1"), ("v1", "v2"), ("v2", "v3"), ("v0", "v3")])
+        for vertex in self.network.vertices:
+            degree = len(vertex.predecessors())
+            if degree:
+                vertex.function = BooleanSymbolicFunc(
+                    input_names=[u.name for u in vertex.predecessors()],
+                    boolean_outputs=[bool(row % 2) for row in range(2 ** degree)])
+        rng = random.Random(4)
+        self.matrices = []
+        for _ in range(6):
+            state = [rng.randint(0, 1) for _ in names]
+            rows = [list(state)]
+            for _ in range(3):
+                state = [int(bool(v)) for v in self.network.next_state(state)]
+                rows.append(list(state))
+            self.matrices.append(np.array(rows, dtype=float))
+
+    def _scan_sizes(self, scan_name, inference, **kwargs):
+        """The subset sizes the scans are called with, in order."""
+        import inference.benchmark_inference as module
+        sizes = []
+        original = getattr(module, scan_name)
+
+        def recording(X, y, candidates, size, best, deadline, self_column=None):
+            sizes.append(size)
+            return original(X, y, candidates, size, best, deadline, self_column)
+
+        setattr(module, scan_name, recording)
+        try:
+            inference(self.matrices, self.network, timeout_secs=60, **kwargs)
+        finally:
+            setattr(module, scan_name, original)
+        return sizes
+
+    def test_reveal_sweeps_every_gene_at_each_size_before_the_next(self):
+        sizes = self._scan_sizes("_scan_reveal", reveal_inference, max_indegree=3)
+        self.assertEqual(sizes, sorted(sizes),
+                         "sizes are not swept in nondecreasing order: {}".format(sizes))
+        # 3 genes searched (v0 is a source node and is emitted as an input); each is offered the empty set
+        # (size 0, an input node) before any regulator set, then sizes 1..3
+        self.assertEqual(sizes, [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3])
+
+    def test_best_fit_sweeps_every_gene_at_size_one_first(self):
+        sizes = self._scan_sizes("_scan_best_fit", best_fit_inference, max_indegree=3)
+        self.assertEqual(sizes, sorted(sizes),
+                         "sizes are not swept in nondecreasing order: {}".format(sizes))
+        self.assertEqual(sizes[:6], [0, 0, 0, 1, 1, 1],
+                         "genes were not all swept at size 0, then all at size 1: {}".format(sizes))
+
+    def test_an_expired_budget_leaves_every_gene_at_size_one(self):
+        """With a budget already spent, no gene gets past size 1 - and every gene still gets size 1, so the
+        model is complete rather than partly built."""
+        for scan_name, inference in (("_scan_reveal", reveal_inference),
+                                     ("_scan_best_fit", best_fit_inference)):
+            with self.subTest(method=scan_name):
+                import inference.benchmark_inference as module
+                sizes = []
+                original = getattr(module, scan_name)
+
+                def recording(X, y, candidates, size, best, deadline, self_column=None, _o=original):
+                    sizes.append(size)
+                    return _o(X, y, candidates, size, best, deadline, self_column)
+
+                setattr(module, scan_name, recording)
+                try:
+                    model = inference(self.matrices, self.network, max_indegree=3, timeout_secs=-1)
+                finally:
+                    setattr(module, scan_name, original)
+                self.assertEqual(set(sizes), {0, 1}, "a gene was searched past size 1: {}".format(sizes))
+                self.assertEqual(len(sizes), 6, "not every searched gene got its size-0 and size-1 sweeps")
+                for vertex in model.vertices:
+                    self.assertLessEqual(len(vertex.predecessors()), 1)
+
+
+class TestInputNodeAsASearchOption(TestCase):
+    """The empty regulator set is swept before any size-1 set, so a gene that (mostly) holds its value is
+    emitted as an input node rather than given a regulator it does not need."""
+
+    def _network_with_a_nearly_static_gene(self, exceptions):
+        """v0 drives v1; v2 holds its value except in `exceptions` transitions, where it is flipped."""
+        names = ["v0", "v1", "v2"]
+        network = Network(vertex_names=names, edges=[("v0", "v1")])
+        network.get_vertex("v1").function = BooleanSymbolicFunc(input_names=["v0"],
+                                                               boolean_outputs=[False, True])
+        rng = random.Random(12)
+        matrices = []
+        for _ in range(10):
+            state = [rng.randint(0, 1) for _ in names]
+            rows = [list(state)]
+            for _ in range(3):
+                state = [int(bool(v)) for v in network.next_state(state)]
+                rows.append(list(state))
+            matrices.append(np.array(rows, dtype=float))
+        # flip v2's successor value in the first `exceptions` transitions, so it no longer holds its value
+        # exactly and the static pre-check no longer fires for it
+        flipped = 0
+        for matrix in matrices:
+            for t in range(1, matrix.shape[0]):
+                if flipped < exceptions:
+                    matrix[t, 2] = 1 - matrix[t, 2]
+                    flipped += 1
+        return network, matrices
+
+    def test_a_nearly_static_gene_is_still_an_input_node(self):
+        network, matrices = self._network_with_a_nearly_static_gene(exceptions=1)
+        for inference in (reveal_inference, best_fit_inference):
+            with self.subTest(method=inference.__name__):
+                model = inference(matrices, network, max_indegree=2, timeout_secs=60)
+                v2 = model.get_vertex("v2")
+                self.assertEqual(len(v2.predecessors()), 0,
+                                 "a gene that holds its value in all but one transition was given "
+                                 "regulators: {}".format([u.name for u in v2.predecessors()]))
+                self.assertIsNone(v2.function)
+
+    def test_emit_static_as_input_off_removes_the_option(self):
+        """Without the flag the raw methods' behaviour is restored: no empty set is offered, so the gene
+        gets a regulator (in practice the self-loop the flag exists to avoid)."""
+        network, matrices = self._network_with_a_nearly_static_gene(exceptions=1)
+        for inference in (reveal_inference, best_fit_inference):
+            with self.subTest(method=inference.__name__):
+                model = inference(matrices, network, max_indegree=2, timeout_secs=60,
+                                  emit_static_as_input=False)
+                self.assertGreaterEqual(len(model.get_vertex("v2").predecessors()), 1)
+
+    def test_a_genuinely_regulated_gene_still_gets_its_regulator(self):
+        """The empty set winning on score, not by default: v1 is driven by v0 and must keep that edge."""
+        network, matrices = self._network_with_a_nearly_static_gene(exceptions=0)
+        for inference in (reveal_inference, best_fit_inference):
+            with self.subTest(method=inference.__name__):
+                model = inference(matrices, network, max_indegree=2, timeout_secs=60)
+                self.assertEqual([u.name for u in model.get_vertex("v1").predecessors()], ["v0"])
