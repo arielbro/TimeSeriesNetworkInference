@@ -163,7 +163,6 @@ class Network(object):
             new_edges.extend([(neighbor, v) for neighbor in in_neighbors])
 
             # BooleanSymbolicFunctions hold input names, so we need to recreate them
-            # TODO: support formula based BooleanSymbolicFunc.
             if isinstance(v.function, BooleanSymbolicFunc):
                 v.function = BooleanSymbolicFunc(input_names=[neighbor.name for neighbor in in_neighbors],
                                                  boolean_outputs=v.function.boolean_outputs)
@@ -266,45 +265,6 @@ class Network(object):
                       [("b_{}".format(u.name), "b_{}".format(v.name)) for (u, v) in b.edges]
         union_functions = [v.function for v in sorted_a_vertices] + [v.function for v in sorted_b_vertices]
         return Network(vertex_names=union_vertex_names, edges=union_edges, vertex_functions=union_functions)
-
-    def remove_node_dependency(self, node):
-        """
-        Removes any edge of the form (node, other) from the graph, and removes the Boolean dependency of other nodes
-        on it - Assuming a Boolean rule of other is given as DNF, replaces node and ~node with
-        True.
-        Currently only implemented for others with a BooleanSymbolicFunction with a sympy formula given in DNF.
-        :param node:
-        :return:
-        """
-        assert node in self.vertices
-        others = [v for v in self.vertices if (node, v) in self.edges]
-        for other in others:
-            self.remove_edge_dependency((node, other))
-
-    def remove_edge_dependency(self, edge):
-        """
-        Removes the given edge from the graph, and removes the Boolean dependency of the target node
-        on the source node - Assuming a Boolean rule of (u, v) is given as DNF, replaces u and ~u with
-        True.
-        Currently only implemented for v with a BooleanSymbolicFunction with a sympy formula given in DNF.
-        :param edge: a pair of nodes
-        :return:
-        """
-        u, v = edge
-        assert (u in self.vertices) and (v in self.vertices)
-        assert isinstance(v.function, logic.BooleanSymbolicFunc) and (v.function.formula is not None)
-        assert edge in self.edges
-        self.edges.remove(edge)
-        v.precomputed_predecessors = None
-        u.precomputed_successors = None
-
-        if len(v.predecessors()) == 0:
-            v.function = None
-            return
-
-        v.function.input_vars = [s for s in v.function.input_vars if s.name != u.name]
-        v.function.formula = logic.expression_without_variable(u.name, v.function.formula)
-        pass
 
     # TODO: generate scale-free graphs
     @staticmethod
@@ -720,19 +680,6 @@ class Network(object):
         self.vertices.remove(vertex)
         return
 
-    def convert_inputs_to_loops(self):
-        """
-        For each input node, adds a self loop from it to itself, with the id function, so Dubrova will be able to
-        run on it. Note that this will break any ILP where the node functions are allowed to be variables.
-        :return:
-        """
-        # TODO: somehow enforce checking of this when variable functions are used in ILP
-        for v in self.vertices:
-            if len(v.predecessors()) == 0:
-                v.precomputed_predecessors = None
-                self.edges.append((v, v))
-                v.function = sympy.And
-
     def copy(self):
         """
         returns a copy of self, assuming functions can be copied by the copy library.
@@ -740,55 +687,6 @@ class Network(object):
         """
         return Network(vertex_names=[v.name for v in self.vertices], edges=[(u.name, v.name) for (u, v) in self.edges],
                        vertex_functions=[copy.copy(v.function) for v in self.vertices])
-
-    def __mul__(self, other):
-        """
-        Computes a composition of self's functions with other's functions.
-        For each vertex, transforms its function to be taking values from its predecessors' predessesors.
-        Only defined if the graphs share nodes.
-        :param other:
-        :return:
-        """
-        vertex_names = []
-        edges = []
-        functions = []
-        source_functions = {v.name: v.function for v in self.vertices}
-        any_converted = False
-        for v in self.vertices:
-            if not isinstance(v.function, logic.BooleanSymbolicFunc):
-                if not isinstance(v.function, sympy.FunctionClass):
-                    raise NotImplementedError("Multiplication of graphs with generic functions not yet implemented")
-                predecessors_names = [u.name for u in v.predecessors()]
-                source_functions[v.name] = logic.BooleanSymbolicFunc.from_sympy_func(v.function, predecessors_names)
-                any_converted = True
-        if any_converted:
-            print("warning - graph with generic function types passed to __mul__, converting to BooleanSymbolicFunc")
-
-        for v in self.vertices:
-            vertex_names.append(v.name)
-            predecessors_funcs = [source_functions[u.name] for u in v.predecessors()]
-            functions.append(source_functions[v.name].compose(input_funcs=predecessors_funcs, simplify=True))
-            new_predecessors = sorted([x.name for x in functions[-1].formula.free_symbols])
-            edges.extend([(u_name, v.name) for u_name in new_predecessors])
-        return Network(vertex_names, edges, functions)
-
-    def __pow__(self, power, modulo=None):
-        """
-        Exponential by squaring, using the preivously defined __mul__ operation.
-        :param power:
-        :param modulo:
-        :return:
-        """
-        if modulo is not None:
-            raise NotImplementedError("can't modulo a graph")
-        if power == 1:
-            return self.copy()
-        if power == 2:
-            return self * self
-        if power % 2 == 0:
-            return (self * self) ** (power / 2)
-        else:
-            return self * ((self * self) ** ((power - 1) /2))
 
 
 class Vertex(object):

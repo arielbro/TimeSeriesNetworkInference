@@ -1,7 +1,9 @@
 # attractor_learning
-ILP and SAT based attractor based learning in biological networks.
+Boolean network model code shared by inference, validation and data generation: the `Network` class and its
+file formats (`graphs.py`), Boolean function representations (`logic.py`), the ILP building blocks the inference
+methods use (`ilp.py`), and simulation-based attractor estimation (`stochastic.py`).
 
-For raw data of experiment results, see the results folder.
-For an interactive analysis of the most recently analyzed results, see graph_impact_result_analysis.ipynb.
+The ILP/SAT attractor-finding code that this package started as has been retired. The results folder holds
+raw data from those older experiments.
 
 For help please contact arielbruner at gmail.com

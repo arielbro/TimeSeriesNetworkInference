@@ -1,32 +1,18 @@
 import sympy
 import itertools
 import math
-import numpy
 from .utility import list_repr
-import time
-import random
 
 
 class BooleanSymbolicFunc(object):
-    def __init__(self, input_names=None, boolean_outputs=None, formula=None, simplify_boolean_outputs=False):
+    # Printing lists the truth table only up to this many inputs; beyond it, just the count of True rows.
+    _MAX_PRINTED_INPUTS = 6
+
+    def __init__(self, input_names=None, boolean_outputs=None):
         # make all fields immutable, so the function can be shallow copied safely.
-        # A function given by its truth table keeps the table and builds no sympy formula: evaluation is a
-        # table lookup (see __call__), and the formula - a DNF over every true row, plus its lambdify - costs
-        # time and memory exponential in the in-degree (seconds per node at 14 inputs, minutes beyond),
-        # which loading a model would otherwise pay for every node whether or not anything reads the
-        # formula. It is built the first time something does (see the formula property).
-        given_outputs = None if boolean_outputs is None else tuple(boolean_outputs)
-        self._boolean_outputs = given_outputs
-        self._formula = None
-        self._formula_from_table = False   # True while the formula is still to be built from the table
-        self._lambdified_formula = None    # built on first evaluation through the formula
-
-        if formula is not None:
-            self.input_vars = tuple(sorted(formula.free_symbols, key=lambda x: x.name))
-            self.formula = formula
-            self._boolean_outputs = given_outputs
-            return
-
+        # The truth table is the function: evaluation is a table lookup, first input as the most significant
+        # bit (see __call__).
+        boolean_outputs = tuple(boolean_outputs)
         if input_names is None:
             n_inputs = int(math.log(len(boolean_outputs), 2))
             input_names = ['input_{}'.format(i) for i in range(n_inputs)]
@@ -35,65 +21,28 @@ class BooleanSymbolicFunc(object):
             raise ValueError("non-matching length for variable names list and boolean outputs list")
         # assumes boolean_outputs is a power of 2
         self.input_vars = tuple(sympy.symbols(name) for name in input_names)
-        if len(input_names) == 0:
-            assert len(boolean_outputs) == 1
-            self.formula = boolean_outputs[0]
-            self._boolean_outputs = given_outputs
-            return
-        self._formula_from_table = True
-        if simplify_boolean_outputs:
-            self.formula = sympy.simplify(self.formula)
-            self._boolean_outputs = given_outputs
+        self._boolean_outputs = boolean_outputs
 
     @property
     def boolean_outputs(self):
-        if self._boolean_outputs is None:
-            self._boolean_outputs = tuple(self(*row) for row in itertools.product([False, True],
-                                                                                  repeat=len(self.input_vars)))
         return self._boolean_outputs
 
-    @property
-    def formula(self):
-        if self._formula_from_table:
-            # the DNF of the truth table: one clause per true row, inputs in input_vars order with the first
-            # as the most significant bit, the order the table is held in. Built once; the table stays.
-            # TODO: Karnaugh maps? Sympy simplification?
-            positive_row_clauses = [sympy.And(*terms) for b_output, terms in zip(
-                self._boolean_outputs, itertools.product(*[[~var, var] for var in self.input_vars])) if b_output]
-            self._formula = sympy.Or(*positive_row_clauses)
-            self._formula_from_table = False
-        return self._formula
-
-    @formula.setter
-    def formula(self, value):
-        # a formula set from outside replaces the function, so the table (if any) no longer describes it
-        self._boolean_outputs = None
-        self._formula_from_table = False
-        self._formula = value
-        self._lambdified_formula = None
-
     def __call__(self, *input_values):
-        if self._boolean_outputs is not None:
-            # Straight truth-table lookup, first input as the most significant bit - the order
-            # boolean_outputs is built in, both here (itertools.product over the inputs) and everywhere it
-            # is read. Only taken when the table is already held: the property would otherwise build it by
-            # evaluating the formula over all 2**in-degree rows, which is exactly what must not happen for
-            # a node with a large in-degree. (With no inputs the table is the one constant row.)
-            row = 0
-            for value in input_values:
-                row = (row << 1) | (1 if value else 0)
-            return self._boolean_outputs[row]
-        if isinstance(self.formula, bool) or (len(self.input_vars) == 0):
-            return self.formula
-        if self.formula is not None:
-            if self._lambdified_formula is None:
-                self._lambdified_formula = sympy.lambdify(self.input_vars, self.formula, modules=['numpy'])
-            return self._lambdified_formula(*input_values)
-        else:
-            return self.boolean_outputs[sum(2**i * val for i, val in range(len(input_values)))]
+        # Straight truth-table lookup, first input as the most significant bit - the order boolean_outputs
+        # is built in (itertools.product over the inputs) everywhere it is read. With no inputs the table is
+        # the one constant row.
+        row = 0
+        for value in input_values:
+            row = (row << 1) | (1 if value else 0)
+        return self._boolean_outputs[row]
 
     def __str__(self):
-        return " " + str(self.formula)
+        names = ", ".join(var.name for var in self.input_vars)
+        if len(self.input_vars) <= BooleanSymbolicFunc._MAX_PRINTED_INPUTS:
+            table = "".join("1" if out else "0" for out in self._boolean_outputs)
+            return " f({}) = {}".format(names, table)
+        return " f({}) = {} of {} rows True".format(names, sum(1 for out in self._boolean_outputs if out),
+                                                    len(self._boolean_outputs))
 
     def __repr__(self):
         return self.__str__()
@@ -104,7 +53,7 @@ class BooleanSymbolicFunc(object):
         if isinstance(other, bool) or isinstance(other, sympy.boolalg.BooleanTrue) or \
            isinstance(other, sympy.boolalg.BooleanFalse) or (isinstance(other, int) and other in [0, 1]):
             if len(self.input_vars) == 0:
-                return bool(self.formula) == bool(other)
+                return bool(self._boolean_outputs[0]) == bool(other)
             else:
                 return False
         if isinstance(other, BooleanSymbolicFunc):
@@ -123,54 +72,6 @@ class BooleanSymbolicFunc(object):
     def __ne__(self, other):
         return not self == other
 
-    def __nonzero__(self):
-        if not isinstance(self.formula, bool) and not isinstance(self.formula, int) and \
-           not isinstance(self.formula, (sympy.boolalg.BooleanTrue, sympy.boolalg.BooleanFalse)):
-            raise ValueError("Cannot convert non constant BooleanSymbolicFunction to bool")
-        if isinstance(self.formula, (sympy.boolalg.BooleanTrue, sympy.boolalg.BooleanFalse)):
-            return self.formula == True
-        return bool(self.formula)
-
-    @staticmethod
-    def sanitized_nand(*args):
-        """
-        Replaces sympy nand with Or of Nots (because Nand introduces problems with other replacements)
-        :param args:
-        :return:
-        """
-        return sympy.Or(*(sympy.Not(x) for x in args))
-
-    def compose(self, input_funcs, simplify=True):
-        """
-        Composes symbolic boolean functions. Assumes input_funcs are ordered in the order of self.input_vars.
-        After composition, returns the new function, with its inputs ordered by name.
-        :param input_funcs:
-        :param simplify:
-        :return:
-        """
-        assert len(input_funcs) == len(self.input_vars)
-        for f in input_funcs:
-            if not isinstance(f, BooleanSymbolicFunc):
-                raise NotImplementedError(
-                    "Can't compose a symbolic boolean function with a function of type {}".format(f.type))
-
-        print([f.formula for f in input_funcs])
-        nand_free_formulas = [f.formula.replace(sympy.Nand,
-                                                 BooleanSymbolicFunc.sanitized_nand) for f in input_funcs]
-
-        replacement_dict = dict(zip(self.input_vars, nand_free_formulas))
-        new_exp = self.formula.replace(sympy.Nand, BooleanSymbolicFunc.sanitized_nand).\
-            subs(replacement_dict, simultaneous=True)
-        if simplify:
-            new_exp = sympy.simplify(new_exp)
-        return BooleanSymbolicFunc(formula=new_exp)
-
-    @staticmethod
-    def from_sympy_func(sympy_func, variable_names):
-        symbols = sympy.symbols(variable_names)
-        expr = sympy_func(*symbols)
-        return BooleanSymbolicFunc(formula=expr)
-
     def to_dict(self):
         """Serialization via the (input_names, boolean_outputs) form, which round-trips exactly through the
         constructor and preserves input order. These functions are always low in-degree in this codebase, so
@@ -188,15 +89,10 @@ class SparseBooleanFunc(object):
     """A general Boolean function stored as the truth-table rows that disagree with its majority output.
 
     Fills the same role as BooleanSymbolicFunc - an arbitrary Boolean function of named inputs, called
-    positionally in predecessor order - but holds neither a 2**in-degree truth table nor a sympy formula.
+    positionally in predecessor order - but does not hold a 2**in-degree truth table.
     A strongly biased function, which is what criticality demands at a high in-degree, disagrees with its
     majority value on few rows, so storing those row indices costs O(minority rows) rather than
     O(2**in-degree), and neither construction nor evaluation ever walks the full table.
-
-    The price is that there is no `formula`. Paths that need a sympy expression - ilp.py's model finding,
-    attractors.py's function perturbation, Network.remove_edge - cannot take one of these. That is the
-    limitation SymmetricThresholdFunction already carries, for the same reason: a function with a large
-    in-degree has no compact DNF to hand them.
 
     `minority_rows` index the truth table with the FIRST input as the most significant bit - the order
     BooleanSymbolicFunc.boolean_outputs is built in - so the two representations number rows identically
@@ -408,122 +304,3 @@ class SymmetricThresholdFunction(object):
         if threshold is None:
             raise ValueError("Tried to convert a non symmetric-threshold function")
         return SymmetricThresholdFunction(signs=signs, threshold=threshold)
-
-
-def formula_length(formula):
-    # defined as the number of (non-unique) atoms in the formula
-    if formula.is_Atom:
-        return 1
-    else:
-        return sum(formula_length(arg) for arg in formula.args)
-
-
-def get_attractors_formula(G, P, T):
-    a_matrix = numpy.matrix([[sympy.symbols("a_{}_{}".format(p, t)) for t in range(T+1)] for p in range(P)])
-    v_matrix = numpy.array([[[sympy.symbols("v_{}_{}_{}".format(i, p, t)) for t in range(T+1)] for p in range(P)]
-                             for i in range(len(G.vertices))])
-
-    ACTIVITY_SWITCH = lambda p: sympy.And(*[~a_matrix[p, t] >> sympy.And(*[~v_matrix[i, p, t]
-                                            for i in range(len(G.vertices))]) for t in range(T + 1)])
-    MONOTONE = lambda p: sympy.And(*[a_matrix[p, t] >> a_matrix[p, t+1] for t in range(T)])
-    IF_NON_ACTIVE = lambda p: ~a_matrix[p, T-1] >> ~a_matrix[p, T]
-    # ACTIVE = lambda p: a_matrix[p, T-1]
-
-
-    predecessors_vars = lambda i, p, t: [v_matrix[vertex.index, p, t] for vertex in G.vertices[i].predecessors()]
-
-    CONSISTENT = lambda p: sympy.And(*[sympy.And(*[
-                                     a_matrix[p, t] >> (sympy.Equivalent(v_matrix[i, p, t+1],
-                                     G.vertices[i].function(*predecessors_vars(i, p, t))))
-                                     for i in range(len(G.vertices)) if len(G.vertices[i].predecessors()) > 0])
-                                     for t in range(T)])
-
-    STABLE = lambda p: sympy.And(*[sympy.And(*[a_matrix[p, t] >>
-                                               sympy.Equivalent(v_matrix[i, p, t], v_matrix[i, p, t+1])
-                                               for t in range(T)]) for i in range(len(G.vertices)) if
-                                               len(G.vertices[i].predecessors()) == 0])
-
-    EQ = lambda p1, p2, t1, t2: sympy.And(*[sympy.Equivalent(v_matrix[i, p1, t1], v_matrix[i, p2, t2])
-                                            for i in range(len(G.vertices))])
-    CYCLIC = lambda p: (a_matrix[p, 0] >> EQ(p, p, 0, T)) & \
-                       (sympy.And(*[(~a_matrix[p, t - 1] & a_matrix[p, t]) >> EQ(p, p, t, T)
-                                                                       for t in range(1, T)]))
-    SIMPLE = lambda p: sympy.And(*[(a_matrix[p, t] & a_matrix[p, t-1]) >> ~EQ(p, p, t, T) for t in range(1, T)])
-
-    UNIQUE = lambda p1: sympy.And(*[sympy.And(*[(a_matrix[p1, T] & a_matrix[p2, t]) >> ~EQ(p1, p2, T, t)
-                                                for p2 in range(p1 + 1, P)]) for t in range(T)])
-
-    # to reduce symmetry
-    ACTIVES_FIRST = lambda p: True if p == P - 1 else (~a_matrix[p, T] >> ~a_matrix[p + 1, T])
-
-    ATTRACTORS = sympy.And(*[ACTIVITY_SWITCH(p) & MONOTONE(p) & IF_NON_ACTIVE(p) & CONSISTENT(p) &
-                             STABLE(p) & CYCLIC(p) & SIMPLE(p)
-                             & UNIQUE(p) & ACTIVES_FIRST(p) for p in range(P)])
-
-
-    # print ACTIVITY_SWITCH(0)
-    # print MONOTONE(0)
-    # print IF_NON_ACTIVE(0)
-    # print CONSISTENT(0)
-    # print STABLE(0)
-    # print CYCLIC(0)
-    # print SIMPLE(0)
-    # print UNIQUE(0)
-
-    return ATTRACTORS, [a_matrix[p, T] for p in range(P)]  #, a_matrix, v_matrix
-
-
-def get_attractorlb_lengthub_formula(G, P, T):
-    ATTRACTORS, activity_formulas = get_attractors_formula(G, P, T)
-    ATTRACTORS = sympy.And(*([ATTRACTORS] + activity_formulas))
-    return ATTRACTORS  #, a_matrix, v_matrix
-
-
-def perturb_line(f, line_indices, return_symbolic=False, n_inputs=None):
-    """
-    Given a logic function (possibly SymbolicBooleanFunction, but not necessarily), and an index of a truth
-    table row to "perturb" (/flip), returns a function agreeing with the input function on all inputs but the line
-    indices.
-    If return_symbolic is true, creates a new SymbolicBooleanFunction. Otherwise just wraps the original one.
-    :param f:
-    :param line_indices:
-    :param return_symbolic:
-    :param n_inputs: if return_symbolic is true and f is not a symbolic boolean function,
-    this specifies how many inputs f receives.
-    :return:
-    """
-
-    if not return_symbolic:
-        def perturbed_wrapper(*args):
-            line_index = sum(2**i for i, b in enumerate(args) if b)
-            return (1 - int(bool(f(*args)))) if line_index in line_indices else int(bool(f(*args)))
-        return perturbed_wrapper
-    else:
-        if isinstance(f, BooleanSymbolicFunc):
-            original_outputs = f.boolean_outputs
-        else:
-            original_outputs = [f(*args) for args in itertools.product([False, True], repeat=n_inputs)]
-        boolean_outputs = list(original_outputs)
-        for index in line_indices:
-            boolean_outputs[index] = 1 - bool(boolean_outputs[index])  # to work with sympy's logic
-        input_names = [x.name for x in f.input_vars] if isinstance(f, BooleanSymbolicFunc) else \
-            ["var_{}".format(i) for i in range(n_inputs)]
-        return BooleanSymbolicFunc(input_names=input_names,
-                                               boolean_outputs=boolean_outputs)
-
-
-def expression_without_variable(var_name, expression):
-    """
-    Removes any use of the variable name in the sympy expression. This is done by recursively removing the variable
-    from every argument in the expression and its sub-expressions, and removing empty expressions that result.
-    If the entire expression is empty, returns None (note this also converts sympy.false and sympy.true to None)
-    :param expression:
-    :return:
-    """
-    if expression.is_symbol:
-        return expression if expression.name != var_name else None
-    new_args = [expression_without_variable(var_name, arg) for arg in expression.args]
-    new_args = [arg for arg in new_args if arg is not None]
-    if len(new_args) == 0:
-        return None
-    return expression.func(*new_args)
