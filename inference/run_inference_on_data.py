@@ -9,7 +9,8 @@ import enum
 import traceback
 from concurrent.futures import ProcessPoolExecutor
 from inference import dummy_inference, binary_inference_ideas, benchmark_inference
-from inference.binary_inference_ideas import infer_known_topology_symmetric, infer_known_topology_general, infer_unknown_topology_symmetric,     infer_unknown_topology_symmetric_in_attractors, infer_unknown_topology_symmetric_contains_attractors
+from inference.binary_inference_ideas import infer_known_topology_symmetric, infer_known_topology_general, infer_unknown_topology_symmetric,     infer_unknown_topology_symmetric_in_attractors, infer_unknown_topology_symmetric_contains_attractors, \
+    infer_symmetric_heuristic
 from inference.ilp_components import AttractorAssumption, check_attractor_assumption_compatible
 from sklearn.model_selection import train_test_split
 from validation import inference_scoring
@@ -85,8 +86,7 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
                                           allow_input_flips=kwargs['allow_input_flips'],
                                           flip_penalty=kwargs['flip_penalty'],
                                           no_anchoring=kwargs['no_anchoring'],
-                                          warm_start_from_scaffold=kwargs['warm_start_from_scaffold'],
-                                          warm_start_time_frac=kwargs['warm_start_time_frac'],
+                                          warm_start_heuristic=kwargs.get('warm_start_heuristic', False),
                                           max_indegree=kwargs.get('max_indegree', -1),
                                           attractor_max_path_len=kwargs.get(
                                               'attractor_max_path_len',
@@ -265,6 +265,7 @@ INFERENCE_METHODS = {
     "symmetric_topology": infer_unknown_topology_symmetric,
     "symmetric_topology_in_attractors": infer_unknown_topology_symmetric_in_attractors,
     "symmetric_topology_contains_attractors": infer_unknown_topology_symmetric_contains_attractors,
+    "symmetric_heuristic": infer_symmetric_heuristic,
     "all_constants": benchmark_inference.all_constants_inference,
     "random_model": benchmark_inference.random_model_inference,
     "exact_match_else_random": benchmark_inference.exact_match_else_random_inference,
@@ -318,8 +319,7 @@ COMB_STR_SHORTHANDS = {
     "included_edges_relative_weight": "inclw",
     "added_edges_relative_weight": "addw",
     "model_inference_timeout_secs": "timeout",
-    "warm_start_from_scaffold": "warmstart",
-    "warm_start_time_frac": "warmfrac",
+    "warm_start_heuristic": "heurstart",
     "allow_input_flips": "inpflips",
     "flip_penalty": "flippen",
     "no_anchoring": "noanchor",
@@ -332,7 +332,7 @@ COMB_STR_SHORTHANDS = {
 # Grid-searchable Boolean flags that name the output directory only when a config gives them more than one
 # value. They were constants (never in the name) until they became appendable, so naming them always would
 # rename the output of every existing config.
-GRID_FLAGS_NAMED_ONLY_WHEN_SWEPT = ("allow_input_flips", "no_anchoring", "warm_start_from_scaffold")
+GRID_FLAGS_NAMED_ONLY_WHEN_SWEPT = ("allow_input_flips", "no_anchoring", "warm_start_heuristic")
 
 
 def unswept_flags(options):
@@ -741,9 +741,10 @@ def main():
     # 1.0]` sweeps both, and the value reaches the output directory name (as flippen) either way.
     p.add_argument('--flip_penalty', required=False, default=None, type=float, action='append')
     p.add_argument('--no_anchoring', required=False, default=None, type=parse_bool_option, action='append')
-    p.add_argument('--warm_start_from_scaffold', required=False, default=None, type=parse_bool_option,
+    # symmetric_topology methods: seed the MIP with per-node fitted threshold functions (see
+    # binary_inference_ideas._heuristic_warm_start_values); appendable like the flags above
+    p.add_argument('--warm_start_heuristic', required=False, default=None, type=parse_bool_option,
                    action='append')
-    p.add_argument('--warm_start_time_frac', required=False, default=0.2, type=float)
     # max in-degree bound; only used by reveal / best_fit (regulator-set size cap) and symmetric_topology
     # (per-node MILP constraint). -1 = use the scaffold network's max in-degree, computed per network.
     p.add_argument('--max_indegree', required=False, default=-1, type=int)

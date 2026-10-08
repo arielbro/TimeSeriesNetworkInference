@@ -14,7 +14,7 @@ import numpy as np
 
 from attractor_learning import graphs
 from attractor_learning.logic import SymmetricThresholdFunction
-from inference.binary_inference_ideas import infer_unknown_topology_symmetric
+from inference.binary_inference_ideas import infer_unknown_topology_symmetric, infer_symmetric_heuristic
 
 TIMEOUT = 60
 
@@ -366,6 +366,48 @@ class TestAttractorMethods(unittest.TestCase):
                 self.assertEqual([int(bool(v)) for v in inferred.next_state(list(state))],
                                  [int(bool(v)) for v in self.network.next_state(list(state))],
                                  "{}: dynamics differ at {}".format(method.__name__, state))
+
+
+class TestSymmetricHeuristic(unittest.TestCase):
+    """infer_symmetric_heuristic: the per-node fit symmetric_topology warm-starts from, as a method."""
+
+    def setUp(self):
+        self.true_network = small_model()
+        self.names = [v.name for v in self.true_network.vertices]
+        self.true_edges = [(u.name, v.name) for u, v in self.true_network.edges]
+
+    def test_recovers_the_true_model_from_its_own_topology(self):
+        scaffold = graphs.Network(vertex_names=self.names, edges=self.true_edges)
+        inferred = infer_symmetric_heuristic(exhaustive_time_series(self.true_network), scaffold,
+                                             included_edges_relative_weight=-0.01)
+        for state in itertools.product([0, 1], repeat=len(self.true_network)):
+            self.assertEqual([int(bool(v)) for v in inferred.next_state(list(state))],
+                             [int(bool(v)) for v in self.true_network.next_state(list(state))],
+                             "dynamics differ at state {}".format(state))
+
+    def test_restricted_never_adds_an_edge_outside_the_scaffold(self):
+        scaffold = graphs.Network(vertex_names=self.names, edges=self.true_edges + [("e", "c")])
+        inferred = infer_symmetric_heuristic(time_series(self.true_network, 4, 4, seed=7), scaffold)
+        self.assertTrue(edge_names(inferred) <= edge_names(scaffold))
+
+    def test_unrestricted_may_use_a_non_scaffold_edge(self):
+        scaffold = graphs.Network(vertex_names=self.names, edges=[])
+        inferred = infer_symmetric_heuristic(exhaustive_time_series(self.true_network), scaffold,
+                                             allow_additional_edges=True, added_edges_relative_weight=-0.001)
+        self.assertTrue(edge_names(inferred))
+
+    def test_max_indegree_is_respected(self):
+        scaffold = graphs.Network(vertex_names=self.names,
+                                  edges=list(itertools.product(self.names, repeat=2)))
+        inferred = infer_symmetric_heuristic(exhaustive_time_series(self.true_network), scaffold,
+                                             max_indegree=1)
+        for vertex in inferred.vertices:
+            self.assertLessEqual(len(vertex.predecessors()), 1)
+
+    def test_runner_resolves_the_method_name(self):
+        from inference.run_inference_on_data import resolve_inference_method, inference_method_name
+        self.assertIs(resolve_inference_method("symmetric_heuristic"), infer_symmetric_heuristic)
+        self.assertEqual(inference_method_name(infer_symmetric_heuristic), "symmetric_heuristic")
 
 
 if __name__ == "__main__":

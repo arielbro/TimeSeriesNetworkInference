@@ -5,7 +5,7 @@ from inference import ilp_components
 from attractor_learning.graphs import FunctionTypeRestriction, Network
 from inference.ilp_components import ModelAdditionType, AttractorAssumption, get_value_of_gurobi_entity
 from attractor_learning.logic import BooleanSymbolicFunc, SymmetricThresholdFunction
-import time
+import numpy as np
 
 
 # TODO: rethink the scattered way I do config, that made it worthwhile to have these
@@ -113,34 +113,167 @@ def infer_known_topology(data_matrices, scaffold_network, function_type_restrict
     return inferred_model
 
 
-def _scaffold_warm_start_values(data_matrices, scaffold_network, timeout_secs, log_file,
-                                allow_input_flips, flip_penalty, no_anchoring, gurobi_threads):
-    """Solve the known-topology symmetric ILP (inputs fixed to the scaffold) and read back, per vertex, a
-    ({input vertex index: +1/-1 sign}, threshold) pair to seed the unknown-topology model's variables.
-    The sign of edge j->i is stored under index j (so it maps directly onto signs_vars[j] of vertex i).
-    Thresholds are clamped into the unknown model's feasible [1, degree] range for nodes with inputs: the
-    known model may return a constant function (threshold 0 or degree+1) while keeping nonzero signs, and
-    feeding such a threshold back would make the whole seeded MIP start infeasible (Gurobi would discard it,
-    reporting that the user MIP start did not produce a new incumbent).
-    Degree-0 (input) nodes get no signs and threshold 0."""
-    scaffold_model = infer_known_topology_symmetric(
-        data_matrices, scaffold_network, timeout_secs=timeout_secs, log_file=log_file,
-        allow_input_flips=allow_input_flips, flip_penalty=flip_penalty,
-        no_anchoring=no_anchoring, gurobi_threads=gurobi_threads)
+def _transition_rows(data_matrices):
+    """Every one-step transition in the data as (X, Y) 0/1 arrays: X the state at t, Y the state at t+1."""
+    xs, ys = [], []
+    for matrix in data_matrices:
+        matrix = np.asarray(matrix)
+        if matrix.shape[0] >= 2:
+            xs.append((matrix[:-1] != 0).astype(np.int8))
+            ys.append((matrix[1:] != 0).astype(np.int8))
+    return np.vstack(xs), np.vstack(ys)
+
+
+def _fit_threshold_node(x, y, own, candidates, edge_costs, max_degree=None):
+    """A symmetric threshold function for one node, fitted to anchored transitions without a solver.
+
+    Signs start from each candidate input's correlation with the node's next value; the threshold is the
+    best one for the signs in use, by enumeration; then single changes to one input's sign (+1, -1, or 0 to
+    drop it) are taken while they improve agreed cells minus the edge costs (in cells). A node left with no
+    input holds its value, as in the model. At most max_degree inputs are used, where given. Returns
+    ({input index: sign}, threshold)."""
+    columns = {i: x[:, i] for i in candidates}
+
+    def value(signs):
+        used = [i for i in candidates if signs[i] != 0]
+        if max_degree is not None and len(used) > max_degree:
+            return -np.inf, 1
+        if not used:
+            return int((own == y).sum()), 0
+        agreeing = sum((columns[i] == 1) if signs[i] > 0 else (columns[i] == 0) for i in used).astype(int)
+        best_score, best_t = -1, 1
+        for t in range(1, len(used) + 1):
+            score = int(((agreeing >= t) == y).sum())
+            if score > best_score:
+                best_score, best_t = score, t
+        return best_score - sum(edge_costs[i] for i in used), best_t
+
+    signs = {}
+    for i in candidates:
+        column = columns[i]
+        if column.std() == 0 or y.std() == 0:
+            signs[i] = 0
+        else:
+            signs[i] = 1 if np.corrcoef(column, y)[0, 1] >= 0 else -1
+    if max_degree is not None:     # keep the strongest correlations within the cap
+        strength = {i: abs(np.corrcoef(columns[i], y)[0, 1]) if signs[i] else 0.0 for i in candidates}
+        for i in sorted(candidates, key=lambda i: -strength[i])[max_degree:]:
+            signs[i] = 0
+    current = value(signs)
+    improved = True
+    while improved:
+        improved = False
+        for i in candidates:
+            for sign in (1, -1, 0):
+                if sign == signs[i]:
+                    continue
+                trial = dict(signs)
+                trial[i] = sign
+                result = value(trial)
+                if result[0] > current[0]:
+                    signs, current, improved = trial, result, True
+    return {i: s for i, s in signs.items() if s != 0}, current[1]
+
+
+def _heuristic_warm_start_values(data_matrices, candidate_inputs, edge_costs, max_degree=None):
+    """Per vertex a ({input vertex index: +1/-1 sign}, threshold) pair, fitted node by node on the anchored
+    transitions (see _fit_threshold_node). Takes a fraction of a second, and on random NK data starts the
+    free-run MIP far above what Gurobi's own heuristics find in that time. edge_costs[(i, j)] is edge i->j's
+    cost in agreed cells."""
+    X, Y = _transition_rows(data_matrices)
     warm_start = []
-    for vertex in scaffold_model.vertices:
-        func = vertex.function
-        if func is None:
+    for j, candidates in enumerate(candidate_inputs):
+        if not candidates:
             warm_start.append(({}, 0))
             continue
-        predecessors = vertex.predecessors()
-        # func.signs[k] aligns with predecessors()[k] (both ordered by vertex index in the known model)
-        signs_by_index = {pred.index: (1 if sign else -1)
-                          for pred, sign in zip(predecessors, func.signs)}
-        degree = len(predecessors)
-        threshold = min(max(func.threshold, 1), degree)
-        warm_start.append((signs_by_index, threshold))
+        warm_start.append(_fit_threshold_node(X, Y[:, j], X[:, j], candidates,
+                                              {i: edge_costs.get((i, j), 0.0) for i in candidates}, max_degree))
     return warm_start
+
+
+def _candidate_inputs(scaffold_network, allow_additional_edges):
+    """Candidate inputs per node, sorted by vertex index. With additional edges allowed this is every vertex -
+    the topology-free search. Without them inference may only keep or drop scaffold edges, so the candidates
+    are the node's scaffold predecessors."""
+    if allow_additional_edges:
+        return [list(range(len(scaffold_network))) for _ in range(len(scaffold_network))]
+    return [sorted(u.index for u in v.predecessors()) for v in scaffold_network.vertices]
+
+
+def _max_indegree_cap(scaffold_network, max_indegree):
+    """Per-node in-degree cap: -1 means the scaffold's (global) max in-degree, computed per network. Clamped
+    to >= 1 so a degenerate edgeless scaffold (whose max in-degree is 0) doesn't force degree <= 0, which
+    would collapse the whole model to constants."""
+    cap = max_indegree if max_indegree != -1 else scaffold_network.max_in_degree()
+    return max(1, cap)
+
+
+def _heuristic_edge_costs(data_matrices, scaffold_network, candidate_inputs, included_edges_relative_weight,
+                          added_edges_relative_weight):
+    """The symmetric_topology objective's per-edge terms, converted to agreed cells (its per-cell unit), so the
+    heuristic weighs an edge against the cells it explains on the same scale the MIP does."""
+    n_vertices = len(scaffold_network)
+    n_cells = sum(max(np.asarray(m).shape[0] - 1, 0) for m in data_matrices) * n_vertices
+    edge_norm = float(len(scaffold_network.edges)) or 1.0
+    scaffold_edge_set = set(scaffold_network.edges)
+    edge_costs = {}
+    for j in range(n_vertices):
+        for i in candidate_inputs[j]:
+            in_scaffold = (scaffold_network.vertices[i], scaffold_network.vertices[j]) in scaffold_edge_set
+            weight = included_edges_relative_weight if in_scaffold else added_edges_relative_weight
+            edge_costs[(i, j)] = -weight * n_cells / edge_norm
+    return edge_costs
+
+
+def _network_from_signs_and_thresholds(vertex_names, signs_and_thresholds):
+    """The Network a list of per-vertex ({input vertex index: +1/-1 sign}, threshold) pairs describes. A
+    vertex with no input holds its value (no function)."""
+    model = Network(vertex_names=vertex_names, edges=[], vertex_functions=[None] * len(vertex_names))
+    for j, (signs_by_index, threshold) in enumerate(signs_and_thresholds):
+        for i in sorted(signs_by_index):
+            model.edges.append((model.vertices[i], model.vertices[j]))
+    for vertex in model.vertices:
+        vertex.precomputed_predecessors = None
+    for j, (signs_by_index, threshold) in enumerate(signs_and_thresholds):
+        if signs_by_index:
+            model.vertices[j].function = SymmetricThresholdFunction(
+                [signs_by_index[i] > 0 for i in sorted(signs_by_index)], threshold)
+    return model
+
+
+def infer_symmetric_heuristic(data_matrices, scaffold_network, allow_additional_edges=False,
+                              included_edges_relative_weight=1, added_edges_relative_weight=-1, max_indegree=-1,
+                              **kwargs):
+    """A symmetric threshold model fitted node by node on the anchored transitions, without a solver: the
+    heuristic symmetric_topology uses as its warm start (_heuristic_warm_start_values), returned as the model.
+    Candidate inputs, the in-degree cap and the edge weights are as in infer_unknown_topology_symmetric. Each
+    node maximizes the one-step cells it predicts on the observed (noisy) rows, minus its edges' costs; there
+    are no input flips or free-run trajectories, so allow_input_flips, flip_penalty, no_anchoring and the
+    timeout are ignored."""
+    data_matrices = list(data_matrices)
+    candidate_inputs = _candidate_inputs(scaffold_network, allow_additional_edges)
+    edge_costs = _heuristic_edge_costs(data_matrices, scaffold_network, candidate_inputs,
+                                       included_edges_relative_weight, added_edges_relative_weight)
+    fitted = _heuristic_warm_start_values(data_matrices, candidate_inputs, edge_costs,
+                                          _max_indegree_cap(scaffold_network, max_indegree))
+    return _network_from_signs_and_thresholds([v.name for v in scaffold_network.vertices], fitted)
+
+
+def _start_trajectories(trajectories, data_matrices, vertex_names, warm_start, free_run):
+    """Start values for the data's (denoised) states: the observed rows, unflipped, and in free-run mode the
+    states the warm-start model then predicts from the first of them - so the MIP start fixes the states as
+    well as the functions, rather than leaving them for Gurobi to complete. trajectories as
+    add_matrices_as_model_paths returns them."""
+    model = _network_from_signs_and_thresholds(vertex_names, warm_start)
+    matrices = [np.asarray(m) for m in data_matrices if np.asarray(m).shape[0] >= 2]
+    for trajectory, matrix in zip(trajectories, matrices):
+        observed = [[int(v != 0) for v in row] for row in matrix]
+        # free-run: rows past the first are the model's own predictions; anchored: every row is a data row
+        rows = [observed[0]] + [list(state) for state in model.next_states(observed[0], len(trajectory) - 1)[1:]]             if free_run else observed
+        for state, values in zip(trajectory, rows):
+            for var, value in zip(state, values):
+                if isinstance(var, gurobipy.Var):
+                    var.Start = int(value)
 
 
 # Default bound on the path IN_ATTRACTORS lets the model take from a matrix's last state back to its first.
@@ -166,9 +299,7 @@ def infer_unknown_topology_symmetric_contains_attractors(data_matrices, scaffold
 def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_additional_edges=False,
                                    included_edges_relative_weight=1, added_edges_relative_weight=-1,
                                    timeout_secs=None, log_file=None, allow_input_flips=False, flip_penalty=1.0,
-                                   no_anchoring=False, gurobi_threads=0,
-                                   warm_start_from_scaffold=False, warm_start_time_frac=0.2,
-                                   max_indegree=-1, attractor_assumption=None,
+                                   no_anchoring=False, gurobi_threads=0, warm_start_heuristic=False, max_indegree=-1, attractor_assumption=None,
                                    attractor_max_path_len=DEFAULT_ATTRACTOR_MAX_PATH_LEN, **kwargs):
     """
     Find a symmetric threshold model with best fit to data_matrices and scaffold_network,
@@ -194,11 +325,10 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
         one cell, and = 1 (the default) is the break-even point at which the chosen flips may be under-determined.
     :param no_anchoring: if true, score a free-running trajectory (each step is fed the model's own previous
         prediction) instead of independent one-step transitions anchored to the data.
-    :param warm_start_from_scaffold: if true, first solve the known-topology symmetric ILP (inputs fixed to the
-        scaffold) and use the signs/thresholds it learns as a MIP start for this (unknown-topology) solve.
-    :param warm_start_time_frac: fraction of timeout_secs given to the scaffold (warm-start) solve; this solve's
-        actual elapsed time is then subtracted from timeout_secs to budget the main solve. Ignored when
-        warm_start_from_scaffold is False or timeout_secs is None.
+    :param warm_start_heuristic: if true, seed the MIP with symmetric
+        threshold functions fitted node by node on the anchored transitions (_heuristic_warm_start_values),
+        with the data rows unflipped and, in free-run mode, the states those functions predict - a complete
+        start, found in under a second.
     :param attractor_assumption: None, or an ilp_components.AttractorAssumption imposed as a hard constraint
         on every data matrix's denoised trajectory. Requires no_anchoring and allow_input_flips. The
         symmetric_topology_in_attractors / _contains_attractors methods are this function with it set.
@@ -207,42 +337,26 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
     :return:
     """
     ilp_components.check_attractor_assumption_compatible(attractor_assumption, no_anchoring, allow_input_flips)
-    warm_start = None
-    main_timeout_secs = timeout_secs
-    if warm_start_from_scaffold:
-        data_matrices = list(data_matrices)  # iterated by both the scaffold solve and the main solve below
-        scaffold_timeout = timeout_secs * warm_start_time_frac if timeout_secs is not None else None
-        scaffold_start = time.time()
-        warm_start = _scaffold_warm_start_values(
-            data_matrices, scaffold_network, timeout_secs=scaffold_timeout, log_file=log_file,
-            allow_input_flips=allow_input_flips, flip_penalty=flip_penalty,
-            no_anchoring=no_anchoring, gurobi_threads=gurobi_threads)
-        if timeout_secs is not None:
-            # give the (harder) unknown-topology solve whatever of the budget the scaffold solve left unused
-            main_timeout_secs = max(timeout_secs - (time.time() - scaffold_start), 0.0)
+    data_matrices = list(data_matrices)  # iterated by the warm start and by the main solve below
 
     n_vertices = len(scaffold_network)
-    # Candidate inputs per node. With additional edges allowed this is every vertex - the topology-free
-    # search the method is for. Without them inference may only keep or drop scaffold edges, so the
-    # candidates are the node's scaffold predecessors, and building the model over just those is what keeps
-    # it proportional to the scaffold rather than to n**2 (the earlier formulation built every pair and
-    # constrained the disallowed ones to zero, which costs the memory before presolve can remove them).
-    # Sorted by vertex index, because add_path_to_model zips a node's sign variables against its
-    # predecessors in index order.
-    if allow_additional_edges:
-        candidate_inputs = [list(range(n_vertices)) for _ in range(n_vertices)]
-    else:
-        candidate_inputs = [sorted(u.index for u in v.predecessors())
-                            for v in scaffold_network.vertices]
+    # Candidate inputs per node (see _candidate_inputs). Building the model over just the scaffold's
+    # predecessors when additional edges aren't allowed is what keeps it proportional to the scaffold rather
+    # than to n**2 (the earlier formulation built every pair and constrained the disallowed ones to zero, which
+    # costs the memory before presolve can remove them). Sorted by vertex index, because add_path_to_model
+    # zips a node's sign variables against its predecessors in index order.
+    candidate_inputs = _candidate_inputs(scaffold_network, allow_additional_edges)
     candidate_position = [{index: position for position, index in enumerate(candidates)}
                           for candidates in candidate_inputs]
     scaffold_edge_set = set(scaffold_network.edges)  # membership test inside the per-pair loops below
 
-    # per-node in-degree cap: -1 means the scaffold's (global) max in-degree, computed per network. Clamped
-    # to >= 1 so a degenerate edgeless scaffold (whose max in-degree is 0) doesn't force degree <= 0, which
-    # combined with the threshold constraints below would collapse the whole model to constants.
-    max_indeg_cap = max_indegree if max_indegree != -1 else scaffold_network.max_in_degree()
-    max_indeg_cap = max(1, max_indeg_cap)
+    max_indeg_cap = _max_indegree_cap(scaffold_network, max_indegree)
+
+    warm_start = None
+    if warm_start_heuristic:
+        edge_costs = _heuristic_edge_costs(data_matrices, scaffold_network, candidate_inputs,
+                                           included_edges_relative_weight, added_edges_relative_weight)
+        warm_start = _heuristic_warm_start_values(data_matrices, candidate_inputs, edge_costs, max_indeg_cap)
 
     # create function variables
     functions_variables = []
@@ -359,21 +473,21 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
             objective = objective - flip_penalty * gurobipy.quicksum(flip_cost_terms) / n_cells
 
         if warm_start is not None:
-            # seed signs/threshold from the scaffold solve; Gurobi completes the rest of the partial MIP start
+            # seed signs/thresholds and the trajectories' states from the warm start: a complete MIP start
             for i in range(n_vertices):
                 signs_by_index, threshold_start = warm_start[i]
                 signs_vars, threshold_var = functions_variables[i][0], functions_variables[i][1]
-                # the warm start keys signs by vertex index; map through to this node's candidate positions,
-                # dropping any index that isn't a candidate here (it cannot be, when the warm start comes
-                # from the same scaffold, but the seeding must not depend on that)
+                # the warm start keys signs by vertex index; map through to this node's candidate positions
                 for position, j in enumerate(candidate_inputs[i]):
                     signs_vars[position].Start = signs_by_index.get(j, 0)
                 threshold_var.Start = min(threshold_start, len(candidate_inputs[i]))
+            _start_trajectories(trajectories, data_matrices, [v.name for v in scaffold_network.vertices],
+                                warm_start, free_run=no_anchoring)
 
         if log_file is not None:
             model.Params.LogFile = log_file
-        if main_timeout_secs is not None:
-            model.Params.TimeLimit = main_timeout_secs
+        if timeout_secs is not None:
+            model.Params.TimeLimit = timeout_secs
         if gurobi_threads:
             model.Params.Threads = gurobi_threads
         model.Params.MIPFocus = 1
