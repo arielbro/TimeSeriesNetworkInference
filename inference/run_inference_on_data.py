@@ -25,6 +25,7 @@ import subprocess
 import configargparse
 
 
+inference_parent_dir = "/scratch/gpfs/MONA/abronner/TimeSeriesNetworkInference/inferred_models"
 NETWORK_MARKER_FILE = "true_network.json"
 
 
@@ -408,7 +409,7 @@ def enumerate_problems(options):
         for data_dir in os.scandir(data_parent_dir):
             if not data_dir.is_dir():
                 continue
-            output_parent_dir = os.path.join("inferred_models", data_dir_partial_path,
+            output_parent_dir = os.path.join(inference_parent_dir, data_dir_partial_path,
                                              "{}-{}".format(comb_str, data_dir.name))
             networks = find_network_dirs(data_dir.path)
             if not networks:
@@ -545,7 +546,7 @@ def query_slurm_task_states(array_job_id):
 
 def summarize_errors(manifest_path, summary_filename, chunk_size, array_job_id=None):
     """Update an errors summary named summary_filename in each experiment directory the manifest targets
-    (inferred_models/<experiment> = the parent of a problem's output_parent_dir). Rather than replacing the
+    (<inference_parent_dir>/<experiment> = the parent of a problem's output_parent_dir). Rather than replacing the
     summary with only this run's findings, it merges into a durable per-experiment store (summary_state_path,
     keyed by (output_parent_dir, network_name)) so results accumulate across submissions. Each entry is one of:
       1. errored - a network that raised a caught exception (recorded by the array tasks), rendered with its
@@ -767,7 +768,7 @@ def main():
     p.add_argument('--summarize_errors', required=False, type=str, default=None,
                    help='aggregate the per-task error records for the manifest given by --run_manifest into an '
                         'errors-only summary file with this name, written into each targeted experiment dir '
-                        '(inferred_models/<experiment>); also lists incomplete-but-unrecorded problems, then '
+                        '(<inference_parent_dir>/<experiment>); also lists incomplete-but-unrecorded problems, then '
                         'exit (run as an end-of-array finalize job)')
     p.add_argument('--array_job_id', required=False, type=str, default=None,
                    help='SLURM job id of the inference array, used by --summarize_errors to query sacct for the '
@@ -840,7 +841,7 @@ def main():
             if not os.path.isdir(data_dir):
                 continue
             data_dir_partial_path = os.path.join(*os.path.normpath(kwargs['data_parent_dir']).split(os.sep)[-2:])
-            output_base = os.path.join("inferred_models", data_dir_partial_path)
+            output_base = os.path.join(inference_parent_dir, data_dir_partial_path)
             output_parent_dir = os.path.join(output_base, "{}-{}".format(comb_str, data_dir.name))
             # don't wipe existing output: we pick up where a previous run left off (per-network skip below)
             os.makedirs(output_parent_dir, exist_ok=True)
