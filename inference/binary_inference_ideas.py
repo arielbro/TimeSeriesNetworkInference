@@ -84,7 +84,7 @@ def infer_known_topology(data_matrices, scaffold_network, function_type_restrict
             model.Params.TimeLimit = timeout_secs
         if gurobi_threads:
             model.Params.Threads = gurobi_threads
-        model.Params.MIPFocus = 1
+        # model.Params.MIPFocus = 1
         model.setObjective(objective, sense=gurobipy.GRB.MAXIMIZE)
         model.optimize()
 
@@ -490,7 +490,7 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
             model.Params.TimeLimit = timeout_secs
         if gurobi_threads:
             model.Params.Threads = gurobi_threads
-        model.Params.MIPFocus = 1
+        # model.Params.MIPFocus = 1
 
         model.setObjective(objective, sense=gurobipy.GRB.MAXIMIZE)
         model.optimize()
