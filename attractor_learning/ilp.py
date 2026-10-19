@@ -2,7 +2,6 @@ import gurobipy
 import itertools
 import time
 import math
-from attractor_learning.graphs import FunctionTypeRestriction
 from gurobipy import GRB
 
 # TODO: find good upper bound again, why didn't 29 work on MAPK_large2?
@@ -67,88 +66,45 @@ def create_state_keys_comparison_var(model, first_state_keys, second_state_keys,
     return last_var
 
 
-def add_truth_table_consistency_constraints(model, v_func, v_next_state_var, predecessors_cur_vars,
-                                           name_prefix, activity_variable=None, find_model_f_vars=None):
-    """
-    Adds consistency constraints to a model, as in Roded's paper.
-    :param G:
-    :param model:
-    :param find_model:
-    :return:
-    """
-    in_degree = len(predecessors_cur_vars)
-    for var_comb_index, var_combination in enumerate(itertools.product((False, True), repeat=in_degree)):
-        if find_model_f_vars is not None:
-            desired_val = find_model_f_vars[var_comb_index]
-        elif isinstance(v_func(*var_combination), gurobipy.Var):
-            desired_val = v_func(*var_combination)
-        else:
-            desired_val = 1 if v_func(*var_combination) else 0  # == because sympy
-        # this expression is |in_degree| iff their states agrees with var_combination
-        indicator_expression = gurobipy.quicksum(v if state else 1 - v for (v, state) in
-                                                  zip(predecessors_cur_vars, var_combination))
-        # a[p, t] & (indicator_expression = in_degree) => v[i,p,t+1] = f(var_combination).
-        # For x&y => a=b, require a <= b + (2 -x -b), a >= b - (2 -x -y)
-        activity_expression = activity_variable - 1 if activity_variable is not None else 0
-        model.addConstr(v_next_state_var >= desired_val -
-                        (in_degree - indicator_expression - activity_expression),
-                        name="{}_>=_{}".format(name_prefix, var_comb_index))
-        model.addConstr(v_next_state_var <= desired_val +
-                        (in_degree - indicator_expression - activity_expression),
-                        name="{}_<=_{}".format(name_prefix, var_comb_index))
+def _binary_constant(value):
+    value = int(round(float(value)))
+    if value not in (0, 1):
+        raise ValueError("v must be binary, but got value {}".format(value))
+    return value
 
 
-def add_state_equality_indicator(model, first_state, second_state,
-                                 force_equal=True, prefix=None, return_per_index=False):
-    """
-    Adds and returns a (NON STRICT) binary indicator for whether two network states are equal.
-    result = 1 -> first_state == second_state.
-    If force_equal, result = 1 <-> first_state == second_state.
-    Does not use state hashing and ordering. States are allowed to be variables or constants.
-    If return_per_index, returns the list of per-node (per-cell) equality indicators instead of a
-    single whole-state indicator, allowing cell-wise rather than row-wise agreement scoring.
+def _agreeing_input(model, positive, negative, value, name):
+    """1 iff an input's value agrees with its edge's sign: the activating-edge binary p for an input at 1, the
+    inhibiting-edge binary q for one at 0. For a variable input v this is p*v + q*(1 - v), written as its convex
+    hull given p + q <= 1 (one binary, five rows)."""
+    if not isinstance(value, gurobipy.Var):
+        return positive if _binary_constant(value) == 1 else negative
+    agrees = model.addVar(vtype=GRB.BINARY, name=name)
+    model.addConstr(agrees <= value + negative, name=name + "_hull1")
+    model.addConstr(agrees <= 1 - value + positive, name=name + "_hull2")
+    model.addConstr(agrees <= positive + negative, name=name + "_hull3")
+    model.addConstr(agrees >= positive + value - 1, name=name + "_hull4")
+    model.addConstr(agrees >= negative - value, name=name + "_hull5")
+    return agrees
 
-    :param model:
-    :param first_state:
-    :param second_state:
-    :param force_equal:
-    :param prefix:
-    :param return_per_index:
-    :return:
-    """
-    # TODO: write tests
-    equality_indicators = []
-    for index, (first_val, second_val) in enumerate(zip(first_state, second_state)):
-        # add indicator for whether these two values are equal.
-        val_equality_indicator = model.addVar(vtype=GRB.BINARY, name="{}_state_equality_indicator_index_{}".
-                                                format(prefix, index))
-        if force_equal:
-            # force eq_var = 1 <-> first_val == second_val
-            model.addConstr(val_equality_indicator <= 1 + second_val - first_val,
-                                name="{}_state_equality_constraint_<=_1_index_{}".
-                                format(prefix, index))
-            model.addConstr(val_equality_indicator <= 1 + first_val - second_val,
-                                name="{}_state_equality_constraint_<=_2_index_{}".
-                                format(prefix, index))
-            model.addConstr(val_equality_indicator >= first_val + second_val - 1,
-                                name="{}_state_equality_constraint_>=_1_index_{}".
-                                format(prefix, index))
-            model.addConstr(val_equality_indicator >= 1 - first_val - second_val,
-                                name="{}_state_equality_constraint_>=_2_index_{}".
-                                format(prefix, index))
-        else:
-            model.addGenConstrIndicator(val_equality_indicator, 1, first_val == second_val,
-                                        name="{}_state_equality_constraint_index_{}".format(prefix, index))
-        equality_indicators.append(val_equality_indicator)
-    if return_per_index:
-        return equality_indicators
-    equality_var = model.addVar(vtype=GRB.BINARY, name="{}_state_equality_indicator".
-                 format(prefix))
-    model.update()
-    model.addGenConstrAnd(equality_var, equality_indicators,
-                          name="{}_state_inequality_constraint".format(prefix))
-    model.update()
-    return equality_var
+
+def add_state_agreement_terms(model, predicted_state, target_state, prefix=""):
+    """Per-cell agreement of a predicted state (variables) with a target state, as terms for an objective that
+    maximizes their sum. Against a constant target cell the term is the predicted cell itself (or its
+    complement). Against a variable one (a denoised data row) it is a binary z bounded by z <= 1 + x - y and
+    z <= 1 + y - x: the objective maximizes it, so the two rows bounding it from below are not needed - which
+    is also why these terms are only valid in a maximized objective, with a positive weight."""
+    terms = []
+    for index, (predicted, target) in enumerate(zip(predicted_state, target_state)):
+        if not isinstance(target, gurobipy.Var):
+            terms.append(predicted if _binary_constant(target) == 1 else 1 - predicted)
+            continue
+        name = "{}_agreement_index_{}".format(prefix, index)
+        agrees = model.addVar(vtype=GRB.BINARY, name=name)
+        model.addConstr(agrees <= 1 + predicted - target, name=name + "_<=1")
+        model.addConstr(agrees <= 1 + target - predicted, name=name + "_<=2")
+        terms.append(agrees)
+    return terms
 
 
 def add_hashed_state_inclusion_indicator(model, first_state, second_state_set, slice_size, prefix=None,
@@ -202,143 +158,56 @@ def add_hashed_state_inclusion_indicator(model, first_state, second_state_set, s
     return inclusion_indicator
 
 
-def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, last_state_vars=None,
-                      v_funcs_restrictions=None, name_prefix="", max_indegree=None):
+def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, max_indegree=None, name_prefix=""):
     """
-    Adds a path from first_state_vars to last_state_vars to the model, i.e. requires that last_state_vars
-    represents the state resulting after path_len time steps from first_state_vars.
-    Returns the state variables representing the path, excluding the first state and including the last state.
-    If last_state_vars is undefined, creates a new state for it, and return it with the rest.
-    If v_funcs_restrictions is not None, assumes it gives each function a possible restriction to symmetric threshold
-    or a simple gate, with a given representation in model_f_vars.
-    :param G:
-    :param model:
-    :param path_len:
-    :param first_state_vars:
-    :param last_state_vars:
-    :param model_f_vars:
-    :param max_indegree: upper bound on how many inputs a node may end up using, when the caller constrains
-        it (the symmetric-threshold formulation lets a node zero out inputs it doesn't use). Only tightens
-        the big-M of the threshold comparison, which is otherwise sized by the candidate count; None leaves
-        it at the candidate count.
-    :return:
+    Adds a path of path_len synchronous steps from first_state_vars (variables or constant 0/1 values) under
+    signed symmetric threshold functions, and returns the states along it as new binaries: excluding the first
+    state, including the last.
+    model_f_vars gives each node's function as (positives, negatives, threshold, unused), aligned with the node's
+    predecessors in G: per input, a binary that is 1 iff the input is used and activating and one that is 1 iff
+    it is used and inhibiting (at most one of which may be 1, which the caller constrains), the threshold, and
+    an indicator that is 1 iff the node uses no input at all, in which case it holds its value, as an input node
+    does in Network.next_state. unused may be None for a node that always uses its inputs. Any of them may be
+    constants, to check a fixed model. A node without predecessors holds its value.
+    :param max_indegree: upper bound on how many inputs a node may end up using, when the caller constrains it.
+        Only tightens the big-M of the threshold comparison, which is otherwise sized by the predecessor count.
     """
-    start = time.time()
-    n = len(G.vertices)
     assert path_len >= 1, "can't add path constraint with path of length {}".format(path_len)
-
-    previous_state_vars = first_state_vars
-    new_state_vars_list = []
-    for l in range(path_len):
-        next_state_vars = last_state_vars if ((last_state_vars is not None) and (l == path_len - 1)) else [
-            model.addVar(vtype=gurobipy.GRB.BINARY, name="transient_path_state_var_{}_{}".format(l, i))
-            for i in range(n)]
-        new_state_vars_list.append(next_state_vars)
-
+    n = len(G.vertices)
+    previous_state = first_state_vars
+    states = []
+    for step in range(path_len):
+        prefix = "{}_step_{}".format(name_prefix, step)
+        next_state = [model.addVar(vtype=GRB.BINARY, name="{}_state_{}".format(prefix, i)) for i in range(n)]
         for i in range(n):
-            if len(G.vertices[i].predecessors()) == 0:
-                model.addConstr(previous_state_vars[i] == next_state_vars[i],
-                                name="stable_constraint_{}_node_{}".format(l, i))
-            else:
-                predecessor_indices = [u.index for u in G.vertices[i].predecessors()]
-                predecessor_vars = [previous_state_vars[index] for index in predecessor_indices]
-
-                if (v_funcs_restrictions is not None) and (
-                        v_funcs_restrictions[i] == FunctionTypeRestriction.SYMMETRIC_THRESHOLD):
-                    signs, threshold = model_f_vars[i][0], model_f_vars[i][1]
-                    # optional third element: an indicator that is 1 iff the node ends up using no input at
-                    # all (all its signs are zero). Such a node holds its value, exactly as an input node
-                    # does in Network.next_state, instead of being constant True (an empty signed sum meets
-                    # the threshold, which is forced to 0 at degree 0).
-                    unused_node = model_f_vars[i][2] if len(model_f_vars[i]) > 2 else None
-                    # v * s + (1-s)/2 gives v if s=1 and (1-v) if s=-1
-                    # !!! This only works if s\in {-1, 1}, if we're learning the topology and s=0 is possible, breaks.
-                    # instead, divide to cases based on the value of v and an extra variable.
-                    # TODO: consolidate formulation here and in other parts of ilp.py
-                    signed_input_vars = [model.addVar(vtype=gurobipy.GRB.BINARY,
-                                         name="{}_signed_input_var_{}_{}_{}".format(name_prefix, l, i, j))
-                                         for j in range(len(predecessor_vars))]
-                    for j, (sign, var, signed_input) in enumerate(zip(signs, predecessor_vars, signed_input_vars)):
-                        # we want signed_input = 1 <-> (s = 1 and v = 1) or (s = -1 and v = 0)
-                        # v is binary, and s can take -1, 1
-                        # (2v - 1)s yields 1 when v and s "agree" (1 and 1 or 0 and -1), otherwise less.
-                        # And so, forcing signed_input to be 1 iff (2v - 1)s is 1 works, but that'd probably be harder
-                        # to solve (since constraint-heavy expressions generally yield better relaxations).
-                        # instead, just split to cases, since v is a constant
-                        if isinstance(var, gurobipy.Var):
-                            # v is a decision variable (e.g. a flippable/denoised data cell), so we can't
-                            # split on its value. Linearize the product prod = sign * v via McCormick
-                            # envelopes (exact since v is binary and sign in [-1, 1]):
-                            #   v=1 -> prod=sign ; v=0 -> prod=0.
-                            # Then (2v - 1) * sign == 2 * prod - sign, which lies in {-1, 0, 1} and equals
-                            # 1 exactly when v and sign "agree", so signed_input is its positive part.
-                            prod = model.addVar(lb=-1, ub=1, vtype=gurobipy.GRB.INTEGER,
-                                                name="{}_signed_input_prod_{}_{}_{}".format(name_prefix, l, i, j))
-                            model.addConstr(prod <= var, name="{}_signed_input_prod_mc1_{}_{}_{}".format(name_prefix, l, i, j))
-                            model.addConstr(prod >= -var, name="{}_signed_input_prod_mc2_{}_{}_{}".format(name_prefix, l, i, j))
-                            model.addConstr(prod <= sign + (1 - var), name="{}_signed_input_prod_mc3_{}_{}_{}".format(name_prefix, l, i, j))
-                            model.addConstr(prod >= sign - (1 - var), name="{}_signed_input_prod_mc4_{}_{}_{}".format(name_prefix, l, i, j))
-                            agreement = 2 * prod - sign  # in {-1, 0, 1}, == 1 iff v agrees with sign
-                            model.addConstr(signed_input >= agreement,
-                                            name="{}_signed_input_constraint_{}_{}_{}>=".format(name_prefix, l, i, j))
-                            model.addConstr(2 * signed_input <= agreement + 1,
-                                            name="{}_signed_input_constraint_{}_{}_{}<=".format(name_prefix, l, i, j))
-                        elif var == 1:
-                            # s = 1 -> signed_input = 1, otherwise signed_input = 0
-                            model.addConstr(signed_input >= sign,
-                                            name="{}_signed_input_constraint_{}_{}_{}>=".format(name_prefix, l, i, j))
-                            model.addConstr(2 * signed_input <= 1 + sign,
-                                            name="{}_signed_input_constraint_{}_{}_{}<=".format(name_prefix, l, i, j))
-                        elif var == 0:
-                            # s = -1 -> signed_input = 1, otherwise signed_input = 0
-                            model.addConstr(signed_input >= -sign,
-                                            name="{}_signed_input_constraint_{}_{}_{}>=".format(name_prefix, l, i, j))
-                            model.addConstr(2 * signed_input <= 1 - sign,
-                                            name="{}_signed_input_constraint_{}_{}_{}<=".format(name_prefix, l, i, j))
-                        else:
-                            raise ValueError("v must be binary, but got value {}".format(var))
-                    # This expression ranges in [-threshold + 1, degree + 1]
-                    # which is invariably bounded by [-len(predecessor_vars), len(predecessor_vars) + 1]
-                    # It's strictly positive iff output should be 1.
-                    input_to_threshold_comparison = gurobipy.quicksum(signed_input_vars) - threshold + 1
-                    # big_m * unused_node relaxes both comparisons for a node that uses no input (the
-                    # comparison then ranges in [-degree, degree + 1], so big_m makes them vacuous), leaving
-                    # the indicator constraint below to hold its value instead.
-                    # the comparison ranges within +/- (degree + 1), and the degree cannot exceed the
-                    # candidate count nor, where the caller imposes one, max_indegree - so the smaller of
-                    # the two is a valid and tighter big-M
-                    degree_bound = len(predecessor_vars) if max_indegree is None                         else min(len(predecessor_vars), max_indegree)
-                    big_m = degree_bound + 1
-                    unused_slack = 0 if unused_node is None else big_m * unused_node
-                    model.addConstr(big_m * next_state_vars[i] >= input_to_threshold_comparison - unused_slack,
-                        name="{}_threshold_function_path_constraint_>=".format(name_prefix))
-                    model.addConstr(big_m * next_state_vars[i] <=
-                                    big_m + input_to_threshold_comparison - 1 + unused_slack,
-                                    name="{}_threshold_function_path_constraint_<=".format(name_prefix))
-                    if unused_node is not None:
-                        model.addGenConstrIndicator(
-                            unused_node, True, next_state_vars[i] == previous_state_vars[i],
-                            name="{}_unused_node_holds_value_{}_{}".format(name_prefix, l, i))
-
-                elif (v_funcs_restrictions is not None) and (
-                        v_funcs_restrictions[i] == FunctionTypeRestriction.SIMPLE_GATES):
-                    raise NotImplementedError()
-                else:
-                    assert (v_funcs_restrictions is None) or (v_funcs_restrictions[i] == FunctionTypeRestriction.NONE) \
-                        or (v_funcs_restrictions[i] is None)
-                    find_model_f_vars = model_f_vars[i] if (model_f_vars is not None) else None
-                    v_func = None if ((model_f_vars is not None) and (model_f_vars[i]) is not None) \
-                        else G.vertices[i].function
-                    predecessor_indices = [u.index for u in G.vertices[i].predecessors()]
-                    predecessor_vars = [previous_state_vars[index] for index in predecessor_indices]
-                    add_truth_table_consistency_constraints(model, v_func, next_state_vars[i], predecessor_vars,
-                                                            name_prefix="transient_path_step_{}vertex_{}".format(l, i),
-                                                            activity_variable=None, find_model_f_vars=find_model_f_vars)
-
-        previous_state_vars = next_state_vars
-
-    # print("Time taken to add path constraints:{:.2f} seconds".format(time.time() - start))
-    return new_state_vars_list
+            predecessor_indices = [u.index for u in G.vertices[i].predecessors()]
+            if not predecessor_indices:
+                model.addConstr(next_state[i] == previous_state[i], name="{}_stable_{}".format(prefix, i))
+                continue
+            positives, negatives, threshold, unused = model_f_vars[i]
+            agreeing = [_agreeing_input(model, p, q, previous_state[k], "{}_agree_{}_{}".format(prefix, i, k))
+                        for k, p, q in zip(predecessor_indices, positives, negatives)]
+            # strictly positive iff the output is 1. It lies in [2 - degree, degree] for a used node and is
+            # exactly 1 for an unused one (no inputs, threshold 0), so the >= side only has to be relaxed by
+            # unused and the <= side not at all; the indicator below then holds the node's value instead.
+            comparison = gurobipy.quicksum(agreeing) - threshold + 1
+            # the degree cannot exceed the predecessor count nor, where the caller imposes one, max_indegree
+            degree_bound = len(predecessor_indices) if max_indegree is None \
+                else min(len(predecessor_indices), max_indegree)
+            big_m = degree_bound + 1
+            slack = 0 if unused is None else unused
+            model.addConstr(big_m * next_state[i] >= comparison - slack,
+                            name="{}_threshold_function_path_constraint_>=_{}".format(prefix, i))
+            model.addConstr(big_m * next_state[i] <= big_m + comparison - 1,
+                            name="{}_threshold_function_path_constraint_<=_{}".format(prefix, i))
+            if unused is not None:
+                previous = previous_state[i] if isinstance(previous_state[i], gurobipy.Var) \
+                    else _binary_constant(previous_state[i])
+                model.addGenConstrIndicator(unused, True, next_state[i] == previous,
+                                            name="{}_unused_node_holds_value_{}".format(prefix, i))
+        states.append(next_state)
+        previous_state = next_state
+    return states
 
 
 def get_expr_coos(expr, var_indices):

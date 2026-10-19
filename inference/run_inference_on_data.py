@@ -9,7 +9,7 @@ import enum
 import traceback
 from concurrent.futures import ProcessPoolExecutor
 from inference import dummy_inference, binary_inference_ideas, benchmark_inference
-from inference.binary_inference_ideas import infer_known_topology_symmetric, infer_known_topology_general, infer_unknown_topology_symmetric,     infer_unknown_topology_symmetric_in_attractors, infer_unknown_topology_symmetric_contains_attractors, \
+from inference.binary_inference_ideas import infer_unknown_topology_symmetric,     infer_unknown_topology_symmetric_in_attractors, infer_unknown_topology_symmetric_contains_attractors, \
     infer_symmetric_heuristic
 from inference.ilp_components import AttractorAssumption, check_attractor_assumption_compatible
 from sklearn.model_selection import train_test_split
@@ -96,7 +96,7 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
         time_taken = time.time() - start
         del scaffold_network
 
-        # Truth-table inference (general / random_model / exact_match_else_random / linear_classifier) keeps
+        # Truth-table inference (random_model / exact_match_else_random / linear_classifier) keeps
         # every scaffold edge even when a node's learned truth table ignores an input. Prune those functionally
         # irrelevant inputs so the saved model, its time-series predictions, and the edge score all reflect the
         # model's effective topology (a node depending on no input keeps one randomly chosen input and stays
@@ -261,8 +261,6 @@ def parse_bool_option(value):
 
 INFERENCE_METHODS = {
     "random": dummy_inference.dummy_inference_method,
-    "general": infer_known_topology_general,
-    "symmetric": infer_known_topology_symmetric,
     "symmetric_topology": infer_unknown_topology_symmetric,
     "symmetric_topology_in_attractors": infer_unknown_topology_symmetric_in_attractors,
     "symmetric_topology_contains_attractors": infer_unknown_topology_symmetric_contains_attractors,

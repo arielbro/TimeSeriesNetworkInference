@@ -4,11 +4,6 @@ import logging
 import gurobipy
 
 
-class ModelAdditionType(Enum):
-    CONSTRAINT = 1
-    INDICATORS = 2
-
-
 slice_size = 15
 
 logger = logging.getLogger()
@@ -60,8 +55,8 @@ def _add_conditional_state_equality(model, indicator, first_state, second_state,
         model.addConstr(second - first <= 1 - indicator, name="{}_equal_>=_{}".format(name_prefix, i))
 
 
-def add_attractor_return_path(graph, model, trajectory, function_vars, max_path_len,
-                              function_type_restrictions=None, max_indegree=None, name_prefix=""):
+def add_attractor_return_path(graph, model, trajectory, function_vars, max_path_len, max_indegree=None,
+                              name_prefix=""):
     """IN_ATTRACTORS for one matrix: the model, run on from the trajectory's last state y_T, reaches its first
     state y_1 again after some l in [1, max_path_len] steps - so the whole trajectory lies on one cycle.
 
@@ -70,11 +65,10 @@ def add_attractor_return_path(graph, model, trajectory, function_vars, max_path_
     length is variable through that disjunction alone, so the attractor ILP's activity variables are not
     needed. Returns the hit indicators."""
     path = ilp.add_path_to_model(graph, model, path_len=max_path_len, first_state_vars=trajectory[-1],
-                                 model_f_vars=function_vars, v_funcs_restrictions=function_type_restrictions,
-                                 max_indegree=max_indegree, name_prefix="{}_return_path".format(name_prefix))
+                                 model_f_vars=function_vars, max_indegree=max_indegree,
+                                 name_prefix="{}_return_path".format(name_prefix))
     hits = [model.addVar(vtype=gurobipy.GRB.BINARY, name="{}_returns_after_{}".format(name_prefix, l + 1))
             for l in range(max_path_len)]
-    model.update()
     for l, (state, hit) in enumerate(zip(path, hits)):
         _add_conditional_state_equality(model, hit, state, trajectory[0],
                                         "{}_return_after_{}".format(name_prefix, l + 1))
@@ -97,7 +91,7 @@ def add_attractor_repeat(model, trajectory, name_prefix=""):
 
 
 def add_attractor_assumption(graph, model, trajectories, attractor_assumption, function_vars,
-                             attractor_max_path_len=None, function_type_restrictions=None, max_indegree=None):
+                             attractor_max_path_len=None, max_indegree=None):
     """Adds attractor_assumption's constraint for every trajectory (see AttractorAssumption)."""
     for index, trajectory in enumerate(trajectories):
         prefix = "matrix_{}_attractor".format(index)
@@ -106,7 +100,6 @@ def add_attractor_assumption(graph, model, trajectories, attractor_assumption, f
                 raise ValueError("IN_ATTRACTORS needs attractor_max_path_len >= 1, got {}".format(
                     attractor_max_path_len))
             add_attractor_return_path(graph, model, trajectory, function_vars, attractor_max_path_len,
-                                      function_type_restrictions=function_type_restrictions,
                                       max_indegree=max_indegree, name_prefix=prefix)
         elif attractor_assumption == AttractorAssumption.CONTAINS_ATTRACTORS:
             add_attractor_repeat(model, trajectory, name_prefix=prefix)
@@ -114,25 +107,22 @@ def add_attractor_assumption(graph, model, trajectories, attractor_assumption, f
             raise ValueError("Unrecognized attractor assumption {}".format(attractor_assumption))
 
 
-def add_matrices_as_model_paths(graph, model, data_matrices, function_vars, model_to_data_sample_rate_ratio=1,
-                                function_type_restrictions=None, model_addition_type=ModelAdditionType.CONSTRAINT,
-                                per_cell_indicators=False, allow_input_flips=False, no_anchoring=False,
-                                max_indegree=None, return_trajectories=False):
+def add_matrices_as_model_paths(graph, model, data_matrices, function_vars, max_indegree=None,
+                                allow_input_flips=False, no_anchoring=False):
     """
-    Adds the data matrices to the model as model transitions.
+    Adds the data matrices to the model as transitions of the threshold functions in function_vars (in
+    ilp.add_path_to_model's shape, over graph's predecessors), scored cell by cell.
 
-    With return_trajectories (INDICATORS mode only), a third element is returned: per matrix with at least two
-    rows, the list of its states y_1..y_T as the model sees them. In free-run mode that is the (denoised, with
-    flips) first row followed by the model's own predictions; anchored, it is the (denoised) data rows, with
-    the last row the observed one, since anchored mode never feeds the last row to the model.
-
-    In INDICATORS mode returns a tuple (agreement_indicators, flip_cost_terms):
-      - agreement_indicators: binary indicators that are 1 iff the model correctly explains a transition.
-        With per_cell_indicators, there is one indicator per (predicted state, node) cell (cell-wise scoring);
-        otherwise one indicator per whole predicted state (legacy, row-wise scoring).
+    Returns (agreement_terms, flip_cost_terms, trajectories):
+      - agreement_terms: one per (predicted state, node) cell, each 1 iff the model predicts that cell
+        correctly - for an objective to maximize (see ilp.add_state_agreement_terms).
       - flip_cost_terms: when allow_input_flips, one term per flippable data cell, each equal to 1 iff the
         model chose to flip that observed bit (0 otherwise); empty otherwise. The caller is responsible for
         penalizing their sum in the objective.
+      - trajectories: per matrix with at least two rows, the list of its states y_1..y_T as the model sees
+        them. In free-run mode that is the (denoised, with flips) first row followed by the model's own
+        predictions; anchored, it is the (denoised) data rows, with the last row the observed one, since
+        anchored mode never feeds the last row to the model.
 
     no_anchoring selects the transition structure:
       - anchored (default): each consecutive data pair (row t, row t+1) is an independent one-step transition,
@@ -149,21 +139,8 @@ def add_matrices_as_model_paths(graph, model, data_matrices, function_vars, mode
       - free-run: only the initial row, since later inputs are the model's own predictions and the remaining
         observed rows are pure comparison targets (flipping them would just trivially match the prediction).
     """
-    if model_to_data_sample_rate_ratio != 1:
-        raise NotImplementedError()
-    if allow_input_flips and model_addition_type != ModelAdditionType.INDICATORS:
-        raise NotImplementedError("input flips are only supported with indicator (soft) transitions")
-    if no_anchoring and model_addition_type != ModelAdditionType.INDICATORS:
-        raise NotImplementedError("free-run (no_anchoring) modeling is only supported with indicator (soft) "
-                                  "transitions")
-
-    if return_trajectories and model_addition_type != ModelAdditionType.INDICATORS:
-        raise NotImplementedError("trajectories are only returned with indicator (soft) transitions")
-
     n = len(graph.vertices)
-    indicators = []
-    flip_cost_terms = []
-    trajectories = []
+    agreement_terms, flip_cost_terms, trajectories = [], [], []
     for matrix_index, matrix in enumerate(data_matrices):
         n_rows = len(matrix)
         if n_rows < 2:
@@ -178,56 +155,36 @@ def add_matrices_as_model_paths(graph, model, data_matrices, function_vars, mode
                                               name="denoised_matrix_{}_row_{}_node_{}".format(matrix_index, t, i))
                                  for i in range(n)]
                              for t in input_row_indices}
-            model.update()
             for t in input_row_indices:
                 for i in range(n):
-                    observed = int(round(float(matrix[t][i])))
                     z = denoised_rows[t][i]
                     # flip cost is 1 iff the denoised value differs from the observed one
-                    flip_cost_terms.append(z if observed == 0 else (1 - z))
+                    flip_cost_terms.append(z if ilp._binary_constant(matrix[t][i]) == 0 else (1 - z))
 
-        def add_agreement(predicted_state_vars, target_state, t):
-            # note that it's a weak constraint indicator, i.e. indicator -> constraint
-            indicator = ilp.add_state_equality_indicator(model, predicted_state_vars, target_state, force_equal=False,
-                                  prefix="add_matrices_matrix_index_{}_row_{}".format(matrix_index, t),
-                                  return_per_index=per_cell_indicators)
-            if per_cell_indicators:
-                indicators.extend(indicator)
-            else:
-                indicators.append(indicator)
-
-        if model_addition_type == ModelAdditionType.CONSTRAINT:
-            for t in range(n_rows - 1):
-                ilp.add_path_to_model(graph, model, path_len=1,
-                                      first_state_vars=_row_input_state(matrix, denoised_rows, t), model_f_vars=None,
-                                      last_state_vars=matrix[t + 1], v_funcs_restrictions=function_type_restrictions, max_indegree=max_indegree,
-                                      name_prefix="matrix_{}_time_{}".format(matrix_index, t))
-        elif model_addition_type == ModelAdditionType.INDICATORS and no_anchoring:
+        if no_anchoring:
             # single free-running trajectory: the model is fed its own predictions after the initial state
             predicted_states = ilp.add_path_to_model(graph, model, path_len=n_rows - 1,
-                                  first_state_vars=_row_input_state(matrix, denoised_rows, 0), last_state_vars=None,
-                                  v_funcs_restrictions=function_type_restrictions, max_indegree=max_indegree, model_f_vars=function_vars,
-                                  name_prefix="matrix_{}_freerun".format(matrix_index))
+                                                     first_state_vars=_row_input_state(matrix, denoised_rows, 0),
+                                                     model_f_vars=function_vars, max_indegree=max_indegree,
+                                                     name_prefix="matrix_{}_freerun".format(matrix_index))
             for t in range(1, n_rows):
-                add_agreement(predicted_states[t - 1], matrix[t], t)
+                agreement_terms.extend(ilp.add_state_agreement_terms(
+                    model, predicted_states[t - 1], matrix[t],
+                    prefix="matrix_{}_row_{}".format(matrix_index, t)))
             trajectories.append([_row_input_state(matrix, denoised_rows, 0)] + list(predicted_states))
-        elif model_addition_type == ModelAdditionType.INDICATORS:
+        else:
             for t in range(n_rows - 1):
                 next_step_vars = ilp.add_path_to_model(graph, model, path_len=1,
-                                      first_state_vars=_row_input_state(matrix, denoised_rows, t),
-                                      last_state_vars=None, v_funcs_restrictions=function_type_restrictions, max_indegree=max_indegree,
-                                      model_f_vars=function_vars,
-                                      name_prefix="matrix_{}_time_{}".format(matrix_index, t))[0]
+                                                       first_state_vars=_row_input_state(matrix, denoised_rows, t),
+                                                       model_f_vars=function_vars, max_indegree=max_indegree,
+                                                       name_prefix="matrix_{}_time_{}".format(matrix_index, t))[0]
                 # the target is the denoised next row where it exists (i.e. the next row is itself a model
                 # input), otherwise the observed constant row (the last row is only ever a target).
-                add_agreement(next_step_vars, _row_input_state(matrix, denoised_rows, t + 1), t)
+                agreement_terms.extend(ilp.add_state_agreement_terms(
+                    model, next_step_vars, _row_input_state(matrix, denoised_rows, t + 1),
+                    prefix="matrix_{}_row_{}".format(matrix_index, t + 1)))
             trajectories.append([_row_input_state(matrix, denoised_rows, t) for t in range(n_rows)])
-        else:
-            raise ValueError("Unrecognized model addition type {}".format(model_addition_type))
-    if model_addition_type == ModelAdditionType.INDICATORS:
-        if return_trajectories:
-            return indicators, flip_cost_terms, trajectories
-        return indicators, flip_cost_terms
+    return agreement_terms, flip_cost_terms, trajectories
 
 
 def add_scaffold_network_agreement_expression(graph, model, function_type_restrictions=None, missing_edge_cost=1,
