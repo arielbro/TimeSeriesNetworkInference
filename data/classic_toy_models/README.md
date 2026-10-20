@@ -6,7 +6,7 @@ Regenerate with `python synthetic_data_generation/make_toy_models.py`.
 
 ## ffl family
 
-All eight non-equivalent three-node feed-forward loops, each with an AND and an OR gate at the target. x is an input node; y = f(x); z = g(x, y). Coherent types (C1-C4) have sign(x->z) = sign(x->y) * sign(y->z), incoherent ones (I1-I4) do not - which is what makes I1 a pulse generator and C1 a sign-sensitive delay. The step-response panel drives x up and back down, so the delay or pulse is visible.
+All eight non-equivalent three-node feed-forward loops, each with an AND and an OR gate at the target. x is an input node; y = f(x); z = g(x, y). Coherent types (C1-C4) have sign(x->z) = sign(x->y) * sign(y->z), incoherent ones (I1-I4) do not - which is what makes I1 a pulse generator and C1 a sign-sensitive delay. In the state graph x holds its value, so each basin is one value of x, and its transients show z's path to the fixed point - through the pulse or the delay.
 
 | model | nodes | edges | inputs | depth | fixed points |
 |---|---|---|---|---|---|

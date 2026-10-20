@@ -62,9 +62,11 @@ The grid is the module constants SIZES, K_VALUES and MODELS_PER_K_AND_SIZE, edit
 passed in, and --output-dir names the directory to write it to. A run deletes its output directory before
 writing, so a sweep on a grid other than the constants' current one must be given a directory of its own -
 without it, the set already sitting in the function type's own directory is replaced by one built on a grid
-its README does not describe. The directories named above hold K = 2, 5, 10, 15 at size 50, ten models per
-cell; `data/random_nk_critical_threshold_uniform_n15_models` holds the threshold-uniform family over
-K = 1, 3, 5, 8, 10 at size 15, five per cell, which is the grid the constants currently carry.
+its README does not describe. The general and threshold directories named above hold K = 2, 5, 10, 15 at
+size 50, ten models per cell; the threshold-uniform one holds K = 2, 5, 7, 10, 15, 25 at size 50, ten per
+cell, which is the grid the constants currently carry. `data/random_nk_critical_threshold_uniform_n15_models`
+holds the threshold-uniform family over K = 1, 3, 5, 8, 10 at size 15, five per cell. Seeds depend only on
+the family, K, size and model index, so a cell regenerated on another grid comes out the same.
 
 K = 1 is reachable in the threshold families only. There the single available threshold has sensitivity
 exactly 1, so a uniform-threshold ensemble is critical exactly rather than in expectation, while an i.i.d.
@@ -92,14 +94,17 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 # The grid. Not arguments: a sweep is a set that gets written once and then read by every experiment
 # downstream, so which cells it holds belongs in the file next to the reasons for them rather than in
 # whatever command line last ran. Change these together with --output-dir, so the sweep that was here
-# before is not overwritten by one built on different cells - the directories in OUTPUT_DIRS hold
-# K = 2, 5, 10, 15 at size 50, ten per cell, and their READMEs describe that grid.
-SIZES = [15]
+# before is not overwritten by one built on different cells - the general and threshold directories in
+# OUTPUT_DIRS hold K = 2, 5, 10, 15 at size 50, ten per cell, and the threshold-uniform one the grid below,
+# and their READMEs describe those grids.
+SIZES = [50]
 # in-degrees to sweep; the function parameter for each is derived, not chosen - see critical_bias and
 # critical_threshold. K = 50 was asked for and is not here, for the reasons in the module docstring.
 # K = 1 works for the threshold families only, where it is exactly critical, and raises for general.
-K_VALUES = [1, 3, 5, 8, 10]
-MODELS_PER_K_AND_SIZE = 5
+# K = 25 is out of the general family's reach (about 7e5 minority rows per truth table), so this
+# grid is for the threshold-uniform family.
+K_VALUES = [2, 5, 7, 10, 15, 25]
+MODELS_PER_K_AND_SIZE = 10
 
 # Offsets so that the critical sweeps and the regime sweep draw independent networks where their grids
 # overlap. K = 2, size = 50, p = 0.5 is the same ensemble in both the general critical set and the regime

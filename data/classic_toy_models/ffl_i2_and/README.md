@@ -12,7 +12,7 @@ Feed-forward, so the dynamics are not the point: held inputs settle the circuit 
 |---|---|---|
 | `x` | `input` | 0 |
 | `y` | `NOT x` | 1 |
-| `z` | `x AND y` | 2 |
+| `z` | `NOT x AND NOT y` | 2 |
 
 ## Truth table
 
@@ -21,4 +21,4 @@ Feed-forward, so the dynamics are not the point: held inputs settle the circuit 
 | 0 | 1 | 0 |
 | 1 | 0 | 0 |
 
-![interaction graph and step response](network.png)
+![interaction graph and state graph](network.png)

@@ -275,10 +275,9 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
                          for i in candidates]
             negatives = [model.addVar(vtype=gurobipy.GRB.BINARY, name="vertex_{}_input_{}_neg_var".format(j, i))
                          for i in candidates]
-            # technically can have a constant False function with all nodes as input, which
-            # will have a threshold of len(candidate_inputs[j]) + 1, but that function is
-            # (better) representable with less inputs.
-            threshold = model.addVar(lb=0, ub=max_indeg_cap + 1, vtype=gurobipy.GRB.INTEGER,
+            # threshold <= degree <= max_indeg_cap (constraints below); a node without candidates has no
+            # function, so its threshold is fixed at 0
+            threshold = model.addVar(lb=0, ub=min(len(candidates), max_indeg_cap), vtype=gurobipy.GRB.INTEGER,
                                      name="vertex_{}_threshold_var".format(j))
             # a node with no candidate inputs can only hold its value, which add_path_to_model does for it
             # directly, so it needs no indicator
@@ -373,8 +372,7 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
             threshold_value = int(round(float_threshold, 3))
             # gurobi can give "almost" integer values even for variables defined as integer type
             assert threshold_value == round(float_threshold, 3)
-            # a node without candidates has an unconstrained threshold, which no function uses
-            assert not candidate_inputs[j] or threshold_value <= sum(abs(s) for s in signs)
+            assert threshold_value <= sum(abs(s) for s in signs)
             for i, sign in zip(candidate_inputs[j], signs):
                 if sign != 0:
                     inferred_model.edges.append((inferred_model.vertices[i], inferred_model.vertices[j]))

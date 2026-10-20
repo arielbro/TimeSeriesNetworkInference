@@ -203,8 +203,11 @@ def add_path_to_model(G, model, path_len, first_state_vars, model_f_vars, max_in
             if unused is not None:
                 previous = previous_state[i] if isinstance(previous_state[i], gurobipy.Var) \
                     else _binary_constant(previous_state[i])
-                model.addGenConstrIndicator(unused, True, next_state[i] == previous,
-                                            name="{}_unused_node_holds_value_{}".format(prefix, i))
+                # unused = 1 implies next == previous, as big-M rows with M = 1 (the convex hull, all binary)
+                model.addConstr(next_state[i] - previous <= 1 - unused,
+                                name="{}_unused_node_holds_value_<=_{}".format(prefix, i))
+                model.addConstr(previous - next_state[i] <= 1 - unused,
+                                name="{}_unused_node_holds_value_>=_{}".format(prefix, i))
         states.append(next_state)
         previous_state = next_state
     return states

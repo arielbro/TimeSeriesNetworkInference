@@ -11,14 +11,14 @@ Feed-forward, so the dynamics are not the point: held inputs settle the circuit 
 | node | function | threshold |
 |---|---|---|
 | `x` | `input` | 0 |
-| `y` | `x` | 1 |
-| `z` | `NOT x AND NOT y` | 2 |
+| `y` | `NOT x` | 1 |
+| `z` | `x AND NOT y` | 2 |
 
 ## Truth table
 
 | x | y | z |
 |---|---|---|
-| 0 | 0 | 1 |
-| 1 | 1 | 0 |
+| 0 | 1 | 0 |
+| 1 | 0 | 1 |
 
-![interaction graph and step response](network.png)
+![interaction graph and state graph](network.png)

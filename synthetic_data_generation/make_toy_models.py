@@ -31,7 +31,8 @@ sizes are exact, and each family's requirements are asserted before anything is 
 Each model directory holds:
   SPECIES_KEY.csv + <index>.csv   cellcollective truth-table format, what generate.py's graphs_dir reads
   true_network.cnet               the same model as legible text
-  network.png                     interaction graph (with thresholds) + attractors, or + a step response
+  network.png, network.svg        interaction graph + state graph (every state, or above
+                                  MAX_FULL_STATE_GRAPH states the attractors with their basin sizes)
   README.md                       functions in words, and the attractor or truth-table analysis
 """
 import itertools
@@ -41,6 +42,10 @@ import sys
 
 import matplotlib
 matplotlib.use("Agg")
+# SVG text kept as text (editable, searchable) rather than outlined, and element ids made reproducible, so a
+# regeneration that changes nothing leaves the .svg files unchanged too
+matplotlib.rcParams['svg.fonttype'] = 'none'
+matplotlib.rcParams['svg.hashsalt'] = 'make_toy_models'
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
@@ -57,7 +62,6 @@ MIN_ATTRACTORS = 2          # dynamic models: a single-attractor model is not wh
 MIN_LONG_CYCLE = 3          # dynamic models: at least one attractor of at least this period
 MIN_MEAN_HAMMING = 1.0      # dynamic models: mean nodes flipping per step along the attractors
 
-MAX_DRAWN_ATTRACTORS = 5    # the largest-basin ones; a 16-panel figure is unreadable
 MAX_LISTED_STATES = 10      # per attractor in the README, before eliding
 MAX_TRUTH_ROWS = 16         # input patterns listed in a classic model's truth table
 
@@ -152,9 +156,9 @@ def ffl(kind, gate, source="x", intermediate="y", target="z"):
             node(target, inputs, threshold, gate_text(inputs, threshold)))
 
 
-FFL_SIGNS = {          # (x->y, y->z, x->z)
-    "c1": (1, 1, 1), "c2": (-1, -1, 1), "c3": (-1, 1, -1), "c4": (1, -1, -1),
-    "i1": (1, -1, 1), "i2": (-1, 1, 1), "i3": (-1, -1, -1), "i4": (1, 1, -1),
+FFL_SIGNS = {          # (x->y, y->z, x->z), numbered as in Mangan & Alon, PNAS 2003
+    "c1": (1, 1, 1), "c2": (-1, 1, -1), "c3": (1, -1, -1), "c4": (-1, -1, 1),
+    "i1": (1, -1, 1), "i2": (-1, -1, -1), "i3": (1, 1, -1), "i4": (-1, 1, 1),
 }
 
 
@@ -271,38 +275,6 @@ def uniform_candidates(degree):
     return [(p, t) for t in thresholds for p in patterns]
 
 
-def step_response(network, schedule):
-    """Trajectory when the input nodes (those with no regulators) are driven: at every step their values
-    are taken from `schedule` (a list of per-step dicts) instead of held. Classic circuits only respond to
-    their inputs, so this is the picture that shows what they compute."""
-    inputs = [v.name for v in network.vertices if len(v.predecessors()) == 0]
-    names = [v.name for v in network.vertices]
-    state = [0] * len(names)
-    for i, name in enumerate(names):
-        state[i] = schedule[0].get(name, 0)
-    trajectory = [list(state)]
-    for values in schedule[1:]:
-        state = [int(bool(v)) for v in network.next_state(state)]
-        for i, name in enumerate(names):
-            if name in inputs:
-                state[i] = values[name]
-        trajectory.append(list(state))
-    return np.array(trajectory), inputs
-
-
-def input_schedule(network):
-    """Hold each input combination for two steps: a step up and a step down for a single input (the
-    textbook FFL response), a sweep for a multi-input gate."""
-    inputs = [v.name for v in network.vertices if len(v.predecessors()) == 0]
-    if len(inputs) == 1:
-        pattern = [0, 1, 1, 1, 1, 0, 0, 0]
-        return [{inputs[0]: value} for value in pattern]
-    combos = list(itertools.product([0, 1], repeat=len(inputs)))
-    if len(combos) > 6:
-        combos = combos[:3] + combos[-3:]
-    return [dict(zip(inputs, combo)) for combo in combos for _ in range(3)]
-
-
 # ---------------------------------------------------------------------------------------------------
 # drawing
 # ---------------------------------------------------------------------------------------------------
@@ -342,88 +314,251 @@ def layout(network):
     return positions
 
 
+NODE_RADIUS = 0.24               # interaction graph: node circle radius, in data units
+PARALLEL_OFFSET = 0.10           # interaction graph: sideways shift of each edge of a reciprocal pair
+
+MAX_FULL_STATE_GRAPH = 64        # draw every state up to this many; above it, attractors + basin sizes only
+ATTRACTOR_COLOUR = '#58B7CA'
+STATE_FILL = '#D9D9D9'
+STATE_INCH_PER_UNIT = 0.6        # state graph scale; with STATE_FONT_SIZE it sizes the ellipses to the labels
+STATE_FONT_SIZE = 8
+STATE_CHAR_WIDTH = 0.105         # data units per label character at that scale and font size
+STATE_HEIGHT = 0.34
+STATE_ARROW_ROOM = 0.45          # space left between neighbouring ellipses for an arrow
+
+
+def _clip_to_circle(start, end, radius):
+    """The segment start -> end, shortened by `radius` at both ends so it runs between circle rims."""
+    start, end = np.asarray(start, dtype=float), np.asarray(end, dtype=float)
+    unit = (end - start) / np.hypot(*(end - start))
+    return start + unit * radius, end - unit * radius
+
+
 def draw_graph(ax, network, descriptions):
-    graph = nx.DiGraph()
-    graph.add_nodes_from(v.name for v in network.vertices)
+    """Interaction graph with straight edges. A reciprocal pair (a -> b and b -> a) is drawn as two straight
+    lines shifted to either side of the line between the nodes, so neither hides the other."""
     signs = {}
     for v in network.vertices:
         if v.function is None:
             continue
         for u, sign in zip(v.predecessors(), v.function.signs):
-            graph.add_edge(u.name, v.name)
             signs[(u.name, v.name)] = 1 if sign else -1
     positions = layout(network)
-    activating = [e for e, s in signs.items() if s > 0 and e[0] != e[1]]
-    inhibiting = [e for e, s in signs.items() if s < 0 and e[0] != e[1]]
-    nx.draw_networkx_nodes(graph, positions, ax=ax, node_color='white', edgecolors='black',
-                           node_size=1150)
-    labels = {name: "{}\n".format(name) + (r"$\theta$={}".format(threshold) if threshold else "input")
-              for name, (_, threshold) in descriptions.items()}
-    nx.draw_networkx_labels(graph, positions, labels=labels, ax=ax, font_size=7)
-    nx.draw_networkx_edges(graph, positions, ax=ax, edgelist=activating, edge_color='tab:green',
-                           arrowstyle='-|>', arrowsize=13, node_size=1150, connectionstyle='arc3,rad=0.12')
-    nx.draw_networkx_edges(graph, positions, ax=ax, edgelist=inhibiting, edge_color='tab:red',
-                           arrowstyle='-[', arrowsize=9, node_size=1150, connectionstyle='arc3,rad=0.12')
-    # networkx draws nothing for a self-loop under an arc3 connectionstyle, so autoregulation gets its own
-    # loop patch - without it a NAR node looks unregulated
-    for source, target in [e for e in signs if e[0] == e[1]]:
-        colour = 'tab:green' if signs[(source, target)] > 0 else 'tab:red'
-        x, y = positions[source]
+    for name, (x, y) in positions.items():
+        ax.add_patch(matplotlib.patches.Circle((x, y), NODE_RADIUS, facecolor='white', edgecolor='black',
+                                               lw=1.0, zorder=2))
+        ax.text(x, y, name, ha='center', va='center', fontsize=7 if len(name) <= 4 else 5.5, zorder=3)
+    for (source, target), sign in signs.items():
+        colour = 'tab:green' if sign > 0 else 'tab:red'
+        style = '-|>' if sign > 0 else '-['
+        if source == target:
+            # a self-loop cannot be a straight line; a small loop over the node keeps autoregulation visible
+            x, y = positions[source]
+            ax.add_patch(matplotlib.patches.FancyArrowPatch(
+                (x - 0.12, y + NODE_RADIUS * 0.9), (x + 0.12, y + NODE_RADIUS * 0.9),
+                connectionstyle='arc3,rad=-2.2', arrowstyle=style, mutation_scale=9, lw=1.2, color=colour,
+                zorder=1))
+            continue
+        start, end = np.asarray(positions[source]), np.asarray(positions[target])
+        if (target, source) in signs:
+            direction = (end - start) / np.hypot(*(end - start))
+            normal = np.array([-direction[1], direction[0]]) * PARALLEL_OFFSET
+            start, end = start + normal, end + normal
+        start, end = _clip_to_circle(start, end, NODE_RADIUS + 0.02)
         ax.add_patch(matplotlib.patches.FancyArrowPatch(
-            (x - 0.12, y + 0.20), (x + 0.10, y + 0.22), connectionstyle='arc3,rad=-2.6',
-            arrowstyle='-|>' if colour == 'tab:green' else '-[', mutation_scale=9, lw=1.2,
-            color=colour, zorder=0))
-    ax.margins(0.2)
+            start, end, arrowstyle=style, mutation_scale=12 if sign > 0 else 6, lw=1.2, color=colour,
+            shrinkA=0, shrinkB=0, zorder=1))
+    xs = [x for x, _ in positions.values()]
+    ys = [y for _, y in positions.values()]
+    span = max(max(xs) - min(xs), max(ys) - min(ys)) / 2 + 0.7
+    centre = ((max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2)
+    ax.set_xlim(centre[0] - span, centre[0] + span)
+    ax.set_ylim(centre[1] - span, centre[1] + span)
+    ax.set_aspect('equal')
     ax.axis('off')
 
 
-def strip(ax, grid, names, title, xlabel="step", separator=None):
-    ax.imshow(grid, cmap='Greys', vmin=0, vmax=1, aspect='auto', interpolation='nearest')
-    step = 1 if grid.shape[1] <= 12 else 5
-    ax.set_xticks(range(0, grid.shape[1], step))
-    ax.set_xticklabels(range(0, grid.shape[1], step), fontsize=6)
-    ax.set_yticks(range(len(names)))
-    ax.set_yticklabels(names, fontsize=6)
-    ax.set_xlabel(xlabel, fontsize=7)
-    ax.set_title(title, fontsize=8)
-    if separator is not None:
-        ax.axhline(separator - 0.5, color='tab:blue', lw=1.0)
-    ax.grid(False)
-    for spine in ax.spines.values():
-        spine.set_visible(False)
+def _state_label(state):
+    return "".join(str(bit) for bit in state)
 
 
-def draw_dynamic(network, descriptions, cycles, basins, path, title):
+def _cycle_layout(cycle, width):
+    """An attractor on its own, laid out as a racetrack: the first half of the cycle left to right along a
+    top row, the rest back right to left beneath it. A long cycle then takes two rows of labels rather than
+    a circle whose middle is empty space."""
+    step = width + STATE_ARROW_ROOM
+    columns = (len(cycle) + 1) // 2
+    rows_apart = STATE_HEIGHT + 2 * STATE_ARROW_ROOM
+    positions = {}
+    for i, state in enumerate(cycle):
+        if i < columns:
+            positions[state] = np.array([i * step, rows_apart / 2])
+        else:
+            positions[state] = np.array([(len(cycle) - 1 - i) * step, -rows_apart / 2])
+    if len(cycle) == 2:
+        # one above the other, a row's gap apart, which leaves the pair of bowed arrows between them room
+        # to show (side by side, the gap would be one arrow's length)
+        positions = {cycle[0]: np.array([0.0, rows_apart / 2]), cycle[1]: np.array([0.0, -rows_apart / 2])}
+    return positions
+
+
+def _basin_layout(cycle, predecessors, full, width):
+    """Positions for one attractor and, when `full`, every transient state of its basin.
+
+    An attractor with no transient states to draw is a racetrack (see _cycle_layout). Otherwise the basin -
+    a cycle with in-trees hanging off it - goes through a Kamada-Kawai layout, which spreads a tree out
+    from its root, and is then scaled up uniformly until no two labels' boxes come closer than an arrow's
+    length."""
+    members = set(cycle)
+    if full:
+        frontier = list(cycle)
+        while frontier:
+            for state in predecessors.get(frontier.pop(), ()):
+                if state not in members:
+                    members.add(state)
+                    frontier.append(state)
+    if len(members) == len(cycle):
+        return _cycle_layout(cycle, width)
+    graph = nx.Graph()
+    graph.add_nodes_from(sorted(members))
+    for state in sorted(members):
+        for predecessor in sorted(predecessors.get(state, ())):
+            if predecessor != state:
+                graph.add_edge(predecessor, state)
+    raw = nx.kamada_kawai_layout(graph)
+    states = sorted(raw)
+    points = np.array([raw[state] for state in states])
+    # the smallest scale at which every pair is separated, horizontally or vertically, by a label plus an
+    # arrow - the labels are wide and flat, so the two directions need different clearances
+    dx = np.abs(points[:, None, 0] - points[None, :, 0]) / (width + STATE_ARROW_ROOM)
+    dy = np.abs(points[:, None, 1] - points[None, :, 1]) / (STATE_HEIGHT + STATE_ARROW_ROOM)
+    separation = np.maximum(dx, dy)
+    np.fill_diagonal(separation, np.inf)
+    scale = 1.0 / separation.min()
+    return {state: point * scale for state, point in zip(states, points)}
+
+
+def _clip_to_ellipse(start, end, half_width, half_height):
+    """The segment start -> end, shortened at both ends to run between the rims of two equal ellipses."""
+    start, end = np.asarray(start, dtype=float), np.asarray(end, dtype=float)
+    unit = (end - start) / np.hypot(*(end - start))
+    reach = 1.0 / np.hypot(unit[0] / half_width, unit[1] / half_height)
+    return start + unit * reach, end - unit * reach
+
+
+def draw_state_graph(ax, network, transitions, cycles, basins):
+    """The state transition graph: every state an ellipse labelled by its bits, an arrow to its successor,
+    attractor states and their arrows in blue. Laid out one basin at a time.
+
+    Above MAX_FULL_STATE_GRAPH states only the attractors are drawn, each captioned with its basin size in
+    place of its transient states. Returns the extent (width, height) in data units, so the caller can size
+    the figure to it."""
+    n_states = len(transitions)
+    full = n_states <= MAX_FULL_STATE_GRAPH
+    predecessors = {}
+    for state, successor in transitions.items():
+        predecessors.setdefault(successor, []).append(state)
+    width = STATE_CHAR_WIDTH * len(network) + 0.25
+    half_width, half_height = width / 2, STATE_HEIGHT / 2
+
+    basin_layouts = []
+    for cycle in cycles:
+        positions = _basin_layout(cycle, predecessors, full, width)
+        xs = [x for x, _ in positions.values()]
+        ys = [y for _, y in positions.values()]
+        # room for the ellipses, a fixed point's self-loop above, and the caption below
+        box = (min(xs) - half_width, max(xs) + half_width, min(ys) - half_height - 0.45,
+               max(ys) + half_height + (0.35 if len(cycle) == 1 else 0.0))
+        box = (min(box[0], -0.9), max(box[1], 0.9), box[2], box[3])   # wide enough for the caption
+        basin_layouts.append((positions, box))
+
+    # pack the basins into rows, in the order given (largest basin first), aiming for a roughly 3:2 panel
+    area = sum((b[1] - b[0] + 0.4) * (b[3] - b[2] + 0.4) for _, b in basin_layouts)
+    row_limit = max(max(b[1] - b[0] for _, b in basin_layouts) + 0.4, np.sqrt(area * 1.5))
+    placed, x, y, row_height = [], 0.0, 0.0, 0.0
+    for positions, box in basin_layouts:
+        box_width, box_height = box[1] - box[0] + 0.4, box[3] - box[2] + 0.4
+        if x > 0 and x + box_width > row_limit:
+            x, y, row_height = 0.0, y - row_height, 0.0
+        offset = np.array([x - box[0], y - box[3]])
+        placed.append(({state: position + offset for state, position in positions.items()}, box, offset))
+        x += box_width
+        row_height = max(row_height, box_height)
+    extent_width = max(o[0] + b[1] for _, b, o in placed)
+    extent_height = row_height - y
+
+    attractor_states = {state for cycle in cycles for state in cycle}
+    for (positions, box, offset), cycle, basin in zip(placed, cycles, basins):
+        for state, (sx, sy) in positions.items():
+            on_attractor = state in attractor_states
+            ax.add_patch(matplotlib.patches.Ellipse(
+                (sx, sy), width, STATE_HEIGHT, facecolor=STATE_FILL,
+                edgecolor=ATTRACTOR_COLOUR if on_attractor else 'black', lw=2.2 if on_attractor else 1.0,
+                zorder=2))
+            ax.text(sx, sy, _state_label(state), ha='center', va='center', fontsize=STATE_FONT_SIZE,
+                    zorder=3)
+        for state, (sx, sy) in positions.items():
+            successor = transitions[state]
+            on_attractor = state in attractor_states
+            colour = ATTRACTOR_COLOUR if on_attractor else 'black'
+            if successor == state:      # a fixed point: a loop over the ellipse
+                ax.add_patch(matplotlib.patches.FancyArrowPatch(
+                    (sx - 0.25 * width, sy + half_height), (sx + 0.25 * width, sy + half_height),
+                    connectionstyle='arc3,rad=-1.6', arrowstyle='-|>', mutation_scale=10, lw=1.6,
+                    color=colour, zorder=1))
+                continue
+            start, end = _clip_to_ellipse((sx, sy), positions[successor], half_width, half_height)
+            # a period-2 attractor's two arrows would coincide as straight lines, so they bow apart
+            # - by a fixed sideways distance rather than a fixed fraction of their length, so a pair laid far
+            # apart does not sweep a wide arc across the rest of the basin
+            rad = min(0.35, 0.4 / np.hypot(*(end - start))) if (on_attractor and len(cycle) == 2) else 0
+            bend = 'arc3,rad={}'.format(rad)
+            ax.add_patch(matplotlib.patches.FancyArrowPatch(
+                start, end, connectionstyle=bend, arrowstyle='-|>', mutation_scale=10,
+                lw=1.6 if on_attractor else 0.9, color=colour, shrinkA=0, shrinkB=0, zorder=1))
+        caption = "period {}, basin {}/{}".format(len(cycle), basin, n_states)
+        ax.text(offset[0] + (box[0] + box[1]) / 2, offset[1] + box[2] + 0.1, caption, ha='center',
+                va='bottom', fontsize=7, color='dimgray')
+    # a margin all round, so outlines and self-loops at the edge are not clipped by the axes
+    ax.set_xlim(-0.2, extent_width + 0.2)
+    ax.set_ylim(-extent_height - 0.2, 0.2)
+    ax.set_aspect('equal')
+    ax.axis('off')
+    return extent_width + 0.4, extent_height + 0.4
+
+
+def draw_model(network, descriptions, transitions, cycles, basins, model_dir, title):
+    """Interaction graph beside the state graph, saved as network.png and network.svg."""
     n = len(network)
-    drawn = min(len(cycles), MAX_DRAWN_ATTRACTORS)
-    fig, axes = plt.subplots(1, 1 + drawn, figsize=(5 + 2.0 * drawn, 4.6),
-                             gridspec_kw={'width_ratios': [2.4] + [1] * drawn})
-    draw_graph(axes[0], network, descriptions)
     names = [v.name for v in network.vertices]
-    for k, (cycle, basin) in enumerate(zip(cycles[:drawn], basins[:drawn])):
-        strip(axes[k + 1], np.array(cycle, dtype=float).T, names,
-              "attractor {}\nperiod {}, basin {}/{}".format(k + 1, len(cycle), basin, 2 ** n))
-    shown = "" if drawn == len(cycles) else "  (showing the {} largest-basin attractors of {})".format(
-        drawn, len(cycles))
-    fig.suptitle("{}\n{} nodes, {} edges; green arrow = activates, red bar = represses{}".format(
-        title, n, len(network.edges), shown), fontsize=9)
-    fig.tight_layout(rect=(0, 0, 1, 0.90))
-    fig.savefig(path, dpi=140)
-    plt.close(fig)
-
-
-def draw_classic(network, descriptions, path, title):
-    trajectory, inputs = step_response(network, input_schedule(network))
-    names = [v.name for v in network.vertices]
-    fig, axes = plt.subplots(1, 2, figsize=(8, 4.0), gridspec_kw={'width_ratios': [1.15, 1]})
-    draw_graph(axes[0], network, descriptions)
-    strip(axes[1], trajectory.T.astype(float), names,
-          "response to driven inputs\n(blue line: inputs above, circuit below)",
-          separator=len(inputs))
-    fig.suptitle("{}\n{} nodes, {} edges; green arrow = activates, red bar = represses".format(
-        title, len(network), len(network.edges)), fontsize=9)
-    fig.tight_layout(rect=(0, 0, 1, 0.88))
-    fig.savefig(path, dpi=140)
+    full = len(transitions) <= MAX_FULL_STATE_GRAPH
+    # the state panel is drawn at STATE_INCH_PER_UNIT, which the ellipse widths assume, so its size comes
+    # from its extent - learnt by drawing it once on a scratch figure
+    probe = plt.figure()
+    state_width, state_height = draw_state_graph(probe.add_subplot(), network, transitions, cycles, basins)
+    plt.close(probe)
+    graph_inches = 3.8
+    state_inches = (state_width * STATE_INCH_PER_UNIT, state_height * STATE_INCH_PER_UNIT)
+    header, margin = 1.0, 0.3
+    fig = plt.figure(figsize=(graph_inches + state_inches[0] + 3 * margin,
+                              max(graph_inches, state_inches[1]) + header + margin))
+    total_width, total_height = fig.get_size_inches()
+    top = total_height - header
+    graph_ax = fig.add_axes((margin / total_width, (top - graph_inches) / total_height,
+                             graph_inches / total_width, graph_inches / total_height))
+    state_ax = fig.add_axes(((graph_inches + 2 * margin) / total_width, (top - state_inches[1]) / total_height,
+                             state_inches[0] / total_width, state_inches[1] / total_height))
+    draw_graph(graph_ax, network, descriptions)
+    draw_state_graph(state_ax, network, transitions, cycles, basins)
+    state_note = ("all {} states" if full else
+                  "attractors only, of {} states - each captioned with its basin size").format(2 ** n)
+    fig.text(0.5, 1 - 0.15 / total_height,
+             "{}\n{} nodes, {} edges; green arrow = activates, red bar = represses\n"
+             "state graph ({}); bits in the order {}; blue = attractor states".format(
+                 title, n, len(network.edges), state_note, " ".join(names)),
+             ha='center', va='top', fontsize=9)
+    fig.savefig(os.path.join(model_dir, "network.png"), dpi=140)
+    fig.savefig(os.path.join(model_dir, "network.svg"), metadata={'Date': None})
     plt.close(fig)
 
 
@@ -458,7 +593,7 @@ def write_dynamic_readme(path, name, title, network, descriptions, cycles, basin
         shown = ["".join(str(b) for b in state) for state in cycle[:MAX_LISTED_STATES]]
         states = " -> ".join(shown) + (" -> ..." if len(cycle) > MAX_LISTED_STATES else "")
         lines.append("| {} | {} | {}/{} | {} |".format(k + 1, len(cycle), basin, 2 ** n, states))
-    lines += ["", "![interaction graph and attractors](network.png)", ""]
+    lines += ["", "![interaction graph and state graph](network.png)", ""]
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
@@ -493,7 +628,7 @@ def write_classic_readme(path, name, title, network, descriptions, cycles, basin
         lines.append("| ... | ... |")
         lines.append("")
         lines.append("(first {} of {} input patterns)".format(MAX_TRUTH_ROWS, len(combos)))
-    lines += ["", "![interaction graph and step response](network.png)", ""]
+    lines += ["", "![interaction graph and state graph](network.png)", ""]
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
@@ -676,8 +811,9 @@ def main():
          "All eight non-equivalent three-node feed-forward loops, each with an AND and an OR gate at the "
          "target. x is an input node; y = f(x); z = g(x, y). Coherent types (C1-C4) have "
          "sign(x->z) = sign(x->y) * sign(y->z), incoherent ones (I1-I4) do not - which is what makes I1 "
-         "a pulse generator and C1 a sign-sensitive delay. The step-response panel drives x up and back "
-         "down, so the delay or pulse is visible."),
+         "a pulse generator and C1 a sign-sensitive delay. In the state graph x holds its value, so each "
+         "basin is one value of x, and its transients show z's path to the fixed point - through the "
+         "pulse or the delay."),
         ("gates", GATE_MODELS,
          "Multi-level AND/OR combinations, the middle (majority) threshold, k-of-n thresholds, an "
          "AND NOT, a cascade, a single-input module and a dense overlapping regulon."),
@@ -712,7 +848,9 @@ def main():
                           "|---|---|---|---|---|---|"]
             for name, title, spec in models:
                 network, descriptions = build(spec())
-                cycles, basins, hamming = dynamic_stats(network)
+                transitions = state_space(network)
+                cycles, basins = attractors_and_basins(transitions)
+                hamming = mean_hamming(cycles)
                 model_dir = os.path.join(directory, name)
                 graph = nx.DiGraph((u.name, v.name) for u, v in network.edges)
                 graph.add_nodes_from(v.name for v in network.vertices)
@@ -729,8 +867,7 @@ def main():
                 network.export_to_boolean_tables(directory, name)
                 network.export_to_cnet(os.path.join(model_dir, "true_network.cnet"))
                 if dynamic:
-                    draw_dynamic(network, descriptions, cycles, basins,
-                                 os.path.join(model_dir, "network.png"), title)
+                    draw_model(network, descriptions, transitions, cycles, basins, model_dir, title)
                     write_dynamic_readme(os.path.join(model_dir, "README.md"), name, title, network,
                                          descriptions, cycles, basins, hamming)
                     index.append("| [{}]({}/README.md) | {} | {} | {} | {} | {} | {:.2f} |".format(
@@ -741,7 +878,7 @@ def main():
                           .format(name, len(network), len(network.edges), len(cycles),
                                   sorted(set(len(c) for c in cycles)), hamming))
                 else:
-                    draw_classic(network, descriptions, os.path.join(model_dir, "network.png"), title)
+                    draw_model(network, descriptions, transitions, cycles, basins, model_dir, title)
                     write_classic_readme(os.path.join(model_dir, "README.md"), name, title, network,
                                          descriptions, cycles, basins)
                     inputs = [v.name for v in network.vertices if len(v.predecessors()) == 0]

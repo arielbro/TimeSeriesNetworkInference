@@ -1,5 +1,5 @@
-"""Build data/random_scale_free_models: ten completely random models at each of the sizes 5, 10, 50, 250
-and 1000, usable as a `graphs_dir` (the role data/cellcollective_models plays for the real runs).
+"""Build data/random_scale_free_models: ten completely random models at each of the sizes 5, 10, 25, 50 and
+100, usable as a `graphs_dir` (the role data/cellcollective_models plays for the real runs).
 
 Topology: networkx's directed scale-free generator (a preferential-attachment process, so in- and
 out-degrees are power-law and a few nodes are hubs), with self-loops dropped and parallel edges collapsed.
@@ -30,7 +30,7 @@ from attractor_learning.logic import SymmetricThresholdFunction
 
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data",
                           "random_scale_free_models")
-SIZES = [5, 10, 50, 250]
+SIZES = [5, 10, 25, 50, 100]
 MODELS_PER_SIZE = 10
 # One directory per size, holding that size's models. Data generation mirrors a graphs_dir's grouping into
 # the generated data, and inference mirrors it again into its output, so this level survives all the way to

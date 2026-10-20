@@ -43,4 +43,4 @@ Feed-forward, so the dynamics are not the point: held inputs settle the circuit 
 
 (first 16 of 32 input patterns)
 
-![interaction graph and step response](network.png)
+![interaction graph and state graph](network.png)

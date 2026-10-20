@@ -411,6 +411,140 @@ class Network(object):
         # print("time taken for graph import: {:.2f} seconds".format(time.time() - start))
         return G
 
+    # Above this many distinct inputs parse_bnet refuses a node, since its truth table has 2**inputs rows.
+    BNET_MAX_INPUTS = 20
+
+    @staticmethod
+    def parse_bnet(path):
+        """
+        Parses a BoolNet .bnet file (the format of PyBoolNet and the Biodivine Boolean Models collection)
+        into a Network. Each non-blank, non-comment line is "target, expression", where the expression uses
+        ! (not), & (and), | (or), parentheses, variable names and the constants 0/1/true/false. An optional
+        "targets, factors" header line and #-comments are skipped.
+
+        Vertices are ordered as their target lines appear, followed by any name used in an expression but
+        never defined as a target. Inputs - a node defined as itself ("x, x") or never defined - get no
+        predecessors and function None, which next_state holds at its value. A constant expression gives a
+        constant node. Edges are the variables an expression names, whether or not the function actually
+        depends on them.
+        :param path: Path to the .bnet file
+        :return: G, a graph with a boolean model.
+        """
+        targets, expressions = [], []
+        with open(path, 'r') as bnet_file:
+            for line_number, line in enumerate(bnet_file, start=1):
+                line = line.split("#", 1)[0].strip()
+                if not line:
+                    continue
+                if "," not in line:
+                    raise ValueError("{}:{}: expected 'target, expression', got {!r}".format(
+                        path, line_number, line))
+                target, expression = (part.strip() for part in line.split(",", 1))
+                if target.lower() == "targets" and expression.lower() == "factors":
+                    continue
+                if target in targets:
+                    raise ValueError("{}:{}: {} is defined twice".format(path, line_number, target))
+                targets.append(target)
+                expressions.append(Network._parse_bnet_expression(expression, "{}:{}".format(path, line_number)))
+
+        names = list(targets)
+        known = set(names)
+        for _, variables in expressions:
+            for v in variables:
+                if v not in known:
+                    known.add(v)
+                    names.append(v)
+        name_index = {name: i for i, name in enumerate(names)}
+
+        edges, functions = [], [None] * len(names)
+        for v_index, (target, (rpn, variables)) in enumerate(zip(targets, expressions)):
+            if not variables:
+                functions[v_index] = bool(Network._evaluate_bnet_rpn(rpn, {}))
+                continue
+            if len(variables) > Network.BNET_MAX_INPUTS:
+                raise ValueError("{} has {} inputs, more than BNET_MAX_INPUTS={}".format(
+                    target, len(variables), Network.BNET_MAX_INPUTS))
+            # predecessors are called in vertex-index order, so the truth table is built in that order too
+            inputs = sorted(variables, key=name_index.get)
+            # every row at once: input j (the first is the most significant bit) as a column of the table
+            rows = np.arange(2 ** len(inputs))
+            columns = {name: ((rows >> (len(inputs) - 1 - j)) & 1).astype(bool) for j, name in enumerate(inputs)}
+            outputs = np.broadcast_to(Network._evaluate_bnet_rpn(rpn, columns), rows.shape)
+            if inputs == [target] and not outputs[0] and outputs[1]:
+                continue  # "x, x": an input
+            edges.extend((u, target) for u in inputs)
+            functions[v_index] = BooleanSymbolicFunc(input_names=inputs, boolean_outputs=[bool(o) for o in outputs])
+        return Network(vertex_names=names, edges=edges, vertex_functions=functions)
+
+    @staticmethod
+    def _parse_bnet_expression(text, location):
+        """(rpn, variables) for one .bnet expression: rpn is the expression in reverse Polish notation (variable
+        names, Python bools for constants, and the operators "!", "&", "|"), and variables lists the names it
+        uses in order of first appearance. Shunting-yard with the usual precedence (! over & over |), iterative
+        so the deeply nested rules some models carry (thousands of parentheses) parse, and never handing a name
+        to sympy, whose parser reserves names like S, E or Q."""
+        tokens = re.findall(r"\s*([A-Za-z0-9_.:\-\[\]]+|[!&|()])", text)
+        if "".join(tokens) != re.sub(r"\s+", "", text):
+            raise ValueError("{}: cannot tokenize expression {!r}".format(location, text))
+        constants = {"0": False, "1": True, "false": False, "true": True}
+        precedence = {"|": 1, "&": 2, "!": 3}
+        rpn, operators, variables, seen = [], [], [], set()
+        expect_operand = True
+        for position, token in enumerate(tokens):
+            if expect_operand:
+                if token in ("!", "("):
+                    operators.append(token)
+                    continue
+                if token in ("&", "|", ")"):
+                    raise ValueError("{}: unexpected {!r} at token {} of {!r}".format(location, token, position, text))
+                if token.lower() in constants:
+                    rpn.append(constants[token.lower()])
+                else:
+                    rpn.append(token)
+                    if token not in seen:
+                        seen.add(token)
+                        variables.append(token)
+                expect_operand = False
+            elif token in ("&", "|"):
+                while operators and operators[-1] != "(" and precedence[operators[-1]] >= precedence[token]:
+                    rpn.append(operators.pop())
+                operators.append(token)
+                expect_operand = True
+            elif token == ")":
+                while operators and operators[-1] != "(":
+                    rpn.append(operators.pop())
+                if not operators:
+                    raise ValueError("{}: unbalanced ')' at token {} of {!r}".format(location, position, text))
+                operators.pop()
+            else:
+                raise ValueError("{}: unexpected {!r} at token {} of {!r}".format(location, token, position, text))
+        if expect_operand:
+            raise ValueError("{}: expression {!r} ends without an operand".format(location, text))
+        while operators:
+            operator = operators.pop()
+            if operator == "(":
+                raise ValueError("{}: unbalanced '(' in {!r}".format(location, text))
+            rpn.append(operator)
+        return rpn, variables
+
+    @staticmethod
+    def _evaluate_bnet_rpn(rpn, assignment):
+        """Evaluates a _parse_bnet_expression rpn under assignment ({name: bool or bool array}); with arrays,
+        every row of a truth table is evaluated in one pass."""
+        stack = []
+        for item in rpn:
+            if isinstance(item, bool):
+                stack.append(np.bool_(item))
+            elif item == "!":
+                stack.append(np.logical_not(stack.pop()))
+            elif item in ("&", "|"):
+                right, left = stack.pop(), stack.pop()
+                stack.append(np.logical_and(left, right) if item == "&" else np.logical_or(left, right))
+            else:
+                stack.append(assignment[item])
+        assert len(stack) == 1
+        return stack[0]
+
     @staticmethod
     def _serialize_function(vertex):
         """A portable, truth-table-free descriptor of a vertex's function (for to_networkx)."""

@@ -22,4 +22,4 @@ Feed-forward, so the dynamics are not the point: held inputs settle the circuit 
 | 0 | 0 | 1 | 1 |
 | 1 | 1 | 0 | 0 |
 
-![interaction graph and step response](network.png)
+![interaction graph and state graph](network.png)
