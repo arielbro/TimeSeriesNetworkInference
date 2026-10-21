@@ -11,10 +11,12 @@ state_noise_chance = 0.0
 frequency_noise_std = 0.0
 
 random_networks_per_reference = 10
+# replicas_per_network = 1
 mutate_input_nodes
 preserve_truth_ratio
 function_type_restriction = SYMMETRIC_THRESHOLD
 
 preserve_input_nodes_on_add
+# hide_scaffold_directions
 scaffold_network_added_edge_fraction = 0.01
 scaffold_network_removed_edge_fraction = 0.0

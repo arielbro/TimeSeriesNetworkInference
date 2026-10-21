@@ -14,7 +14,7 @@
 # Resources (--cpus-per-task / --time / --mem / --array) are set by submit_inference_array.sh and override the
 # #SBATCH defaults above. CPUs per task are fed to Gurobi as its Threads parameter (the inference code reads
 # SLURM_CPUS_PER_TASK). Normally invoked via submit_inference_array.sh, not directly.
-# Usage: sbatch run_inference_array.sbatch <manifest> <chunk_size>
+# Usage: sbatch run_inference_array.sbatch <manifest> <chunk_size> [<inference_config>]
 
 module load anaconda3/2024.6
 module load gurobi/8.0.1
@@ -30,6 +30,11 @@ export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 
 MANIFEST="${1:?Usage: sbatch run_inference_array.sbatch <manifest> <chunk_size>}"
 CHUNK_SIZE="${2:?Usage: sbatch run_inference_array.sbatch <manifest> <chunk_size>}"
+CONFIG="${3:-unknown}"
+
+echo "config: ${CONFIG}"
+echo "manifest: ${SLURM_SUBMIT_DIR}/${MANIFEST}"
+echo "array task: ${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}, chunk_size ${CHUNK_SIZE} (manifest problems $(( SLURM_ARRAY_TASK_ID * CHUNK_SIZE ))-$(( (SLURM_ARRAY_TASK_ID + 1) * CHUNK_SIZE - 1 )))"
 
 python -m inference.run_inference_on_data \
     --run_manifest "$MANIFEST" \

@@ -77,7 +77,27 @@ def network_data_is_complete(graph_path):
 # Options added after data was already being generated, with the default that reproduces the earlier
 # behavior. At that default they are left out of the fingerprint, so a directory recorded before the option
 # existed still matches and is continued rather than regenerated.
-_FINGERPRINT_OMITTED_AT_DEFAULT = {"hide_scaffold_directions": False}
+_FINGERPRINT_OMITTED_AT_DEFAULT = {"hide_scaffold_directions": False, "replicas_per_network": 1}
+
+
+def replica_paths(graph_path, n_replicas):
+    """The directory each replica of one network is written to. A single replica is the network directory
+    itself, so data generated with the default keeps the layout it had before replicas existed; more are
+    network_<index>/replica_<j>. Inference finds a network by its true_network.json at any depth and mirrors
+    the path into its output, so the extra level carries through to the inferred models. The name must not
+    contain '=': the analysis takes the deepest key=value directory to be the variant."""
+    if n_replicas == 1:
+        return [graph_path]
+    return [os.path.join(graph_path, "replica_{}".format(j)) for j in range(n_replicas)]
+
+
+def replica_seeds(seed, n_replicas):
+    """Per-replica seeds derived from the network's seed. A single replica uses the network's seed itself,
+    so the default reproduces the data generated before replicas existed."""
+    if n_replicas == 1:
+        return [seed]
+    source = random.Random(seed)
+    return [source.randrange(2 ** 31) for _ in range(n_replicas)]
 
 
 def generation_fingerprint(kwargs):
@@ -107,8 +127,12 @@ def set_flags_name_parts(kwargs):
 
     A flag at its default (False) is left out, so a directory generated with none of them set keeps the
     name it had before flags were added to it, and a run that is continued still finds its data."""
-    return ["{}=True".format(short_name) for name, short_name, needs_random_network in _NAMED_FLAGS
-            if kwargs.get(name) and (kwargs.get('use_random_network') or not needs_random_network)]
+    parts = ["{}=True".format(short_name) for name, short_name, needs_random_network in _NAMED_FLAGS
+             if kwargs.get(name) and (kwargs.get('use_random_network') or not needs_random_network)]
+    # likewise replicas_per_network, named only when it differs from the default of one
+    if kwargs.get('replicas_per_network', 1) != 1:
+        parts.append("replicas={}".format(kwargs['replicas_per_network']))
+    return parts
 
 
 def prepare_data_dir(data_dir_path, kwargs, regenerate):
@@ -159,8 +183,12 @@ def generate_one_network(task, kwargs):
     function and cannot be pickled. Parsing here also spreads the parse cost over the pool.
 
     The seed is per network and set explicitly. Worker processes started by fork inherit the parent's RNG
-    state, so without this every worker would draw the same scaffold and the same starting states."""
-    graph_path, model_dir, source_label, randomize, seed = task
+    state, so without this every worker would draw the same scaffold and the same starting states.
+
+    Each replica is the same reference network with its own scaffold and time series, drawn from its own
+    seed. The randomization (with use_random_network) is drawn once from the network's seed, before any
+    replica, so every replica shares it. replicas lists the (path, seed) of the replicas still to write."""
+    graph_path, model_dir, source_label, randomize, seed, replicas = task
     random.seed(seed)
     np.random.seed(seed % (2 ** 32))
 
@@ -168,21 +196,24 @@ def generate_one_network(task, kwargs):
     if randomize:
         reference_graph = randomize_reference_graph(reference_graph, **kwargs)
 
-    os.makedirs(graph_path, exist_ok=True)
-    # the index is positional, so record which model it came from - otherwise a folder of named
-    # models (the toy families, say) is unreadable downstream
-    with open(os.path.join(graph_path, "source_model.txt"), 'w') as source_file:
-        source_file.write("{}\n".format(source_label))
-    reference_graph.save(os.path.join(graph_path, "true_network.json"))
-    random_scaffold = generate_scaffold_network(reference_graph, **kwargs)
-    random_scaffold.save(os.path.join(graph_path, "scaffold_network.json"))
+    for replica_path, replica_seed in replicas:
+        random.seed(replica_seed)
+        np.random.seed(replica_seed % (2 ** 32))
+        os.makedirs(replica_path, exist_ok=True)
+        # the index is positional, so record which model it came from - otherwise a folder of named
+        # models (the toy families, say) is unreadable downstream
+        with open(os.path.join(replica_path, "source_model.txt"), 'w') as source_file:
+            source_file.write("{}\n".format(source_label))
+        reference_graph.save(os.path.join(replica_path, "true_network.json"))
+        random_scaffold = generate_scaffold_network(reference_graph, **kwargs)
+        random_scaffold.save(os.path.join(replica_path, "scaffold_network.json"))
 
-    named_real_matrices, named_noisy_matrices = dict(), dict()
-    for i, (real_mat, noisy_mat) in enumerate(generate_experiments_data(reference_graph, **kwargs)):
-        named_real_matrices[str(i)] = real_mat
-        named_noisy_matrices[str(i)] = noisy_mat
-    np.savez(os.path.join(graph_path, "real_matrices"), **named_real_matrices)
-    np.savez(os.path.join(graph_path, "noisy_matrices"), **named_noisy_matrices)
+        named_real_matrices, named_noisy_matrices = dict(), dict()
+        for i, (real_mat, noisy_mat) in enumerate(generate_experiments_data(reference_graph, **kwargs)):
+            named_real_matrices[str(i)] = real_mat
+            named_noisy_matrices[str(i)] = noisy_mat
+        np.savez(os.path.join(replica_path, "real_matrices"), **named_real_matrices)
+        np.savez(os.path.join(replica_path, "noisy_matrices"), **named_noisy_matrices)
     return graph_path
 
 
@@ -235,6 +266,9 @@ def main():
     p.add_argument('--state_noise_chance', required=False, type=float, action='append')
     p.add_argument('--frequency_noise_std', required=False, type=float)
     p.add_argument('--random_networks_per_reference', required=False, type=int)
+    p.add_argument('--replicas_per_network', required=False, type=int, default=1,
+                   help='independent datasets (scaffold and time series) generated from each network, written '
+                        'to network_<index>/replica_<j>; the default of 1 keeps the flat network_<index> layout')
     p.add_argument('--mutate_input_nodes', required=False, default=None, type=parse_bool_option,
                    action='append')
     p.add_argument('--preserve_truth_ratio', required=False, default=None, type=parse_bool_option,
@@ -266,6 +300,8 @@ def main():
     p.add_argument('--seed', required=False, type=int, default=None,
                    help='base seed for the per-network seeds; omit for a different draw each run')
     options = p.parse_args()
+    if options.replicas_per_network < 1:
+        p.error("replicas_per_network must be at least 1, got {}".format(options.replicas_per_network))
     if options.only_attractors is None:
         options.only_attractors = [False]  # kept a list so it stays a (single-valued) varying option
     # the flags named in the directory by set_flags_name_parts are appendable too, so a config can
@@ -358,6 +394,7 @@ def main():
         references = reference_models(kwargs)
         seed_source = random.Random(kwargs['seed'])
         index_in_group = dict()
+        n_replicas = kwargs['replicas_per_network']
         n_skipped = 0
         tasks = []
         for relative_path, model_dir, randomize in references:
@@ -367,16 +404,21 @@ def main():
             graph_path = os.path.join(data_dir_path, group, "network_{}".format(graph_index))
             seed = seed_source.randrange(2 ** 31)   # drawn for every network, so skipping does not shift it
             # the index is positional, so it has to be advanced for every reference graph whether or not
-            # this one is regenerated - hence the skip here rather than earlier
-            if resuming and network_data_is_complete(graph_path):
-                logger.info("skipping {}: already generated".format(graph_path))
-                n_skipped += 1
-                continue
+            # this one is regenerated - hence the skip here rather than earlier. Skipping is per replica.
+            replicas = list(zip(replica_paths(graph_path, n_replicas), replica_seeds(seed, n_replicas)))
+            if resuming:
+                finished = [path for path, _ in replicas if network_data_is_complete(path)]
+                for replica_path in finished:
+                    logger.info("skipping {}: already generated".format(replica_path))
+                replicas = [(path, s) for path, s in replicas if path not in finished]
+                if not replicas:
+                    n_skipped += 1
+                    continue
             # '/' regardless of platform: source_model.txt is written on whichever machine generated the
             # data and read on whichever machine analyses it
             source_label = relative_path.replace(os.sep, "/") if relative_path \
                 else "randomized_network_{}".format(graph_index)
-            tasks.append((graph_path, model_dir, source_label, randomize, seed))
+            tasks.append((graph_path, model_dir, source_label, randomize, seed, replicas))
 
         n_processes = max(1, int(kwargs.get('n_processes', 1) or 1))
         if tasks and n_processes > 1:

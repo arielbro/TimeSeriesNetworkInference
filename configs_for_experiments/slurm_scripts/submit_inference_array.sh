@@ -100,7 +100,7 @@ rm -rf "${MANIFEST}.errparts"
 
 ARRAY_JID=$(sbatch --parsable --array=0-$((N_TASKS - 1))%${MAX_CONCURRENT} \
        --cpus-per-task="${CPUS}" --time="${TIME}" --mem="${MEM}" \
-       "${SCRIPT_DIR}/run_inference_array.sbatch" "$MANIFEST" "$CHUNK_SIZE")
+       "${SCRIPT_DIR}/run_inference_array.sbatch" "$MANIFEST" "$CHUNK_SIZE" "$CONFIG")
 echo "submitted inference array as job ${ARRAY_JID}"
 
 # finalize job: runs once every array task has finished (afterany = regardless of success/failure) and writes
