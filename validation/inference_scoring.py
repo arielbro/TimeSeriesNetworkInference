@@ -255,7 +255,7 @@ def varying_columns(matrix):
     return np.any(arr != arr[0], axis=0)
 
 
-def timeseries_score_vectors(ref_matrices, pred_matrices, keys=None, varying_only=False):
+def timeseries_score_vectors(ref_matrices, pred_matrices, keys=None, varying_only=False, varying_mask=None):
     """Flattened (y_true, y_pred) over the predicted part of a group of time-series matrices, the pair
     every time-series accuracy in this project is computed from.
 
@@ -265,6 +265,10 @@ def timeseries_score_vectors(ref_matrices, pred_matrices, keys=None, varying_onl
     always covers a subset of the positions the full score covers, and a node counts as varying only if
     it varies where the model is being graded. The mask is per matrix, as one trajectory's constant node
     is another's varying one.
+
+    varying_mask, a boolean array over the columns, replaces that per-matrix mask with one fixed set of
+    varying nodes for every matrix. Data whose matrices are single input-output pairs needs it: with one
+    scored row no column varies within a matrix, so the per-matrix mask would leave nothing to score.
 
     ref_matrices and pred_matrices are anything mapping a key to a (timepoints x nodes) array - a dict or
     an open .npz. keys defaults to the predicted matrices' own keys, which is what identifies the group
@@ -279,7 +283,7 @@ def timeseries_score_vectors(ref_matrices, pred_matrices, keys=None, varying_onl
             "reference and prediction matrices differ in shape for key {}: {} vs {}".format(
                 key, ref.shape, pred.shape)
         if varying_only:
-            mask = varying_columns(ref)
+            mask = varying_columns(ref) if varying_mask is None else np.asarray(varying_mask, dtype=bool)
             ref, pred = ref[:, mask], pred[:, mask]
         refs.append(ref.flatten())
         preds.append(pred.flatten())
@@ -288,7 +292,7 @@ def timeseries_score_vectors(ref_matrices, pred_matrices, keys=None, varying_onl
     return np.concatenate(refs), np.concatenate(preds)
 
 
-def timeseries_accuracy_score(ref_matrices, pred_matrices, keys=None, varying_only=False):
+def timeseries_accuracy_score(ref_matrices, pred_matrices, keys=None, varying_only=False, varying_mask=None):
     """Accuracy of the predicted time series against the reference one, over the full matrices or over
     the varying nodes alone (see timeseries_score_vectors).
 
@@ -297,7 +301,7 @@ def timeseries_accuracy_score(ref_matrices, pred_matrices, keys=None, varying_on
     not a failure, so it is kept apart from the 0.0 the analysis scores an unfinished run as.
     """
     y_true, y_pred = timeseries_score_vectors(ref_matrices, pred_matrices, keys=keys,
-                                              varying_only=varying_only)
+                                              varying_only=varying_only, varying_mask=varying_mask)
     if y_true.size == 0:
         return float('nan')
     return sparse_accuracy_score(y_true, y_pred)
