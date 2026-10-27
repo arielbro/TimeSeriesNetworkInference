@@ -197,11 +197,19 @@ def infer_unknown_topology_symmetric_contains_attractors(data_matrices, scaffold
 NOREL_TIME_FRACTION = 0.25
 
 
+def infer_unknown_topology_symmetric_norel(data_matrices, scaffold_network, **kwargs):
+    """infer_unknown_topology_symmetric with the whole time limit given to Gurobi's NoRel heuristic
+    (norel_time_fraction = 1) instead of NOREL_TIME_FRACTION of it, for instances whose root LP cannot be
+    solved within the limit anyway; everything else, the warm start included, is unchanged."""
+    return infer_unknown_topology_symmetric(data_matrices, scaffold_network, norel_time_fraction=1.0, **kwargs)
+
+
 def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_additional_edges=False,
                                    included_edges_relative_weight=1, added_edges_relative_weight=-1,
                                    timeout_secs=None, log_file=None, allow_input_flips=False, flip_penalty=1.0,
                                    no_anchoring=False, gurobi_threads=0, warm_start_heuristic=False, max_indegree=-1, attractor_assumption=None,
-                                   attractor_max_path_len=DEFAULT_ATTRACTOR_MAX_PATH_LEN, **kwargs):
+                                   attractor_max_path_len=DEFAULT_ATTRACTOR_MAX_PATH_LEN,
+                                   norel_time_fraction=NOREL_TIME_FRACTION, **kwargs):
     """
     Find a symmetric threshold model with best fit to data_matrices and scaffold_network,
     by finding both the Boolean function and the incoming edges for each node.
@@ -220,7 +228,8 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
     [1 - u_j, degree]. Whether an input agrees with its edge's sign is p or q itself for a constant (data) input,
     and the convex hull of p*v + q*(1 - v) for a variable one; a predicted cell scored against a constant data
     cell enters the objective as the cell itself (or its complement). See ilp.add_path_to_model and
-    ilp.add_state_agreement_terms. With a time limit, the first NOREL_TIME_FRACTION of it is spent in Gurobi's NoRel heuristic.
+    ilp.add_state_agreement_terms. With a time limit, the first norel_time_fraction of it (NOREL_TIME_FRACTION by
+    default) is spent in Gurobi's NoRel heuristic.
     :param allow_additional_edges: if false, doesn't allow any edges that weren't in the scaffold network originally.
     :param included_edges_relative_weight:
     :param added_edges_relative_weight:
@@ -354,7 +363,7 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
             model.Params.LogFile = log_file
         if timeout_secs is not None:
             model.Params.TimeLimit = timeout_secs
-            model.Params.NoRelHeurTime = NOREL_TIME_FRACTION * timeout_secs
+            model.Params.NoRelHeurTime = norel_time_fraction * timeout_secs
         if gurobi_threads:
             model.Params.Threads = gurobi_threads
         # model.Params.MIPFocus = 1

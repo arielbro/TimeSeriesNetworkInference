@@ -9,7 +9,7 @@ import enum
 import traceback
 from concurrent.futures import ProcessPoolExecutor
 from inference import dummy_inference, binary_inference_ideas, benchmark_inference
-from inference.binary_inference_ideas import infer_unknown_topology_symmetric,     infer_unknown_topology_symmetric_in_attractors, infer_unknown_topology_symmetric_contains_attractors, \
+from inference.binary_inference_ideas import infer_unknown_topology_symmetric, infer_unknown_topology_symmetric_norel,     infer_unknown_topology_symmetric_in_attractors, infer_unknown_topology_symmetric_contains_attractors, \
     infer_symmetric_heuristic
 from inference.ilp_components import AttractorAssumption, check_attractor_assumption_compatible
 from sklearn.model_selection import train_test_split
@@ -30,6 +30,9 @@ NETWORK_MARKER_FILE = "true_network.json"
 SCAFFOLD_SIGNS_FILE = "scaffold_signs.json"
 # optional [matrix key, ...]: the network's held-out matrices, used instead of a train_size split
 TEST_KEYS_FILE = "test_keys.json"
+# optional [node name, ...]: the nodes every varying-node score is taken over, in place of each matrix's own
+# varying columns (see inference_scoring.timeseries_score_vectors)
+VARYING_NODES_FILE = "varying_nodes.json"
 
 
 def find_network_dirs(data_dir_path):
@@ -115,6 +118,11 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
                                           scaffold_signs=scaffold_signs,
                                           gurobi_threads=int(os.environ.get('SLURM_CPUS_PER_TASK') or 0))
         time_taken = time.time() - start
+        varying_mask = None
+        if os.path.exists(os.path.join(network_path, VARYING_NODES_FILE)):
+            with open(os.path.join(network_path, VARYING_NODES_FILE)) as varying_file:
+                varying_names = set(json.load(varying_file))
+            varying_mask = np.array([v.name in varying_names for v in scaffold_network.vertices])
         del scaffold_network
 
         # Truth-table inference (random_model / exact_match_else_random / linear_classifier) keeps
@@ -148,7 +156,7 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
             np.save(os.path.join(network_out_dir,
                                  inference_scoring.timeseries_varying_score_filename("real", group)),
                     inference_scoring.timeseries_accuracy_score(real_data, inferred_matrices,
-                                                                varying_only=True))
+                                                                varying_only=True, varying_mask=varying_mask))
             del ref_vec
             # compare against given reference data
             ref_vec = np.concatenate([reference_data[i][1:, ].flatten() for i in inferred_matrices.keys()])
@@ -158,7 +166,7 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
             np.save(os.path.join(network_out_dir,
                                  inference_scoring.timeseries_varying_score_filename("reference", group)),
                     inference_scoring.timeseries_accuracy_score(reference_data, inferred_matrices,
-                                                                varying_only=True))
+                                                                varying_only=True, varying_mask=varying_mask))
             del ref_vec, pred_vec, inferred_matrices
 
             # compare against non-noisy data again, but rolled out from the real first state rather than the
@@ -175,7 +183,7 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
             np.save(os.path.join(network_out_dir,
                                  inference_scoring.timeseries_varying_score_filename("real_start", group)),
                     inference_scoring.timeseries_accuracy_score(real_data, real_start_matrices,
-                                                                varying_only=True))
+                                                                varying_only=True, varying_mask=varying_mask))
             del ref_vec, pred_vec, real_start_matrices
 
         del reference_train, real_train, reference_test, real_test
@@ -283,6 +291,7 @@ def parse_bool_option(value):
 INFERENCE_METHODS = {
     "random": dummy_inference.dummy_inference_method,
     "symmetric_topology": infer_unknown_topology_symmetric,
+    "symmetric_topology_norel": infer_unknown_topology_symmetric_norel,
     "symmetric_topology_in_attractors": infer_unknown_topology_symmetric_in_attractors,
     "symmetric_topology_contains_attractors": infer_unknown_topology_symmetric_contains_attractors,
     "symmetric_heuristic": infer_symmetric_heuristic,
