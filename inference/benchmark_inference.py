@@ -523,3 +523,196 @@ def best_fit_inference(data_matrices, scaffold_network, max_indegree=-1,
     explicitly."""
     return _infer_by_subset_search(data_matrices, scaffold_network, max_indegree, _scan_best_fit,
                                    emit_static_as_input, allow_additional_edges, timeout_secs)
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Hamey et al. 2017 (PNAS 114:5822) rule search. Each gene's rule is f = f1 AND NOT f2: f1 is built from up
+# to max_activators of the gene's candidate activators and f2 (optional) from up to max_repressors of its
+# candidate repressors, each as a tree of in-degree-2 AND/OR gates at most two levels deep - one regulator,
+# (x op y), ((x op y) op z) or ((x op y) op (z op w)) - with no regulator used twice in a rule. The chosen
+# rule maximizes agreement with the observed transitions, a rule regulated by the gene itself scoring
+# HAMEY_SELF_PENALTY less, and among equal scores the rule with the fewest regulators wins (the paper's
+# "simplest function"); ties left after that are broken by a fair coin.
+#
+# The published code (github.com/fionahamey/Pseudotime-network-inference) finds that optimum with Z3: it
+# enumerates every rule whose agreement reaches a threshold, lowering the threshold from 0.95 in 0.05 steps
+# until some rule qualifies, and keeps the best-scoring one. That enumeration is complete above the
+# threshold, so the result is the global optimum over the rule class, which this implementation finds by
+# exhaustive search instead of a solver. The scoring is vectorized: for a fixed repressor part R,
+# agreement(A AND NOT R) = #(R on, output off) + #(R off, A == output), a matrix product over all (A, R).
+# ---------------------------------------------------------------------------------------------------------
+
+HAMEY_MAX_ACTIVATORS = 4  # the paper's defaults, d1 and d2
+HAMEY_MAX_REPRESSORS = 2
+HAMEY_SELF_PENALTY = 0.005  # penSelf in booleanRules.py
+# Score lost per regulator, the "simplest rule" tie-break. Far below one transition's agreement and below
+# HAMEY_SELF_PENALTY even at the largest rule (6 regulators), so it never outweighs either.
+_HAMEY_SIZE_PENALTY = 1e-4
+# Score cells computed per matrix product (activator parts x transitions x repressor parts). The deadline is
+# read before each product, so this bounds both the overshoot past timeout_secs and the memory per product.
+_HAMEY_CELLS_PER_CHUNK = 2 * 10 ** 7
+
+
+def _hamey_trees(columns, candidates, n_leaves):
+    """Yield every gate tree over exactly n_leaves distinct candidates (vertex indices) as (values, tree,
+    mask): values, the tree evaluated on each transition given columns ({vertex index: bool column}); tree,
+    nested tuples ('leaf', v) / ('and' | 'or', left, right); mask, the set of regulators it uses. A generator,
+    so a level with many trees is never held in memory at once. Functionally equal trees (x AND y AND z
+    grouped differently) all appear; they score the same, so this only affects which one a tie-break picks."""
+    ops = (('and', np.logical_and), ('or', np.logical_or))
+    leaves = [(columns[v], ('leaf', v), frozenset([v])) for v in candidates]
+    if n_leaves == 1:
+        yield from leaves
+        return
+    pairs = [(op(columns[u], columns[v]), (name, ('leaf', u), ('leaf', v)), frozenset([u, v]))
+             for u, v in itertools.combinations(candidates, 2) for name, op in ops]
+    if n_leaves == 2:
+        yield from pairs
+    elif n_leaves == 3:
+        for pair in pairs:
+            for leaf in leaves:
+                if not leaf[2] & pair[2]:
+                    for name, op in ops:
+                        yield op(pair[0], leaf[0]), (name, pair[1], leaf[1]), pair[2] | leaf[2]
+    else:  # an unordered pair of disjoint pairs; min(first) < min(second) lists each once
+        for i, first in enumerate(pairs):
+            for second in pairs[i + 1:]:
+                if not first[2] & second[2] and min(first[2]) < min(second[2]):
+                    for name, op in ops:
+                        yield op(first[0], second[0]), (name, first[1], second[1]), first[2] | second[2]
+
+
+def _hamey_evaluate(tree, values):
+    """A tree's value given {vertex index: bool}; None (no repressor part) is False."""
+    if tree is None:
+        return False
+    if tree[0] == 'leaf':
+        return values[tree[1]]
+    left, right = _hamey_evaluate(tree[1], values), _hamey_evaluate(tree[2], values)
+    return (left and right) if tree[0] == 'and' else (left or right)
+
+
+def _hamey_regulators(tree):
+    if tree is None:
+        return set()
+    return {tree[1]} if tree[0] == 'leaf' else _hamey_regulators(tree[1]) | _hamey_regulators(tree[2])
+
+
+def _hamey_cost(mask, self_index):
+    return _HAMEY_SIZE_PENALTY * len(mask) + HAMEY_SELF_PENALTY * (self_index in mask)
+
+
+def _hamey_score_level(y, self_index, act_items, universe, rep_values, rep_trees, rep_masks, best, deadline,
+                       check_first_chunk):
+    """Score every activator tree from act_items (one size, from _hamey_trees) against every repressor part,
+    keeping in best the top score and every (activator tree, repressor tree) tied at it. The deadline is read
+    before every chunk except, when check_first_chunk is False, the first. Returns (best, timed_out)."""
+    y_on = y.astype(np.float32)
+    rep_on = np.array(rep_values, dtype=np.float32)          # (n_rep, S); row 0 is "no repressor part"
+    base = rep_on @ (1 - y_on) - np.array([_hamey_cost(m, self_index) for m in rep_masks])
+    rep_membership = np.array([[v in m for v in universe] for m in rep_masks], dtype=np.float32)
+    chunk = max(1, _HAMEY_CELLS_PER_CHUNK // (rep_on.shape[0] * max(1, len(y))))
+    first = True
+    while True:
+        if (check_first_chunk or not first) and _out_of_time(deadline):
+            return best, True
+        first = False
+        items = list(itertools.islice(act_items, chunk))
+        if not items:
+            return best, False
+        act_values, act_trees, act_masks = zip(*items)
+        matches = (np.array(act_values) == y).astype(np.float32)
+        score = matches @ (1 - rep_on).T + base[None, :]
+        score -= np.array([_hamey_cost(m, self_index) for m in act_masks])[:, None]
+        act_membership = np.array([[v in m for v in universe] for m in act_masks], dtype=np.float32)
+        score[act_membership @ rep_membership.T > 0] = -np.inf  # a regulator used twice
+        top = score.max()
+        if top == -np.inf or (best is not None and top < best[0] - 1e-9):
+            continue
+        tied = [(act_trees[a], rep_trees[r]) for a, r in zip(*np.nonzero(score >= top - 1e-9))]
+        if best is None or top > best[0] + 1e-9:
+            best = (top, tied)
+        else:
+            best = (best[0], best[1] + tied)
+
+
+def hamey_inference(data_matrices, scaffold_network, scaffold_signs=None, allow_additional_edges=False,
+                    max_activators=HAMEY_MAX_ACTIVATORS, max_repressors=HAMEY_MAX_REPRESSORS,
+                    timeout_secs=None, **kwargs):
+    """The Hamey et al. 2017 rule search (see the section comment above), on the standard interface.
+
+    scaffold_signs, {(regulator name, target name): +1 | -1}, splits a gene's scaffold predecessors into
+    candidate activators and repressors, as the paper's signed partial-correlation network does; a
+    predecessor it doesn't list is a candidate in either role. Without it (the scaffold format has no
+    signs) every predecessor is a candidate in either role, a superset of the published search.
+    allow_additional_edges adds the gene itself as a candidate activator - the paper's network always
+    includes self-activation; no other edge outside the scaffold is ever considered. max_indegree is
+    ignored: max_activators and max_repressors bound the rule size.
+
+    Input nodes follow this repository's convention, a node with no inputs holding its value, rather than
+    the paper's self-activation edge: a gene whose chosen rule is its own value alone (f = x_i, the same
+    dynamics) is returned as an input node with no incoming edge, and so is a gene without candidate
+    activators, which the rule class can't serve (the published code has no output for it).
+
+    timeout_secs bounds the whole call. Rules are searched by activator-part size, every gene at one
+    regulator, then two, and so on, each against every repressor part, as in _infer_by_subset_search. Size
+    one is always searched in full, so the model is complete; past it the deadline is read before every
+    chunk of _HAMEY_CELLS_PER_CHUNK score cells, and the search stops at the first chunk after it, keeping
+    each gene's best rule so far.
+    """
+    vertices = list(scaffold_network.vertices)
+    names = [v.name for v in vertices]
+    n = len(names)
+    X, Y = _transition_table(list(data_matrices))
+    deadline = None if timeout_secs is None else time.time() + timeout_secs
+    edges, functions = [], [None] * n
+    if X is None:
+        return Network(vertex_names=names, edges=edges, vertex_functions=functions)
+    columns = {j: X[:, j].astype(bool) for j in range(n)}
+
+    searched = {}
+    for i, vertex in enumerate(vertices):
+        predecessors = sorted(u.index for u in vertex.predecessors())
+        signs = {j: (scaffold_signs or {}).get((names[j], names[i])) for j in predecessors}
+        activators = [j for j in predecessors if signs[j] != -1]
+        repressors = [j for j in predecessors if signs[j] != 1]
+        if allow_additional_edges and i not in activators:
+            activators = sorted(activators + [i])
+        if not activators:
+            continue
+        rep_values, rep_trees, rep_masks = [np.zeros(X.shape[0], dtype=bool)], [None], [frozenset()]
+        for size in range(1, min(max_repressors, len(repressors)) + 1):
+            for values, tree, mask in _hamey_trees(columns, repressors, size):
+                rep_values.append(values)
+                rep_trees.append(tree)
+                rep_masks.append(mask)
+        searched[i] = {'activators': activators, 'universe': sorted(set(activators) | set(repressors)),
+                       'rep': (rep_values, rep_trees, rep_masks), 'best': None}
+
+    timed_out = False
+    for size in range(1, max_activators + 1):
+        for i, gene in searched.items():
+            if size > len(gene['activators']):
+                continue
+            gene['best'], timed_out = _hamey_score_level(
+                Y[:, i].astype(bool), i, _hamey_trees(columns, gene['activators'], size), gene['universe'],
+                *gene['rep'], gene['best'], deadline, check_first_chunk=size > 1)
+            if timed_out:
+                break
+        if timed_out:
+            break
+
+    for i, gene in searched.items():
+        if gene['best'] is None:
+            continue
+        act_tree, rep_tree = random.choice(gene['best'][1])
+        if act_tree == ('leaf', i) and rep_tree is None:
+            continue  # f = x_i: an input node, holding its value
+        regulators = sorted(_hamey_regulators(act_tree) | _hamey_regulators(rep_tree))  # ascending -> MSB first
+        outputs = []
+        for row in itertools.product([False, True], repeat=len(regulators)):
+            values = dict(zip(regulators, row))
+            outputs.append(bool(_hamey_evaluate(act_tree, values) and not _hamey_evaluate(rep_tree, values)))
+        functions[i] = BooleanSymbolicFunc(input_names=[names[j] for j in regulators], boolean_outputs=outputs)
+        edges.extend((names[j], names[i]) for j in regulators)
+    return Network(vertex_names=names, edges=edges, vertex_functions=functions)

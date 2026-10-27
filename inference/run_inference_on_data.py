@@ -27,6 +27,9 @@ import configargparse
 
 inference_parent_dir = "/scratch/gpfs/MONA/abronner/TimeSeriesNetworkInference/inferred_models"
 NETWORK_MARKER_FILE = "true_network.json"
+SCAFFOLD_SIGNS_FILE = "scaffold_signs.json"
+# optional [matrix key, ...]: the network's held-out matrices, used instead of a train_size split
+TEST_KEYS_FILE = "test_keys.json"
 
 
 def find_network_dirs(data_dir_path):
@@ -62,9 +65,26 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
     try:
         scaffold_network = graphs.Network.load(os.path.join(network_path, "scaffold_network.json"))
         true_network = graphs.Network.load(os.path.join(network_path, "true_network.json"))
+        # optional [[regulator, target, +1 | -1], ...] for the scaffold's edges, read by the methods that use
+        # signs (hamey) and ignored by the rest
+        scaffold_signs = None
+        if os.path.exists(os.path.join(network_path, SCAFFOLD_SIGNS_FILE)):
+            with open(os.path.join(network_path, SCAFFOLD_SIGNS_FILE)) as signs_file:
+                scaffold_signs = {(source, target): sign for source, target, sign in json.load(signs_file)}
         with np.load(os.path.join(network_path, "noisy_matrices.npz")) as reference_matrices, \
                 np.load(os.path.join(network_path, "real_matrices.npz")) as hidden_matrices:
-            if kwargs['train_size'] != 1:
+            if os.path.exists(os.path.join(network_path, TEST_KEYS_FILE)):
+                # a fixed held-out set (e.g. one cross-validation fold) given with the data replaces the
+                # random split, and train_size is ignored
+                with open(os.path.join(network_path, TEST_KEYS_FILE)) as test_keys_file:
+                    test_keys = set(json.load(test_keys_file))
+                train_keys = [i for i in reference_matrices.keys() if i not in test_keys]
+                test_keys = [i for i in reference_matrices.keys() if i in test_keys]
+                reference_train = {i: reference_matrices[i] for i in train_keys}
+                real_train = {i: hidden_matrices[i] for i in train_keys}
+                reference_test = {i: reference_matrices[i] for i in test_keys}
+                real_test = {i: hidden_matrices[i] for i in test_keys}
+            elif kwargs['train_size'] != 1:
                 train_keys, test_keys = train_test_split(list(reference_matrices.keys()),
                                                          train_size=kwargs['train_size'])
                 reference_train = {i: reference_matrices[i] for i in train_keys}
@@ -92,6 +112,7 @@ def process_network(network_name, network_path, output_parent_dir, kwargs):
                                           attractor_max_path_len=kwargs.get(
                                               'attractor_max_path_len',
                                               binary_inference_ideas.DEFAULT_ATTRACTOR_MAX_PATH_LEN),
+                                          scaffold_signs=scaffold_signs,
                                           gurobi_threads=int(os.environ.get('SLURM_CPUS_PER_TASK') or 0))
         time_taken = time.time() - start
         del scaffold_network
@@ -271,6 +292,7 @@ INFERENCE_METHODS = {
     "linear_classifier": benchmark_inference.linear_classifier_inference,
     "reveal": benchmark_inference.reveal_inference,
     "best_fit": benchmark_inference.best_fit_inference,
+    "hamey": benchmark_inference.hamey_inference,
 }
 
 
@@ -423,7 +445,8 @@ def enumerate_problems(options):
                     matrix_count_cache[net_path] = count_timeseries_matrices(net_path)
                 n_matrices = matrix_count_cache[net_path]
                 if n_matrices is not None:
-                    reason = split_precheck_reason(n_matrices, manifest_kwargs.get('train_size'))
+                    reason = None if os.path.exists(os.path.join(net_path, TEST_KEYS_FILE)) else \
+                        split_precheck_reason(n_matrices, manifest_kwargs.get('train_size'))
                     if reason is not None:
                         prevalidation_errors.append({"kwargs": manifest_kwargs,
                                                      "network_name": net_name,
@@ -497,6 +520,7 @@ def run_manifest_chunk(manifest_path, task_id, chunk_size):
     for i in range(start, end):
         problem = json.loads(lines[i])
         print("=== manifest problem {} ({} of {} in this task) ===".format(i, i - start + 1, end - start))
+        print("network {} -> {}".format(problem["network_name"], problem["output_parent_dir"]), flush=True)
         meta = run_single_problem(problem)
         if meta is not None and meta[4] == 'error':
             had_error = True
