@@ -1,0 +1,6 @@
+# downloaded and derived data, and outputs (see data/README.md for sourcing)
+data/*.csv
+data/continuous_expression_hspc.txt
+results*/
+*.aux
+*.log
