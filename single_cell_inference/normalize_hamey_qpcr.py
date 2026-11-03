@@ -19,7 +19,7 @@ is set to 0 or 1 by detection alone.
 
 Output: single_cell_inference/data/continuous_expression_hspc.txt, tab separated in the layout of binary_expression_LMPP.txt (header row
 of genes, then a cell name and one value per gene), every cell and gene of the processed file. The LMPP files
-used for the agreement check are read from data/hamey_pseudotime_inference.
+used for the agreement check are read from the same folder (--source).
 """
 
 import argparse
@@ -30,7 +30,7 @@ import urllib.request
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data"))
-from convert_hamey import SOURCE_DIR, EXPRESSION_FILE, ORDER_FILE, read_expression  # noqa: E402
+from convert_hamey import EXPRESSION_FILE, ORDER_FILE, read_expression  # noqa: E402
 
 URL = "http://blood.stemcells.cam.ac.uk/qpcr_data/"
 PROCESSED_FILE = "hspc_qpcr_processed.csv"
@@ -91,7 +91,7 @@ def scale(processed_path, raw_path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data", default=DATA_DIR, help="folder holding the qPCR files and the output")
-    parser.add_argument("--source", default=SOURCE_DIR, help="folder holding the Hamey et al. LMPP files")
+    parser.add_argument("--source", default=DATA_DIR, help="folder holding the Hamey et al. LMPP files")
     options = parser.parse_args()
 
     genes, names, types, expression = scale(fetch(PROCESSED_FILE, options.data), fetch(RAW_FILE, options.data))

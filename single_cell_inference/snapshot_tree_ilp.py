@@ -36,7 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from attractor_learning import ilp  # noqa: E402
 from attractor_learning.graphs import Network  # noqa: E402
 from attractor_learning.logic import SymmetricThresholdFunction  # noqa: E402
-from convert_hamey import SOURCE_DIR, EXPRESSION_FILE, ORDER_FILE  # noqa: E402
+from convert_hamey import EXPRESSION_FILE, ORDER_FILE  # noqa: E402
 from normalize_hamey_qpcr import DATA_DIR, PROCESSED_FILE, RAW_FILE, UNDETECTED_CT, read_csv  # noqa: E402
 
 PSEUDO_ROOT = 0
@@ -60,13 +60,13 @@ def load_detection_data(data_dir=DATA_DIR, dropped_genes=DROPPED_GENES):
     return genes, names, types, detected.astype(np.int8)
 
 
-def hamey_regulators(source_dir=SOURCE_DIR):
+def hamey_regulators(source_dir=DATA_DIR):
     """The 31 genes Hamey et al. modelled as transcription factors: the columns of their LMPP binary file."""
     with open(os.path.join(source_dir, EXPRESSION_FILE)) as expression_file:
         return expression_file.readline().split()
 
 
-def lmpp_cells(source_dir=SOURCE_DIR):
+def lmpp_cells(source_dir=DATA_DIR):
     """The cells of Hamey et al.'s HSC -> LMPP branch, in their pseudotime order."""
     with open(os.path.join(source_dir, ORDER_FILE)) as order_file:
         return [line.strip() for line in order_file if line.strip()]
@@ -290,8 +290,9 @@ def main():
     parser.add_argument("--config", default=None,
                         help="config file whose values replace the defaults below; options given on the command "
                              "line override it")
-    parser.add_argument("--data-dir", default=DATA_DIR, help="folder holding hspc_qpcr_processed.csv and "
-                                                             "hspc_qpcr_raw.csv")
+    parser.add_argument("--data-dir", default=DATA_DIR,
+                        help="folder holding hspc_qpcr_processed.csv, hspc_qpcr_raw.csv, binary_expression_LMPP.txt "
+                             "(for the regulator names) and LMPP_trajectory_order.txt (for --cells lmpp)")
     parser.add_argument("--cells", choices=["all", "lmpp"], default="lmpp",
                         help="all 2,167 cells, or Hamey et al.'s 531-cell HSC -> LMPP branch")
     parser.add_argument("--max-cells", type=int, default=None, help="keep only the first this many cells (testing)")
@@ -322,11 +323,11 @@ def main():
 
     genes, names, types, detected = load_detection_data(options.data_dir)
     if options.cells == "lmpp":
-        rows = [names.index(name) for name in lmpp_cells()]
+        rows = [names.index(name) for name in lmpp_cells(options.data_dir)]
         names, types, detected = [names[r] for r in rows], [types[r] for r in rows], detected[rows]
     if options.max_cells:
         names, types, detected = names[:options.max_cells], types[:options.max_cells], detected[:options.max_cells]
-    regulators = hamey_regulators()
+    regulators = hamey_regulators(options.data_dir)
 
     started = time.time()
     model, handles = build_model(detected, genes, regulators, k=options.k, max_indegree=options.max_indegree,
