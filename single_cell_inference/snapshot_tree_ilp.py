@@ -495,6 +495,8 @@ def run_method(method, options, genes, names, types, detected, regulators, out):
               flush=True)
     else:
         start_from_collapse(handles, states_data)
+    os.makedirs(out, exist_ok=True)
+    model.Params.LogFile = os.path.join(out, "inference_log.txt")
     if options.timeout:
         model.Params.TimeLimit = options.timeout
         if options.norel_fraction:
@@ -505,7 +507,6 @@ def run_method(method, options, genes, names, types, detected, regulators, out):
     if model.SolCount == 0:
         raise RuntimeError("no solution found (status {})".format(model.Status))
 
-    os.makedirs(out, exist_ok=True)
     state_names = names if labels is None else ["group_{}".format(g) for g in range(len(sizes))]
     network, solved_states, root_state = extract_solution(handles, state_names)
     network.save(os.path.join(out, "network.json"))
