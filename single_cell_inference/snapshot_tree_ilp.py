@@ -304,6 +304,9 @@ def main():
     parser.add_argument("--max-indegree", type=int, default=None, help="d (default: all regulators)")
     parser.add_argument("--timeout", type=float, default=None, help="Gurobi time limit in seconds")
     parser.add_argument("--threads", type=int, default=0)
+    parser.add_argument("--norel-fraction", type=float, default=0.25,
+                        help="share of the time limit spent in Gurobi's NoRel heuristic before the root relaxation "
+                             "(NoRelHeurTime); needs --timeout")
     parser.add_argument("--build-only", action="store_true", help="build the model and print its size")
     parser.add_argument("--heuristic-starts", type=int, default=5,
                         help="starts of the heuristic warm start (snapshot_tree_heuristic.solve)")
@@ -350,6 +353,8 @@ def main():
         start_from_collapse(handles, detected)
     if options.timeout:
         model.Params.TimeLimit = options.timeout
+        if options.norel_fraction:
+            model.Params.NoRelHeurTime = options.norel_fraction * options.timeout
     if options.threads:
         model.Params.Threads = options.threads
     model.optimize()
