@@ -454,8 +454,8 @@ def run_heuristic(options, genes, names, types, detected, regulators, out):
                    "objective": float(value), "terms": terms, "options": vars(options),
                    "method": "snapshot_tree_heuristic"}, cells_file, indent=1, default=float)
     spread = terms["starts"]
-    print("snapshot_tree_heuristic: objective {:.5f} (start {}, round {}) in {:.0f}s; over {} starts mean {:.5f}, "
-          "sd {:.5f}, min {:.5f}, max {:.5f} -> {}".format(
+    print("snapshot_tree_heuristic: objective {:.5f} (start {}, round {}) in {:.0f}s; surrogate over {} starts mean "
+          "{:.5f}, sd {:.5f}, min {:.5f}, max {:.5f} -> {}".format(
               value, terms["start"], terms["round"], time.time() - started, len(spread["best_per_start"]),
               spread["mean"], spread["std"], spread["min"], spread["max"], out), flush=True)
 

@@ -178,7 +178,8 @@ def infer_unknown_topology_symmetric_in_attractors(data_matrices, scaffold_netwo
     denoised last state the model returns to its denoised first state within attractor_max_path_len steps
     (AttractorAssumption.IN_ATTRACTORS). Free-run with input flips only."""
     return infer_unknown_topology_symmetric(data_matrices, scaffold_network,
-                                            attractor_assumption=AttractorAssumption.IN_ATTRACTORS, **kwargs)
+                                            attractor_assumption=AttractorAssumption.IN_ATTRACTORS,
+                                            partition_by_target_gene=False, **kwargs)
 
 
 def infer_unknown_topology_symmetric_contains_attractors(data_matrices, scaffold_network, **kwargs):
@@ -186,7 +187,8 @@ def infer_unknown_topology_symmetric_contains_attractors(data_matrices, scaffold
     attractor: its denoised last state repeats an earlier one (AttractorAssumption.CONTAINS_ATTRACTORS).
     Free-run with input flips only."""
     return infer_unknown_topology_symmetric(data_matrices, scaffold_network,
-                                            attractor_assumption=AttractorAssumption.CONTAINS_ATTRACTORS, **kwargs)
+                                            attractor_assumption=AttractorAssumption.CONTAINS_ATTRACTORS,
+                                            partition_by_target_gene=False, **kwargs)
 
 
 # Share of the solve time limit spent in Gurobi's NoRel heuristic, which searches for solutions before the root
@@ -195,6 +197,22 @@ def infer_unknown_topology_symmetric_contains_attractors(data_matrices, scaffold
 # better solution in 10 of the 20 runs that timed out and a worse one in 3, at the cost of that time on runs that
 # would have solved quickly.
 NOREL_TIME_FRACTION = 0.25
+# Every place Gurobi offers for its partition heuristic, including before the root relaxation (bit 16), which its
+# default of 15 leaves out and which is the only one reached when the root LP does not finish.
+PARTITION_PLACE_EVERYWHERE = 31
+
+
+def _set_target_gene_partitions(model, functions):
+    """Enable Gurobi's partition heuristic with one sub-MIP per target gene. Sub-MIP j + 1 keeps node j's function
+    variables (its edges, threshold and unused indicator) free and fixes every other node's function variables to
+    the incumbent. All other variables (trajectory states, flips, edge-input hulls) have partition 0, free in every
+    sub-MIP, since changing one node's function changes the states that the other nodes' terms read."""
+    model.update()
+    model.setAttr(gurobipy.GRB.Attr.Partition, model.getVars(), [0] * model.NumVars)
+    for j, (positives, negatives, threshold, unused) in enumerate(functions):
+        for var in positives + negatives + [threshold] + ([] if unused is None else [unused]):
+            var.Partition = j + 1
+    model.Params.PartitionPlace = PARTITION_PLACE_EVERYWHERE
 
 
 def infer_unknown_topology_symmetric_norel(data_matrices, scaffold_network, **kwargs):
@@ -209,7 +227,8 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
                                    timeout_secs=None, log_file=None, allow_input_flips=False, flip_penalty=1.0,
                                    no_anchoring=False, gurobi_threads=0, warm_start_heuristic=False, max_indegree=-1, attractor_assumption=None,
                                    attractor_max_path_len=DEFAULT_ATTRACTOR_MAX_PATH_LEN,
-                                   norel_time_fraction=NOREL_TIME_FRACTION, **kwargs):
+                                   norel_time_fraction=NOREL_TIME_FRACTION, partition_by_target_gene=True,
+                                   **kwargs):
     """
     Find a symmetric threshold model with best fit to data_matrices and scaffold_network,
     by finding both the Boolean function and the incoming edges for each node.
@@ -252,6 +271,9 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
         symmetric_topology_in_attractors / _contains_attractors methods are this function with it set.
     :param attractor_max_path_len: for AttractorAssumption.IN_ATTRACTORS, the longest path the model may take
         from a matrix's last state back to its first.
+    :param partition_by_target_gene: if true, run Gurobi's partition heuristic with one sub-MIP per target gene
+        (_set_target_gene_partitions), off for the attractor variants. It improves an existing solution, so it
+        needs warm_start_heuristic or a solution from another heuristic.
     :return:
     """
     ilp_components.check_attractor_assumption_compatible(attractor_assumption, no_anchoring, allow_input_flips)
@@ -366,6 +388,8 @@ def infer_unknown_topology_symmetric(data_matrices, scaffold_network, allow_addi
             model.Params.NoRelHeurTime = norel_time_fraction * timeout_secs
         if gurobi_threads:
             model.Params.Threads = gurobi_threads
+        if partition_by_target_gene:
+            _set_target_gene_partitions(model, functions)
         # model.Params.MIPFocus = 1
 
         model.setObjective(objective, sense=gurobipy.GRB.MAXIMIZE)

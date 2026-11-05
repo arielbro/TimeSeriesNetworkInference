@@ -18,17 +18,18 @@ The heuristic alternates between a tree step and a function step, from several s
    The fit is START-BIT's greedy search (signs from weighted correlation, best threshold by enumeration, then
    single sign changes) with sample weights. Candidate inputs are the regulators and the node itself, at most d
    inputs, and a fit that uses a negative self-loop is refitted without the node's own input.
-3. Repair. Going down the tree from the pseudo-root, each violating bit of a child is set to its parent's
-   value, which makes every transition constraint hold. The pseudo-root's state is the per-gene majority of
-   its children's detection calls. This gives the ILP objective of the round.
+3. Repair, once, on the returned round only. Going down the tree from the pseudo-root, each violating bit of a
+   child is set to its parent's value, which makes every transition constraint hold, for the ILP's MIP start and
+   for an objective comparable with the ILP's. The pseudo-root's state is the per-gene majority of its children's
+   detection calls.
 
-Both steps then minimize the same surrogate cost: the ILP objective with the latent states equal to the data
-and each violation counted as one flip (the repair's knock-on effects on grandchildren aside). Each start begins
-with the tree step for F with every gene stable everywhere, where an edge costs the Hamming distance between the
-two cells; it then alternates function and tree steps for up to L rounds (--iterations), stopping when a round
-reproduces the previous tree. Each of the S starts (--starts) uses its own tie-breaking seed, and so its own
-initial minimum Hamming tree. The best round over all starts is returned, and the spread of the starts' best
-objectives is reported.
+Both steps minimize the same surrogate cost: the ILP objective with the latent states equal to the data and each
+violation counted as one flip, so a lasting change costs one flip whatever the size of the subtree below it. Each
+start begins with the tree step for F with every gene stable everywhere, where an edge costs the Hamming distance
+between the two cells; it then alternates function and tree steps for up to L rounds (--iterations), stopping when
+a round reproduces the previous tree. Each of the S starts (--starts) uses its own tie-breaking seed, and so its
+own initial minimum Hamming tree. The round with the best surrogate over all starts is repaired and returned, and
+the spread of the starts' best surrogates is reported.
 
 With symmetric Hamming costs the arborescence is a minimum spanning forest of the neighbour graph, one component
 per root, and any cell of a component can be its root at equal cost. The orientation of the initial tree is
@@ -315,8 +316,8 @@ def surrogate(detected, fitted, parent, edge_penalty, stability_penalty, root_pe
 
 def run_start(detected, genes, regulators, predecessors, seed, iterations, edge_penalty, stability_penalty,
               root_penalty, max_indegree, init="hamming", refit="weighted", changes_only=False, log=None):
-    """One start: the best round's (fitted, parent, states, pseudotime, objective, terms) and the per-round
-    terms. Round 0 is the initial tree (init "hamming": F with every gene stable; init "all-pairs": the
+    """One start: the best round by the surrogate as (fitted, parent, surrogate, terms), and the per-round terms.
+    Round 0 is the initial tree (init "hamming": F with every gene stable; init "all-pairs": the
     unweighted fit to all candidate pairs and its tree)."""
     if init == "hamming":
         fitted = None
@@ -333,17 +334,16 @@ def run_start(detected, genes, regulators, predecessors, seed, iterations, edge_
             else:
                 fitted = fit_network(detected, genes, regulators, tree_pairs(parent), edge_penalty, max_indegree)
             previous, parent = parent, build_tree(detected, fitted, predecessors, root_penalty, seed)
-        states, pseudotime = repair_states(detected, fitted, parent)
-        value, terms = objective(detected, fitted, states, parent, edge_penalty, stability_penalty, root_penalty)
-        terms = dict(terms, start=seed, round=round_index, objective=value,
-                     surrogate=surrogate(detected, fitted, parent, edge_penalty, stability_penalty, root_penalty),
-                     max_pseudotime=max(pseudotime.values()),
-                     parents_changed=None if previous is None else sum(parent[c] != previous[c] for c in parent))
+        value = surrogate(detected, fitted, parent, edge_penalty, stability_penalty, root_penalty)
+        terms = {"start": seed, "round": round_index, "surrogate": value,
+                 "edges": 0 if fitted is None else sum(len(signs) for signs, _ in fitted),
+                 "roots": sum(a == PSEUDO_ROOT for a in parent.values()),
+                 "parents_changed": None if previous is None else sum(parent[c] != previous[c] for c in parent)}
         history.append(terms)
         if log is not None:
             log(terms)
-        if best is None or value > best[4]:
-            best = (fitted, parent, states, pseudotime, value, terms)
+        if best is None or value > best[2]:
+            best = (fitted, parent, value, terms)
         if previous == parent:
             break
     return best, history
@@ -352,10 +352,11 @@ def run_start(detected, genes, regulators, predecessors, seed, iterations, edge_
 def solve(detected, genes, regulators, k=20, edge_penalty=1.0, stability_penalty=0.5, root_penalty=None,
           max_indegree=None, changes_only=False, iterations=10, starts=5, init="hamming", refit="weighted",
           seed=0, log=None):
-    """The full heuristic over `starts` starts with seeds seed, seed + 1, ...: the best round's (fitted network,
-    {c: predecessor}, states with the pseudo-root as row 0, {c: pseudotime}, objective value, objective terms).
-    terms["history"] holds every round of every start, and terms["starts"] each start's best objective with their
-    mean, standard deviation, minimum and maximum. Defaults as in snapshot_tree_ilp.build_model."""
+    """The full heuristic over `starts` starts with seeds seed, seed + 1, ...: for the round with the best surrogate,
+    repaired, (fitted network, {c: predecessor}, states with the pseudo-root as row 0, {c: pseudotime}, ILP objective,
+    objective terms). terms["history"] holds every round of every start, and terms["starts"] each start's best
+    surrogate with their mean, standard deviation, minimum and maximum. Defaults as in
+    snapshot_tree_ilp.build_model."""
     root_penalty = 6.0 / detected.shape[1] if root_penalty is None else root_penalty
     predecessors = candidate_predecessors(detected, k)
     best, history, start_values = None, [], []
@@ -364,10 +365,14 @@ def solve(detected, genes, regulators, k=20, edge_penalty=1.0, stability_penalty
                                           edge_penalty, stability_penalty, root_penalty, max_indegree, init, refit,
                                           changes_only, log)
         history.extend(start_history)
-        start_values.append(result[4])
-        if best is None or result[4] > best[4]:
+        start_values.append(result[2])
+        if best is None or result[2] > best[2]:
             best = result
-    fitted, parent, states, pseudotime, value, terms = best
+    fitted, parent, _, round_terms = best
+    states, pseudotime = repair_states(detected, fitted, parent)
+    value, terms = objective(detected, fitted, states, parent, edge_penalty, stability_penalty, root_penalty)
+    terms = dict(terms, objective=value, max_pseudotime=max(pseudotime.values()), start=round_terms["start"],
+                 round=round_terms["round"], surrogate=round_terms["surrogate"])
     values = np.array(start_values)
     spread = {"best_per_start": [float(v) for v in values], "mean": float(values.mean()),
               "std": float(values.std(ddof=1)) if len(values) > 1 else 0.0,
@@ -456,8 +461,8 @@ def main():
         json.dump({"genes": genes, "pseudo_root_state": [int(v) for v in states[PSEUDO_ROOT]], "cells": cells,
                    "objective": value, "terms": terms, "options": vars(options)}, cells_file, indent=1, default=float)
     spread = terms["starts"]
-    print("{} cells x {} genes in {:.0f}s: best objective {:.5f} (start {}, round {}); over {} starts mean {:.5f}, "
-          "sd {:.5f}, min {:.5f}, max {:.5f} -> {}".format(
+    print("{} cells x {} genes in {:.0f}s: objective {:.5f} (start {}, round {}); surrogate over {} starts mean "
+          "{:.5f}, sd {:.5f}, min {:.5f}, max {:.5f} -> {}".format(
               len(names), len(genes), time.time() - started, value, terms["start"], terms["round"],
               len(spread["best_per_start"]), spread["mean"], spread["std"], spread["min"], spread["max"], options.out))
 
