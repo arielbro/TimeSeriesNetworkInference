@@ -642,6 +642,56 @@ def panels_figure(df, panels, title, x_label=None, panel_width=6.5, height=5.5):
     return fig
 
 
+def metric_subplots_figure(panels, metric, title=None, x_labels=None, ncols=None, panel_width=6.5, height=5.5):
+    """One figure of a single metric with a panel per entry of `panels` ({panel title: {group label: df}}),
+    ncols panels to a row (all in one row by default). A panel whose data sweeps a parameter (x_labels
+    {panel title: axis label} names it) is drawn as lines and takes one group; otherwise each df's bars form a
+    group named by its label (and its sub-experiment, when it has several). One legend for all panels, outside
+    the top-right corner of the first row. None when no panel has data."""
+    x_labels = x_labels or {}
+    frames = {}
+    for panel_title, groups in panels.items():
+        parts = []
+        for label, df in groups.items():
+            data = df[df['metric'] == metric]
+            if data.empty:
+                continue
+            multi = data['sub'].nunique() > 1
+            parts.append(data.assign(sub=[label + (" / " + s if multi else "") for s in data['sub']]))
+        if parts:
+            frames[panel_title] = pd.concat(parts, ignore_index=True)
+    if not frames:
+        return None
+    _, ylabel, log_y = METRICS[metric]
+    ncols = min(ncols or len(frames), len(frames))
+    nrows = -(-len(frames) // ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(panel_width * ncols + 2.5, height * nrows),
+                             constrained_layout=True, squeeze=False)
+    for ax in axes.flat[len(frames):]:
+        ax.set_visible(False)
+    handles = {}
+    for ax, (panel_title, data) in zip(axes.flat, frames.items()):
+        methods = [m for m in METHODS if (data['method'] == m).any()]
+        if data['x'].notna().any():
+            _draw_lines(ax, data, methods, log_y, x_labels.get(panel_title))
+        else:
+            _draw_bars(ax, data, methods, log_y)
+        ax.set_title(panel_title)
+        ax.set_ylabel(ylabel)
+        ax.set_axisbelow(True)
+        ax.grid(True, axis='y')
+        for handle, label in zip(*ax.get_legend_handles_labels()):
+            handles.setdefault(label, handle)
+        if ax.get_legend() is not None:
+            ax.get_legend().remove()
+    labels = [m for m in METHODS if m in handles]
+    axes[0][ncols - 1].legend([handles[m] for m in labels], [METHOD_DISPLAY_NAMES[m] for m in labels],
+                              title=LEGEND_TITLE, loc='upper left', bbox_to_anchor=(1.02, 1), borderaxespad=0)
+    if title:
+        fig.suptitle(title)
+    return fig
+
+
 def experiment_figures(df, title, x_label=None, show_varying=None, varying_gap_threshold=0.1):
     """(accuracy figure, run-time figure, failed-inference figure) of one experiment. The hit-rate on varying nodes is drawn when
     show_varying says so, or, when it is None, when it differs from the hit-rate on all nodes by at least
