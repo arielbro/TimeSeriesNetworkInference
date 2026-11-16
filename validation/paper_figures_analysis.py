@@ -146,25 +146,76 @@ def _load_score(path):
     return float(np.load(path)) if os.path.exists(path) else None
 
 
-def load_experiment(exp_dir, sweep=None, methods=METHODS):
-    """One row per (network, method, metric) of an experiment, as a DataFrame with columns
-    sub, method, x (the swept parameter's value, NaN without one), network, metric, value, failed."""
-    print("Loading", exp_dir)
-    variants = {}       # (sub, method, params) -> {network: model path}
+def _variants(exp_dir):
+    """{(sub, method, params): {network: model path}} of every inferred model under exp_dir."""
+    variants = {}
     for sub, params, network, path in _models(exp_dir):
         method = canonical_method(params.get('inference_method', ''))
         key = (sub, method, tuple(sorted((k, v) for k, v in params.items() if k != 'inference_method')))
         variants.setdefault(key, {})[network] = path
+    return variants
+
+
+def _method_specific_params(variants):
+    """Parameters that differ between methods but never within one (a method-only option). They don't
+    separate conditions; every other parameter does."""
+    params_df = pd.DataFrame([dict(p) for _, _, p in variants]).assign(method=[m for _, m, _ in variants])
+    return {c for c in params_df.columns if c != 'method' and params_df[c].nunique(dropna=False) > 1
+            and params_df.fillna("").groupby('method')[c].nunique().max() <= 1}
+
+
+def leftover_variant_report(exp_dir, methods=METHODS):
+    """One row per variant (sub-experiment, method, parameter combination) of an experiment, to find failures
+    that come from output directories of older runs rather than from the latest one. Columns:
+      dirs              the variant's output directories, relative to exp_dir
+      networks          model directories found
+      missing_time      of those, how many have no inference_time.npy (each counts as a failed network)
+      missing_examples  up to three of them
+      oldest, newest    modification times of the variant's inference_time.npy files
+      pooled_with       how many other variants of the same method share its condition; load_experiment
+                        pools them into one bar, so a stale variant's failures land in the latest run's bar
+    A variant with missing_time > 0 that is pooled with another, or whose newest time predates the latest
+    run, is the leftover case."""
+    variants = _variants(exp_dir)
+    method_specific = _method_specific_params(variants)
+    rows = []
+    for (sub, method, params), models in sorted(variants.items()):
+        if method not in methods:
+            continue
+        dirs, times, missing = set(), [], []
+        for network, path in models.items():
+            variant_dir = path
+            for _ in range(network.count("/") + 1):
+                variant_dir = os.path.dirname(variant_dir)
+            dirs.add(os.path.relpath(variant_dir, exp_dir))
+            time_path = os.path.join(path, TIME_FILE)
+            if os.path.exists(time_path):
+                times.append(os.path.getmtime(time_path))
+            else:
+                missing.append(network)
+        rows.append(dict(sub=sub, method=METHOD_DISPLAY_NAMES[method],
+                         condition=str(tuple(p for p in params if p[0] not in method_specific)),
+                         params=dict(params), dirs=sorted(dirs), networks=len(models),
+                         missing_time=len(missing), missing_examples=sorted(missing)[:3],
+                         oldest=pd.to_datetime(min(times), unit='s') if times else pd.NaT,
+                         newest=pd.to_datetime(max(times), unit='s') if times else pd.NaT))
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df['pooled_with'] = df.groupby(['sub', 'method', 'condition'])['networks'].transform('size') - 1
+    return df
+
+
+def load_experiment(exp_dir, sweep=None, methods=METHODS):
+    """One row per (network, method, metric) of an experiment, as a DataFrame with columns
+    sub, method, x (the swept parameter's value, NaN without one), network, metric, value, failed."""
+    print("Loading", exp_dir)
+    variants = _variants(exp_dir)       # (sub, method, params) -> {network: model path}
     if not any(method in methods for _, method, _ in variants):
         raise ValueError("no inferred models of {} under {}".format(", ".join(methods), exp_dir))
     # every method, drawn or not, counts towards which networks a condition should have, the failure run time
     # and the time limit; only the drawn ones get rows
 
-    # parameters that differ between methods but never within one (a method-only option) don't separate
-    # conditions; everything else does
-    params_df = pd.DataFrame([dict(p) for _, _, p in variants]).assign(method=[m for _, m, _ in variants])
-    method_specific = {c for c in params_df.columns if c != 'method' and params_df[c].nunique(dropna=False) > 1
-                       and params_df.fillna("").groupby('method')[c].nunique().max() <= 1}
+    method_specific = _method_specific_params(variants)
 
     def condition(key):
         sub, _, params = key
