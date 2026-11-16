@@ -23,4 +23,4 @@ All 32 states enumerated: 2 attractors (0 of them fixed points), mean 3.00 nodes
 | 1 | 4 | 16/32 | 00000 -> 10001 -> 11110 -> 01101 |
 | 2 | 4 | 16/32 | 00001 -> 10000 -> 11111 -> 01100 |
 
-![interaction graph and attractors](network.png)
+![interaction graph and state graph](network.png)

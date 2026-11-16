@@ -40,4 +40,4 @@ All 256 states enumerated: 16 attractors (0 of them fixed points), mean 4.00 nod
 | 15 | 4 | 16/256 | 11001000 -> 01101000 -> 00111011 -> 10011010 |
 | 16 | 4 | 16/256 | 11001100 -> 01100000 -> 00111111 -> 10010010 |
 
-![interaction graph and attractors](network.png)
+![interaction graph and state graph](network.png)

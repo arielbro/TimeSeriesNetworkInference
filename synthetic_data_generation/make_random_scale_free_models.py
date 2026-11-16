@@ -13,6 +13,7 @@ runs into the dozens, and a cellcollective truth table needs 2**in-degree rows. 
 symmetric threshold function as its signs and threshold, so the file stays small - the readers used by data
 generation and inference accept either format (Network.parse_model_dir / model_dir_size).
 """
+import argparse
 import os
 import random
 import shutil
@@ -28,10 +29,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from attractor_learning.graphs import Network
 from attractor_learning.logic import SymmetricThresholdFunction
 
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data",
-                          "random_scale_free_models")
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+OUTPUT_DIR_NAME = "random_scale_free_models"
 SIZES = [5, 10, 25, 50, 100]
 MODELS_PER_SIZE = 10
+DEFAULT_MODELS_PER_SIZE = MODELS_PER_SIZE
+# --seed-offset shifts every seed (1000 * size + index), for drawing an independent copy of the set; an
+# offset of at least 1e6 keeps the copy clear of the default seeds at every size.
+# data/random_scale_free_30 is such a copy: 30 per size, seed offset 1000000 (generated as
+# random_scale_free_models_30 and renamed).
 # One directory per size, holding that size's models. Data generation mirrors a graphs_dir's grouping into
 # the generated data, and inference mirrors it again into its output, so this level survives all the way to
 # the analysis - and written as key=value it arrives there as a swept parameter (an axis a figure can put
@@ -180,10 +186,22 @@ def write_readme(path, name, network, info, seed, attractors):
         f.write("\n".join(lines))
 
 
-def main():
-    if os.path.isdir(OUTPUT_DIR):
-        shutil.rmtree(OUTPUT_DIR)
-    os.makedirs(OUTPUT_DIR)
+def regenerate_command(dir_name, seed_offset):
+    command = "python synthetic_data_generation/make_random_scale_free_models.py"
+    if dir_name != OUTPUT_DIR_NAME:
+        command += " --output-dir {}".format(dir_name)
+    if MODELS_PER_SIZE != DEFAULT_MODELS_PER_SIZE:
+        command += " --models-per-size {}".format(MODELS_PER_SIZE)
+    if seed_offset:
+        command += " --seed-offset {}".format(seed_offset)
+    return command
+
+
+def main(dir_name=OUTPUT_DIR_NAME, seed_offset=0):
+    output_dir = os.path.join(DATA_DIR, dir_name)
+    if os.path.isdir(output_dir):
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir)
     index = ["# Random scale-free models", "",
              "A `graphs_dir` of {} completely random models: {} at each of the sizes {}. Topology from "
              "networkx's directed scale-free generator; every non-input node gets a uniformly random "
@@ -197,18 +215,18 @@ def main():
              "tables: hub nodes here have in-degrees in the dozens, and a truth table needs 2**in-degree "
              "rows. `Network.parse_model_dir` / `Network.model_dir_size` read either format, so this "
              "folder works anywhere a graphs_dir is expected.", "",
-             "Regenerate with `python synthetic_data_generation/make_random_scale_free_models.py`.", "",
+             "Regenerate with `{}`.".format(regenerate_command(dir_name, seed_offset)), "",
              "| model | nodes | edges | input nodes | mean in-degree | max in-degree | attractors |",
              "|---|---|---|---|---|---|---|"]
     for size in SIZES:
         per_size = []
         for index_in_size in range(MODELS_PER_SIZE):
-            seed = 1000 * size + index_in_size
+            seed = seed_offset + 1000 * size + index_in_size
             name = "n{:04d}_{:02d}".format(size, index_in_size)
             network = random_scale_free_network(size, seed)
             info = stats(network)
             attractors = attractor_summary(network)
-            model_dir = os.path.join(OUTPUT_DIR, SIZE_DIR.format(size), name)
+            model_dir = os.path.join(output_dir, SIZE_DIR.format(size), name)
             os.makedirs(model_dir)
             network.save(os.path.join(model_dir, Network.MODEL_JSON_NAME))
             draw(network, info, os.path.join(model_dir, "network.png"),
@@ -233,10 +251,24 @@ def main():
             size, MODELS_PER_SIZE,
             min(i["edges"] for i in per_size), max(i["edges"] for i in per_size),
             min(i["max_in"] for i in per_size), max(i["max_in"] for i in per_size)))
-    with open(os.path.join(OUTPUT_DIR, "README.md"), "w", encoding="utf-8") as f:
+    with open(os.path.join(output_dir, "README.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(index) + "\n")
-    print("\nwrote {} models to {}".format(len(SIZES) * MODELS_PER_SIZE, OUTPUT_DIR))
+    print("\nwrote {} models to {}".format(len(SIZES) * MODELS_PER_SIZE, output_dir))
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--output-dir", default=OUTPUT_DIR_NAME, metavar="NAME",
+                        help="directory name under data/ to write the set to, deleting it first if it "
+                             "exists (default: {})".format(OUTPUT_DIR_NAME))
+    parser.add_argument("--models-per-size", type=int, default=MODELS_PER_SIZE, metavar="N",
+                        help="models per size (default: MODELS_PER_SIZE)")
+    parser.add_argument("--seed-offset", type=int, default=0, metavar="OFFSET",
+                        help="added to every seed, to draw a set independent of the default one (default 0)")
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
-    main()
+    arguments = parse_args()
+    MODELS_PER_SIZE = arguments.models_per_size
+    main(arguments.output_dir, arguments.seed_offset)

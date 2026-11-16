@@ -21,4 +21,4 @@ All 8 states enumerated: 2 attractors (1 of them fixed points), mean 1.50 nodes 
 | 1 | 3 | 6/8 | 011 -> 110 -> 101 |
 | 2 | 1 | 2/8 | 111 |
 
-![interaction graph and attractors](network.png)
+![interaction graph and state graph](network.png)

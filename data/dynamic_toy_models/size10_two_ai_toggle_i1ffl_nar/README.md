@@ -58,4 +58,4 @@ All 1024 states enumerated: 32 attractors (0 of them fixed points), mean 5.50 no
 | 31 | 4 | 32/1024 | 1100110001 -> 0110000011 -> 0011111100 -> 1001001010 |
 | 32 | 4 | 32/1024 | 1100110011 -> 0110000001 -> 0011111110 -> 1001001000 |
 
-![interaction graph and attractors](network.png)
+![interaction graph and state graph](network.png)

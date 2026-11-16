@@ -67,6 +67,9 @@ size 50, ten models per cell; the threshold-uniform one holds K = 2, 5, 7, 10, 1
 cell, which is the grid the constants currently carry. `data/random_nk_critical_threshold_uniform_n15_models`
 holds the threshold-uniform family over K = 1, 3, 5, 8, 10 at size 15, five per cell. Seeds depend only on
 the family, K, size and model index, so a cell regenerated on another grid comes out the same.
+--models-per-cell overrides MODELS_PER_K_AND_SIZE, and --seed-offset shifts every seed, for drawing an
+independent copy of a set; `data/random_nk_30` is such a copy, 30 per cell on the threshold-uniform grid
+above with seed offset 50000000 (generated as random_nk_critical_threshold_uniform_models_30 and renamed).
 
 K = 1 is reachable in the threshold families only. There the single available threshold has sensitivity
 exactly 1, so a uniform-threshold ensemble is critical exactly rather than in expectation, while an i.i.d.
@@ -74,7 +77,7 @@ truth table cannot be critical at K = 1 at any bias (2p(1-p)K <= K/2) - critical
 --function-type general has nothing to generate at that K.
 
 Regenerate with `python synthetic_data_generation/make_random_nk_critical_models.py [--function-type ...]
-[--output-dir ...]`.
+[--output-dir ...] [--models-per-cell ...] [--seed-offset ...]`.
 """
 import argparse
 import os
@@ -105,6 +108,7 @@ SIZES = [50]
 # grid is for the threshold-uniform family.
 K_VALUES = [2, 5, 7, 10, 15, 25]
 MODELS_PER_K_AND_SIZE = 10
+DEFAULT_MODELS_PER_K_AND_SIZE = MODELS_PER_K_AND_SIZE
 
 # Offsets so that the critical sweeps and the regime sweep draw independent networks where their grids
 # overlap. K = 2, size = 50, p = 0.5 is the same ensemble in both the general critical set and the regime
@@ -151,13 +155,17 @@ def threshold_sensitivity_spread(k):
     return mean, var ** 0.5
 
 
-def regenerate_command(function_type, dir_name):
+def regenerate_command(function_type, dir_name, extra_seed_offset=0):
     """The command line that reproduces this run. The directory is named whenever it is not the one the
     function type owns, since that is the argument without which the run would land somewhere else."""
     command = ("python synthetic_data_generation/make_random_nk_critical_models.py "
                "--function-type {}".format(function_type))
     if dir_name is not None and dir_name != OUTPUT_DIRS[function_type]:
         command += " --output-dir {}".format(dir_name)
+    if MODELS_PER_K_AND_SIZE != DEFAULT_MODELS_PER_K_AND_SIZE:
+        command += " --models-per-cell {}".format(MODELS_PER_K_AND_SIZE)
+    if extra_seed_offset:
+        command += " --seed-offset {}".format(extra_seed_offset)
     return command
 
 
@@ -442,15 +450,15 @@ def index_header(function_type, command):
     return lines
 
 
-def main(function_type, dir_name=None):
+def main(function_type, dir_name=None, extra_seed_offset=0):
     out_dir = output_dir(function_type, dir_name)
     if os.path.isdir(out_dir):
         shutil.rmtree(out_dir)
     os.makedirs(out_dir)
 
-    seed_offset = SEED_OFFSETS[function_type]
+    seed_offset = SEED_OFFSETS[function_type] + extra_seed_offset
     prefix = NAME_PREFIXES[function_type]
-    index = index_header(function_type, regenerate_command(function_type, dir_name))
+    index = index_header(function_type, regenerate_command(function_type, dir_name, extra_seed_offset))
 
     for k in K_VALUES:
         bias, threshold, expected = model_parameters(function_type, k)
@@ -521,9 +529,16 @@ def parse_args():
                              "SIZES, K_VALUES or MODELS_PER_K_AND_SIZE differ from the grid the default "
                              "directory already holds, so that set is not replaced by one its README does "
                              "not describe")
+    parser.add_argument("--models-per-cell", type=int, default=MODELS_PER_K_AND_SIZE, metavar="N",
+                        help="models per (K, size) cell (default: MODELS_PER_K_AND_SIZE)")
+    parser.add_argument("--seed-offset", type=int, default=0, metavar="OFFSET",
+                        help="added to every seed, to draw a set independent of the one the default seeds "
+                             "give (default 0). Keep it under 7e7: the family offsets are 1e8 apart and "
+                             "a family's seeds span under 3e7, so families stay disjoint")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     arguments = parse_args()
-    main(arguments.function_type, arguments.output_dir)
+    MODELS_PER_K_AND_SIZE = arguments.models_per_cell
+    main(arguments.function_type, arguments.output_dir, arguments.seed_offset)
